@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aexhq/aex-extension.git",
+    "url": "git+https://github.com/aexhq/extensions.git",
     "directory": "packages/loop-pi"
   },
   "type": "module",

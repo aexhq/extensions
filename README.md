@@ -1,4 +1,4 @@
-# aex-extension
+# extensions
 
 Official extensions for the [Aex](https://aex.dev) platform, as ordinary
 packages: agentloops today, tool packages next. Everything here builds only
