@@ -267,8 +267,6 @@ async function installFixtureBinding(bundleBytes, options) {
       contract_digest: contractDigest,
       implementation_identity: options.implementationIdentity,
       policy_digest: options.policyDigest,
-      realm: "aex_managed",
-      realm_id: "aex",
       required_capabilities: ["execution"],
       root_id: "root-ci",
       session_id: "session-ci",
