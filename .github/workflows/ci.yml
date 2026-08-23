@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Registry installs only: officials must build against the published SDKs,
+      # exactly like an external contributor.
+      - run: npm ci || npm install
+      - run: npm run build
+      # Determinism gate: a second build must reproduce byte-identical identities.
+      - name: rebuild determinism
+        run: |
+          set -euo pipefail
+          for p in packages/*/dist/identity.json; do cp "$p" "$p.first"; done
+          npm run build
+          for p in packages/*/dist/identity.json; do
+            cmp "$p" "$p.first" || { echo "$p is not deterministic"; exit 1; }
+          done
+      - run: npm test

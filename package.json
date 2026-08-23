@@ -1,0 +1,13 @@
+{
+  "name": "aex-extension",
+  "private": true,
+  "description": "Official Aex extensions: agentloop packages and tool packages, built only against the published public SDKs",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
+  }
+}
