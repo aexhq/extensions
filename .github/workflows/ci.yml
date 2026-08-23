@@ -14,7 +14,7 @@ concurrency:
 
 env:
   RUNTIME: packages/env-aws-microvm/runtime
-  AEX_REVISION: 60621ba09460c97a8ac168c7b2e49b324f743f1e
+  AEX_REVISION: 8fc0efc5f246163fa35ddc6df52ceec83308f49b
 
 jobs:
   packages:
