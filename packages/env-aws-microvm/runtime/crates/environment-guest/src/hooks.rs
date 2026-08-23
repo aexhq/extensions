@@ -16,7 +16,10 @@ use crate::environment::Environment;
 
 pub const HOOK_PREFIX: &str = "/aws/lambda-microvms/runtime/v1";
 
-pub async fn run(State(environment): State<Arc<Environment>>, body: String) -> (StatusCode, Json<Value>) {
+pub async fn run(
+    State(environment): State<Arc<Environment>>,
+    body: String,
+) -> (StatusCode, Json<Value>) {
     let envelope: RunEnvelope = match serde_json::from_str(&body) {
         Ok(envelope) => envelope,
         Err(_) => {

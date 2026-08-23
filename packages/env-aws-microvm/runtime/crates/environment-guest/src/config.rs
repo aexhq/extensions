@@ -88,10 +88,12 @@ impl Config {
             .map_err(|error| anyhow::anyhow!("{ENV_LISTEN}: {error}"))?;
         let workspace =
             PathBuf::from(std::env::var(ENV_WORKSPACE).unwrap_or_else(|_| "/workspace".into()));
-        let state_dir =
-            PathBuf::from(std::env::var(ENV_STATE_DIR).unwrap_or_else(|_| "/var/environment".into()));
-        let tool_dir =
-            PathBuf::from(std::env::var(ENV_TOOL_DIR).unwrap_or_else(|_| "/var/environment/tools".into()));
+        let state_dir = PathBuf::from(
+            std::env::var(ENV_STATE_DIR).unwrap_or_else(|_| "/var/environment".into()),
+        );
+        let tool_dir = PathBuf::from(
+            std::env::var(ENV_TOOL_DIR).unwrap_or_else(|_| "/var/environment/tools".into()),
+        );
         let tool_runner = PathBuf::from(
             std::env::var(ENV_TOOL_RUNNER)
                 .unwrap_or_else(|_| "/usr/local/lib/environment/tool-runner.mjs".into()),
@@ -102,7 +104,9 @@ impl Config {
         );
         let parse_id = |name: &'static str| -> anyhow::Result<u32> {
             std::env::var(name)
-                .map_err(|_| anyhow::anyhow!("{name} is required in the production Environment image"))?
+                .map_err(|_| {
+                    anyhow::anyhow!("{name} is required in the production Environment image")
+                })?
                 .parse()
                 .map_err(|error| anyhow::anyhow!("{name}: {error}"))
         };

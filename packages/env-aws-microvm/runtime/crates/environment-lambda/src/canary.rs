@@ -15,12 +15,14 @@ use brain_protocol::contract::{ENVIRONMENT_CONTRACT_DIGEST, sandbox_execution_re
 use brain_protocol::environment::{
     NetworkCeiling, ObserveRequest, SandboxExecutionRequest, TerminalOutcome, TerminalResult,
 };
-use futures_util::{SinkExt as _, StreamExt as _};
-use environment_core::connector::{ConnectorCatalog, ConnectorClass, ConnectorRef, GatewayAuthority};
+use environment_core::connector::{
+    ConnectorCatalog, ConnectorClass, ConnectorRef, GatewayAuthority,
+};
 use environment_core::materialization::ControlToken;
 use environment_wire::{
     AllowlistProxy, RequestCall, RequestFrame, ResponseFrame, ResponseReply, RunPayload,
 };
+use futures_util::{SinkExt as _, StreamExt as _};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::control::{AUTH_HEADER, Control, ControlError, Microvm, is_gone, is_terminated};
@@ -370,7 +372,8 @@ async fn run_public_network_canary(
         seal,
         &payload,
         |seal| async move {
-            run_public_network_on_known_target(control, &seal, &cfg.customer_environment_hosts).await
+            run_public_network_on_known_target(control, &seal, &cfg.customer_environment_hosts)
+                .await
         },
     )
     .await
@@ -703,7 +706,10 @@ fn public_network_execution(
 }
 
 fn validate_customer_environment_hosts(hosts: &[String; 2], region: &str) -> anyhow::Result<()> {
-    ensure!(hosts[0] != hosts[1], "customer Environment hosts must be distinct");
+    ensure!(
+        hosts[0] != hosts[1],
+        "customer Environment hosts must be distinct"
+    );
     let suffix = format!(".execute-api.{region}.amazonaws.com");
     for host in hosts {
         ensure!(
