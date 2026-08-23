@@ -9,6 +9,7 @@ pub struct AwsEnvironmentConfig {
     pub image_version: String,
     pub registry_table: String,
     pub max_materialized_mib: u64,
+    pub max_additional_sandboxes_per_root: u64,
     pub bundle_cache_max_bytes: usize,
     pub bundle_fetch_max_bytes: usize,
     pub connectors: ConnectorCatalog,
@@ -54,6 +55,12 @@ impl AwsEnvironmentConfig {
                 && max_materialized_mib.is_multiple_of(TARGET_MEMORY_MIB),
             "ENVIRONMENT_MAX_MATERIALIZED_MIB must be a positive multiple of 1024"
         );
+        let max_additional_sandboxes_per_root: u64 =
+            required("ENVIRONMENT_MAX_ADDITIONAL_SANDBOXES_PER_ROOT")?.parse()?;
+        anyhow::ensure!(
+            (1..=32).contains(&max_additional_sandboxes_per_root),
+            "ENVIRONMENT_MAX_ADDITIONAL_SANDBOXES_PER_ROOT must be between 1 and 32"
+        );
         let bundle_cache_max_mib = optional_mib(
             "ENVIRONMENT_BUNDLE_CACHE_MAX_MIB",
             DEFAULT_BUNDLE_CACHE_MAX_MIB,
@@ -72,6 +79,7 @@ impl AwsEnvironmentConfig {
             image_version: required("ENVIRONMENT_IMAGE_VERSION")?,
             registry_table: required("ENVIRONMENT_REGISTRY_TABLE")?,
             max_materialized_mib,
+            max_additional_sandboxes_per_root,
             bundle_cache_max_bytes: mib_bytes(bundle_cache_max_mib)?,
             bundle_fetch_max_bytes: mib_bytes(bundle_fetch_max_mib)?,
             connectors,

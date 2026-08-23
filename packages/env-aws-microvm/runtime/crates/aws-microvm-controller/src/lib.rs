@@ -290,6 +290,7 @@ mod tests {
             image_version: "1".into(),
             registry_table: "table".into(),
             max_materialized_mib: 1_024,
+            max_additional_sandboxes_per_root: 2,
             bundle_cache_max_bytes: DEFAULT_BUNDLE_CACHE_MAX_MIB as usize * MIB,
             bundle_fetch_max_bytes: DEFAULT_BUNDLE_FETCH_MAX_MIB as usize * MIB,
             connectors: ConnectorCatalog::new(
