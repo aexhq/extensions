@@ -1,0 +1,195 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: environments-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  release-boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enforce the Environments release boundary
+        run: |
+          test ! -e hosted
+          test ! -e .github/workflows/brain-image.yml
+          test ! -e .github/workflows/oci.yml
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-build
+      - run: cargo build --workspace --all-targets --locked
+
+  clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-clippy
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-test
+      - run: cargo test --workspace
+
+  node-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve the immutable Brain revision from Cargo.toml
+        id: brain
+        run: echo "revision=$(bash scripts/pinned-brain-revision.sh)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: aexhq/brain
+          ref: ${{ steps.brain.outputs.revision }}
+          path: brain
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build the pinned Brain Tool SDK
+        working-directory: brain
+        run: |
+          npm ci
+          npm run build --workspace @aexhq/brain
+      - name: Exercise the real Brain bundle in the Environments runner
+        env:
+          AEX_BRAIN_CHECKOUT: ${{ github.workspace }}/brain
+        run: node scripts/test-tool-runner.mjs
+
+  # Build the native CI image once. Static image policy and adversarial runtime tests consume the
+  # same artifact in parallel; the production ARM64 image is built on an arm host separately.
+  linux-image-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-linux-image
+      - name: Build guest (native)
+        run: cargo build -p environment-guest --release --locked
+      - name: Build native image
+        run: docker build -f image/Dockerfile --build-arg BIN=target/release/environment-guest -t environment:ci .
+      - name: Seal native image
+        run: |
+          mkdir environment-ci-image
+          docker save environment:ci | gzip -1 > environment-ci-image/environment-ci.tar.gz
+          sha256sum environment-ci-image/environment-ci.tar.gz > environment-ci-image/SHA256SUMS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  image-policy-security:
+    needs: linux-image-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image
+      - name: Verify and load native image
+        run: |
+          sha256sum --check environment-ci-image/SHA256SUMS
+          gzip -dc environment-ci-image/environment-ci.tar.gz | docker load
+      - name: Prove the image privilege allowlist
+        run: |
+          docker run --rm --entrypoint sh --user 0:0 environment:ci -ceu '
+            test -z "$(find / -xdev -type f -perm /6000 -print -quit)"
+            capabilities=$(getcap -r / 2>/dev/null || true)
+            test -z "$capabilities"
+            test "$(stat -c "%u:%g:%a" /var/environment)" = "1001:1000:710"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/control-listener)" = "0:1001:750"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/tool-boundary.so)" = "0:0:555"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/proc-secret-static)" = "0:0:555"
+            ! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP
+          '
+
+  guest-runtime-security:
+    needs: linux-image-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image
+      - name: Verify and load native image
+        run: |
+          sha256sum --check environment-ci-image/SHA256SUMS
+          gzip -dc environment-ci-image/environment-ci.tar.gz | docker load
+      - name: Prove Tool identities cannot reach supervisor control
+        run: |
+          chmod 0555 scripts/test-control-listener-fd.sh
+          preserved=$(docker run --rm --entrypoint sh \
+            -v "$PWD/scripts/test-control-listener-fd.sh:/tmp/test-control-listener-fd.sh:ro" \
+            environment:ci -ceu 'exec 3>&1; exec /usr/local/lib/environment/control-listener /tmp/test-control-listener-fd.sh')
+          test "$preserved" = provider-fd-preserved
+          for uid in 1000:1000 65536:1000; do
+            docker run --rm --entrypoint node --user "$uid" \
+              --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
+              -v "$PWD/scripts/test-control-boundary.mjs:/tmp/test-control-boundary.mjs:ro" \
+              environment:ci /tmp/test-control-boundary.mjs --bind
+          done
+          CID=$(docker run -d --rm \
+            --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
+            -p 8080:8080 environment:ci)
+          trap 'docker logs "$CID"; docker stop "$CID" >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && { exec 3>&-; sleep 1; break; }; sleep 0.5; done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/)" = 401
+          test "$(curl --silent --output /tmp/environment-ready.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/ready)" = 200
+          jq --exit-status '.ok == true' /tmp/environment-ready.json >/dev/null
+          test "$(curl --silent --output /tmp/environment-validate.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/validate)" = 200
+          jq --exit-status '.ok == true' /tmp/environment-validate.json >/dev/null
+          docker cp scripts/test-control-boundary.mjs "$CID":/tmp/test-control-boundary.mjs
+          docker exec --user 1000:1000 "$CID" node /tmp/test-control-boundary.mjs
+          docker cp scripts/test-guest-deadline.mjs "$CID":/tmp/test-guest-deadline.mjs
+          docker exec --user 0:0 "$CID" sh -c 'chown 1001:1001 /tmp/test-guest-deadline.mjs && chmod 0400 /tmp/test-guest-deadline.mjs'
+          docker exec --user 1001:1000 "$CID" node /tmp/test-guest-deadline.mjs
+          docker stop "$CID" >/dev/null
+          trap - EXIT

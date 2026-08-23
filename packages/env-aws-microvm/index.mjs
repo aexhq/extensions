@@ -3,7 +3,7 @@ import { computer, defineEnvironment, linux } from "@aexhq/environment";
 export const awsMicrovm = defineEnvironment({
   identity: "@aexhq/env-aws-microvm",
   protocol: "environment/v1",
-  profile: computer({ platform: linux.amd64, network: "allowlist", recovery: "retained" }),
+  profile: computer({ platform: linux.arm64, network: "allowlist", recovery: "retained" }),
   serialize(options = {}) {
     if (options === null || typeof options !== "object" || Array.isArray(options)) {
       throw new TypeError("awsMicrovm options must be an object");

@@ -7,7 +7,7 @@ test("awsMicrovm declares the computer profile without a language runtime", () =
   assert.deepEqual(inspectEnvironment(awsMicrovm()).serialized, {
     extension: "@aexhq/env-aws-microvm",
     protocol: "environment/v1",
-    profile: { kind: "computer", platform: "linux-amd64", network: "allowlist", recovery: "retained" },
+    profile: { kind: "computer", platform: "linux-arm64", network: "allowlist", recovery: "retained" },
     configuration: {},
   });
 });
