@@ -1,4 +1,4 @@
-name: publish egress gateway image
+name: publish environment gateway image
 
 on:
   workflow_run:
@@ -40,6 +40,7 @@ jobs:
             exit 1
           fi
       - name: Build candidate
+        working-directory: packages/env-aws-microvm/runtime
         run: docker build -f gateway/Dockerfile -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" .
       - name: Scan candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

@@ -20,6 +20,9 @@ concurrency:
   group: environment-image-${{ inputs.plane }}
   cancel-in-progress: false
 
+env:
+  RUNTIME: packages/env-aws-microvm/runtime
+
 jobs:
   format:
     runs-on: ubuntu-24.04
@@ -30,12 +33,12 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - run: cargo fmt --manifest-path "$RUNTIME/Cargo.toml" --all -- --check
 
   clippy:
     runs-on: ubuntu-24.04
@@ -46,15 +49,16 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-clippy
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+          shared-key: environment-release-clippy
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo clippy --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets -- -D warnings
 
   test:
     runs-on: ubuntu-24.04
@@ -65,14 +69,15 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-test
-      - run: cargo test --workspace
+          shared-key: environment-release-test
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo test --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
 
   node-runtime:
     runs-on: ubuntu-24.04
@@ -83,27 +88,12 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
-      - name: Resolve the immutable Brain revision from Cargo.toml
-        id: brain
-        run: echo "revision=$(bash scripts/pinned-brain-revision.sh)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
-        with:
-          repository: aexhq/brain
-          ref: ${{ steps.brain.outputs.revision }}
-          path: brain
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Build the pinned Brain Tool SDK
-        working-directory: brain
-        run: |
-          npm ci
-          npm run build --workspace @aexhq/brain
-      - name: Exercise the real Brain bundle in the Environments runner
-        env:
-          AEX_BRAIN_CHECKOUT: ${{ github.workspace }}/brain
-        run: node scripts/test-tool-runner.mjs
+      - name: Exercise a prepared Tool in the environment runner
+        run: node "$RUNTIME/scripts/test-tool-runner.mjs"
 
   build:
     runs-on: ubuntu-24.04-arm
@@ -114,20 +104,21 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-aarch64-build
+          shared-key: environment-release-aarch64-build
+          workspaces: packages/env-aws-microvm/runtime -> target
       - name: Build aarch64 guest and publisher
-        run: cargo build -p environment-guest -p environment-lambda --release --locked
+        run: cargo build --manifest-path "$RUNTIME/Cargo.toml" -p environment-guest -p environment-lambda --release --locked
       - name: Seal release binaries
         run: |
           mkdir environment-image-binaries
-          install -m 0755 target/release/environment-guest environment-image-binaries/environment-guest
-          install -m 0755 target/release/environment-lambda environment-image-binaries/environment-lambda
+          install -m 0755 "$RUNTIME/target/release/environment-guest" environment-image-binaries/environment-guest
+          install -m 0755 "$RUNTIME/target/release/environment-lambda" environment-image-binaries/environment-lambda
           cd environment-image-binaries
           sha256sum environment-guest environment-lambda > SHA256SUMS
       - uses: actions/upload-artifact@v6
@@ -156,7 +147,7 @@ jobs:
       - name: Verify immutable release source
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: bash scripts/verify-release-source.sh "$EXPECTED_COMMIT"
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
       - uses: actions/download-artifact@v7
         with:
           name: environment-image-binaries-${{ inputs.expected_commit }}
@@ -168,7 +159,8 @@ jobs:
           chmod 0755 environment-guest environment-lambda
       - uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::522921482290:role/aex-environments-${{ inputs.plane }}-use1-image-publisher
+          # Retain deployed AWS identities while source ownership moves to extensions.
+          role-to-assume: arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-publisher
           aws-region: us-east-1
       - name: Publish isolated plane image
         id: publish
@@ -181,10 +173,10 @@ jobs:
           published="$(environment-image-binaries/environment-lambda --region us-east-1 image publish \
             --source-sha "$EXPECTED_COMMIT" \
             --binary environment-image-binaries/environment-guest \
-            --name aex-environments-${{ inputs.plane }}-1gb \
-            --bucket aex-environments-${{ inputs.plane }}-use1-artifacts-522921482290 \
-            --build-role arn:aws:iam::522921482290:role/aex-environments-${{ inputs.plane }}-use1-image-build \
-            --log-group /aex/${{ inputs.plane }}-use1/environments/image-build \
+            --name aex-hands-${{ inputs.plane }}-1gb \
+            --bucket aex-hands-${{ inputs.plane }}-use1-artifacts-522921482290 \
+            --build-role arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-build \
+            --log-group /aex/${{ inputs.plane }}-use1/hands/image-build \
             --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE" \
             --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST" \
             --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC")"
