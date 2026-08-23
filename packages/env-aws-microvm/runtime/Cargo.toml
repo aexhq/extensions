@@ -19,8 +19,8 @@ repository = "https://github.com/aexhq/extensions"
 [workspace.dependencies]
 # Brain owns the protocol and Environment ports. Both packages resolve from one immutable source
 # identity so Environments can build without a sibling checkout and cannot drift across contracts.
-brain = { git = "https://github.com/aexhq/brain.git", rev = "6ea80b25777d18ae676e47eabc994fe6d86d8aaf" }
-brain-protocol = { git = "https://github.com/aexhq/brain.git", rev = "6ea80b25777d18ae676e47eabc994fe6d86d8aaf" }
+brain = { git = "https://github.com/aexhq/brain.git", rev = "82fdb7aed626a82a8e692c4f9f153b8147ca4ac5" }
+brain-protocol = { git = "https://github.com/aexhq/brain.git", rev = "82fdb7aed626a82a8e692c4f9f153b8147ca4ac5" }
 anyhow = "1"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "credentials-process", "default-https-client", "rt-tokio", "sso"] }
