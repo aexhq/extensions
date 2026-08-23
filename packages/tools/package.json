@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tools",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Official tool selections for Aex sessions",
   "license": "Apache-2.0",
   "homepage": "https://aex.dev",
@@ -32,15 +32,16 @@
     "README.md"
   ],
   "scripts": {
-    "build": "aex tools build",
-    "test": "npm run build && node --test"
+    "build": "node clean.mjs && aex tools build",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/sdk": "0.57.5",
+    "@aexhq/sdk": "0.58.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@aexhq/cli": "0.28.5",
+    "@aexhq/cli": "0.29.0",
     "typescript": "^5.9.2"
   },
   "aex": {
@@ -52,6 +53,7 @@
         "./grep": "./src/grep.ts",
         "./ls": "./src/ls.ts",
         "./read": "./src/read.ts",
+        "./subagents": "./src/subagents.ts",
         "./todo": "./src/todo.ts",
         "./write": "./src/write.ts"
       },

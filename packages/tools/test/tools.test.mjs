@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { computer, defineEnvironment, linux } from "@aexhq/environment";
 import { Aex } from "@aexhq/sdk";
-import { bash, edit, glob, grep, ls, read, todo, write } from "../index.mjs";
+import { bash, edit, glob, grep, ls, read, subagents, todo, write } from "../index.mjs";
 
 const runtime = defineEnvironment({
   identity: "test.computer",
@@ -12,6 +12,15 @@ const runtime = defineEnvironment({
   profile: computer({ platform: linux.arm64, network: "allowlist", recovery: "retained" }),
   serialize: () => ({}),
   handle: () => ({}),
+});
+
+test("subagents is a prepared environment Tool with deployment-selectable API egress", () => {
+  const value = subagents({ apiHost: "api-dev.aex.dev" });
+  assert.equal(value.kind, "aex.tool");
+  assert.equal(value.name, "subagents");
+  assert.deepEqual(value.requirements.network, [{ host: "api-dev.aex.dev", port: 443 }]);
+  assert.match(value.artifact.digest, /^[0-9a-f]{64}$/);
+  assert.equal(value.artifact.target, "linux-arm64");
 });
 const loop = Object.freeze({ source: "export const activate=()=>{}", sha256: "a".repeat(64), toolchain: "test-loop" });
 

@@ -6,5 +6,6 @@ export declare const glob: () => Tool;
 export declare const grep: () => Tool;
 export declare const ls: () => Tool;
 export declare const read: () => Tool;
+export declare const subagents: (options?: { readonly apiHost?: string }) => Tool;
 export declare const todo: () => Tool;
 export declare const write: () => Tool;

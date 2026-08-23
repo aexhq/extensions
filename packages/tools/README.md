@@ -5,26 +5,29 @@ the SDK's reserved structured-output protocol is inert unless one `send({ output
 
 ```ts
 import { Aex } from "@aexhq/sdk";
-import { bash, edit, read, sandbox, storage, subagents, write } from "@aexhq/tools";
+import { bash, edit, read, subagents, write } from "@aexhq/tools";
+import { awsMicrovm } from "@aexhq/env-aws-microvm";
+import { pi } from "@aexhq/loop-pi";
 
 const aex = new Aex({ apiKey: process.env.AEX_API_KEY! });
+const workspace = awsMicrovm();
 const session = await aex.sessions.create({
   model: {
     provider: "openai",
     name: "gpt-5.4",
     apiKey: process.env.OPENAI_API_KEY!,
   },
-  tools: [bash(), read(), write(), edit(), storage(), sandbox(), subagents()],
+  loop: pi(),
+  environments: { workspace },
+  tools: [bash(), read(), write(), edit(), subagents()],
 });
 ```
 
-`storage()` gives the model one action-discriminated Tool for explicit save/load/list operations;
-the application alone can delete through `session.storage`. `sandbox()` manages additional isolated
-sandboxes through the environment extension to which it is bound.
-
-`glob()`, `grep()`, `ls()`, `todo()`, `webSearch()`, and `webFetch()` are separate opt-ins. Duplicate
-selections fail before session creation.
+`glob()`, `grep()`, `ls()`, and `todo()` are separate opt-ins. Durable storage remains available to
+the application through `session.storage`; environment lifecycle is available through the typed
+handle returned by `session.environment(workspace)`.
 
 `subagents()` operates durable direct child sessions with explicit spawn, message, follow-up, wait,
-list, interrupt and end actions. Children have independent journals and context; their tools retain
-their immutable environment bindings.
+list, interrupt and end actions. It is a prepared Tool bound to the same environment rules as every
+other Tool. Hosted Aex injects a tenant-fixed session API credential; it cannot authenticate as a
+different tenant. Self-hosted deployments provide the equivalent integration.
