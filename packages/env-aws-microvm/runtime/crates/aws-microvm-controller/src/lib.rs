@@ -25,24 +25,25 @@ use brain::environment::{
     SessionPreparationPort,
 };
 use brain_protocol::contract::{
-    ENVIRONMENT_CONTRACT_DIGEST, canonical_digest, operation_request_digest, sandbox_copy_request_digest,
-    sandbox_execution_request_digest, sandbox_file_write_request_digest,
-    write_stdin_request_digest,
+    ENVIRONMENT_CONTRACT_DIGEST, canonical_digest, operation_request_digest,
+    sandbox_copy_request_digest, sandbox_execution_request_digest,
+    sandbox_file_write_request_digest, write_stdin_request_digest,
 };
 use brain_protocol::environment::{
     AcknowledgeTerminalRequest, Acknowledgement, ArtifactTarget, BundleDescriptor, BundleFetch,
-    CancelRequest, CancellationReceipt, CreateSandboxRequest, FileEntry,
-    EnvironmentCapability, EnvironmentError, EnvironmentErrorCode, NetworkCeiling, NetworkCeilingDestinationsItem,
-    ObjectReference, ObjectTransferAuthority, ObjectTransferAuthorityMethod, ObserveRequest,
-    OperationObservation, OperationRef, PrepareSessionRequest, PreparedBindingBundles,
-    PreparedSession, RecoveryClass, ResolvedBinding, ResolvedBindingLimits, ResourceCeiling,
-    SandboxCopyRequest, SandboxCopyRequestDirection, SandboxCopyResult, SandboxExecutionRequest,
-    SandboxFileRequest, SandboxFileWriteRequest, SandboxFileWriteResult, SandboxFileWriteSource,
-    SandboxState, SandboxStatus, SandboxTarget, SealedBinding, SecretDeliveryRequest,
-    SubmitReceipt, SubmitRequest, TargetKind, WriteStdinReceipt, WriteStdinRequest,
+    CancelRequest, CancellationReceipt, CreateSandboxRequest, EnvironmentCapability,
+    EnvironmentError, EnvironmentErrorCode, EnvironmentProfileKind, EnvironmentProfileNetwork,
+    EnvironmentProfilePlatform, EnvironmentProfileRecovery, FileEntry, NetworkCeiling,
+    NetworkCeilingDestinationsItem, ObjectReference, ObjectTransferAuthority,
+    ObjectTransferAuthorityMethod, ObserveRequest, OperationObservation, OperationRef,
+    PrepareSessionRequest, PreparedBindingBundles, PreparedSession, RecoveryClass, ResolvedBinding,
+    ResolvedBindingLimits, ResourceCeiling, SandboxCopyRequest, SandboxCopyRequestDirection,
+    SandboxCopyResult, SandboxExecutionRequest, SandboxFileRequest, SandboxFileWriteRequest,
+    SandboxFileWriteResult, SandboxFileWriteSource, SandboxState, SandboxStatus, SandboxTarget,
+    SealedBinding, SecretDeliveryRequest, SubmitReceipt, SubmitRequest, TargetKind,
+    WriteStdinReceipt, WriteStdinRequest,
 };
 use brain_protocol::network::network_ceiling_is_subset;
-use futures_util::StreamExt as _;
 use environment_core::connector::{ConnectorCatalog, ConnectorClass, GatewayAuthority};
 use environment_core::materialization::{
     AcquireTarget, ControlToken, Disposition, DurableLaunchRequest, DurableTargetState,
@@ -68,6 +69,7 @@ use environment_wire::{
     InstallBundleMetadata, InstallObjectMetadata, InstallSecretsRequest, RequestCall,
     ResponseReply, RunPayload,
 };
+use futures_util::StreamExt as _;
 use ipnet::Ipv4Net;
 use sha2::{Digest as _, Sha256};
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -110,8 +112,8 @@ const TARGET_DISPATCH_WINDOW_MS: u64 = 4 * 60 * 1_000;
 
 mod cache;
 mod config;
-mod errors;
 mod environment;
+mod errors;
 mod launcher;
 mod plane;
 mod ports;
@@ -128,9 +130,9 @@ pub(crate) use cache::*;
 #[allow(unused_imports)]
 pub(crate) use config::*;
 #[allow(unused_imports)]
-pub(crate) use errors::*;
-#[allow(unused_imports)]
 pub(crate) use environment::*;
+#[allow(unused_imports)]
+pub(crate) use errors::*;
 #[allow(unused_imports)]
 pub(crate) use launcher::*;
 #[allow(unused_imports)]
@@ -172,17 +174,33 @@ mod tests {
                 "bytes": 1,
                 "contract_digest": "b".repeat(64),
                 "environment_name": "workspace",
-                "execute_path": format!("/artifacts/{digest}/execute"),
-                "object": {"bytes": 1, "object_id": "object-1", "sha256": digest},
+                "execute_path": "/tool/runtime.mjs",
+                "layers": [{
+                    "digest": digest,
+                    "bytes": 1,
+                    "media_type": "application/javascript+esm",
+                    "mount_path": "/tool/runtime.mjs",
+                    "unpack": "file",
+                    "object": {"bytes": 1, "object_id": "object-1", "sha256": digest}
+                }],
                 "required_env": [],
                 "target": "linux-arm64",
                 "tool_name": "fixture"
             },
             "capability": "fixture",
+            "configuration": {},
             "contract_digest": "b".repeat(64),
+            "extension": "@aexhq/env-aws-microvm",
             "implementation_identity": "c".repeat(64),
             "environment_name": "workspace",
             "policy_digest": "d".repeat(64),
+            "profile": {
+                "kind":"computer",
+                "platform":"linux-arm64",
+                "network":"allowlist",
+                "recovery":"retained"
+            },
+            "protocol":"environment/v1",
             "required_capabilities": ["execution"],
             "root_id": root_id,
             "session_id": session_id
@@ -192,7 +210,7 @@ mod tests {
 
     fn materialization_lease(now_ms: u64) -> MaterializationLease {
         AcquireTarget {
-            key: TargetKey::for_default_target("root-dispatch").unwrap(),
+            key: TargetKey::for_environment("root-dispatch", "binding-dispatch").unwrap(),
             spec: TargetSpec::new(
                 ConnectorClass::None,
                 "image-1",
@@ -305,7 +323,10 @@ mod tests {
         );
         assert!(sandbox_state_from_provider(&MicrovmState::Suspending).is_err());
         let terminating = sandbox_state_from_provider(&MicrovmState::Terminating).unwrap_err();
-        assert_eq!(terminating.code, EnvironmentErrorCode::TemporarilyUnavailable);
+        assert_eq!(
+            terminating.code,
+            EnvironmentErrorCode::TemporarilyUnavailable
+        );
         assert!(terminating.retryable);
         let future = sandbox_state_from_provider(&MicrovmState::from("FUTURE_STATE")).unwrap_err();
         assert_eq!(future.code, EnvironmentErrorCode::TemporarilyUnavailable);
@@ -340,6 +361,7 @@ mod tests {
         cache
             .install(
                 preparation("session-1", "root-1", &digest),
+                "environment-1".into(),
                 "preparation-1".into(),
                 HashMap::from([(digest.clone(), Arc::new(vec![1, 2, 3]))]),
             )
@@ -347,6 +369,7 @@ mod tests {
         cache
             .install(
                 preparation("session-2", "root-1", &digest),
+                "environment-1".into(),
                 "preparation-2".into(),
                 HashMap::new(),
             )
@@ -364,6 +387,7 @@ mod tests {
         let error = cache
             .install(
                 preparation("session-3", "root-2", &replacement),
+                "environment-2".into(),
                 "preparation-3".into(),
                 HashMap::from([(replacement.clone(), Arc::new(vec![4, 5, 6]))]),
             )
@@ -375,6 +399,7 @@ mod tests {
         cache
             .install(
                 preparation("session-3", "root-2", &replacement),
+                "environment-2".into(),
                 "preparation-3".into(),
                 HashMap::from([(replacement.clone(), Arc::new(vec![4, 5, 6]))]),
             )
@@ -393,6 +418,7 @@ mod tests {
         cache
             .install(
                 first,
+                "environment-1".into(),
                 "preparation-1".into(),
                 HashMap::from([(digest.clone(), Arc::new(vec![1, 2, 3]))]),
             )
@@ -400,23 +426,25 @@ mod tests {
         cache
             .install(
                 preparation("session-2", "root-2", &digest),
+                "environment-2".into(),
                 "preparation-2".into(),
                 HashMap::new(),
             )
             .unwrap();
 
         // Touch session 1 after session 2 was installed, making session 2 the cold candidate.
-        assert!(cache.get("session-1").is_some());
+        assert!(cache.get("session-1", "environment-1").is_some());
         cache
             .install(
                 preparation("session-3", "root-3", &digest),
+                "environment-3".into(),
                 "preparation-3".into(),
                 HashMap::new(),
             )
             .unwrap();
-        assert!(cache.get("session-1").is_some());
-        assert!(cache.get("session-2").is_none());
-        assert!(cache.get("session-3").is_some());
+        assert!(cache.get("session-1", "environment-1").is_some());
+        assert!(cache.get("session-2", "environment-2").is_none());
+        assert!(cache.get("session-3", "environment-3").is_some());
         assert_eq!(cache.store.sessions.len(), 2);
         assert!(cache.store.preparation_bytes <= metadata_bytes * 2);
         assert!(!cache.store.root_sessions.contains_key("root-2"));
@@ -483,7 +511,9 @@ mod tests {
                 .unwrap_err();
         assert_eq!(
             error.details.get("scope"),
-            Some(&serde_json::Value::String("environment_bundle_fetch_bytes".into()))
+            Some(&serde_json::Value::String(
+                "environment_bundle_fetch_bytes".into()
+            ))
         );
         drop(first);
     }
@@ -495,13 +525,14 @@ mod tests {
         let error = cache
             .install(
                 preparation("session-1", "root-1", &digest),
+                "environment-1".into(),
                 "preparation-1".into(),
                 HashMap::new(),
             )
             .unwrap_err();
         assert_eq!(error.code, EnvironmentErrorCode::CapabilityUnavailable);
         assert!(!error.retryable);
-        assert!(cache.get("session-1").is_none());
+        assert!(cache.get("session-1", "environment-1").is_none());
     }
 
     #[test]
@@ -512,17 +543,55 @@ mod tests {
         cache
             .install(
                 request.clone(),
+                "environment-1".into(),
                 "preparation-1".into(),
                 HashMap::from([(digest.clone(), Arc::new(vec![1, 2, 3]))]),
             )
             .unwrap();
         cache
-            .install(request.clone(), "preparation-1".into(), HashMap::new())
+            .install(
+                request.clone(),
+                "environment-1".into(),
+                "preparation-1".into(),
+                HashMap::new(),
+            )
             .unwrap();
         let conflict = cache
-            .install(request, "preparation-changed".into(), HashMap::new())
+            .install(
+                request,
+                "environment-1".into(),
+                "preparation-changed".into(),
+                HashMap::new(),
+            )
             .unwrap_err();
         assert_eq!(conflict.code, EnvironmentErrorCode::BindingConflict);
+    }
+
+    #[test]
+    fn one_session_keeps_each_logical_environment_prepared() {
+        let digest = "a".repeat(64);
+        let request = preparation("session-1", "root-1", &digest);
+        let mut cache = PreparationCache::default();
+        cache
+            .install(
+                request.clone(),
+                "environment-1".into(),
+                "preparation-1".into(),
+                HashMap::from([(digest.clone(), Arc::new(vec![1, 2, 3]))]),
+            )
+            .unwrap();
+        cache
+            .install(
+                request,
+                "environment-2".into(),
+                "preparation-2".into(),
+                HashMap::new(),
+            )
+            .unwrap();
+
+        assert!(cache.get("session-1", "environment-1").is_some());
+        assert!(cache.get("session-1", "environment-2").is_some());
+        assert_eq!(cache.store.sessions.len(), 2);
     }
 
     #[test]
@@ -561,7 +630,7 @@ mod tests {
         let binding = managed_binding("session-1", "root-1", &digest);
         assert_eq!(
             validate_prepared_binding_projection(prepared, &binding, "root-1", "session-1")
-                .unwrap()
+                .unwrap()[0]
                 .digest,
             digest
         );
@@ -583,7 +652,9 @@ mod tests {
         );
 
         let mut inconsistent_object = binding.clone();
-        inconsistent_object.bundle.as_mut().unwrap().object.bytes = 2;
+        inconsistent_object.bundle.as_mut().unwrap().layers[0]
+            .object
+            .bytes = 2;
         assert_eq!(
             validate_managed_binding(&inconsistent_object)
                 .unwrap_err()
@@ -594,13 +665,15 @@ mod tests {
         let mut exact_limit = binding.clone();
         let bytes = NonZeroU64::new(brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64).unwrap();
         exact_limit.bundle.as_mut().unwrap().bytes = bytes;
-        exact_limit.bundle.as_mut().unwrap().object.bytes = bytes.get();
+        exact_limit.bundle.as_mut().unwrap().layers[0].bytes = bytes;
+        exact_limit.bundle.as_mut().unwrap().layers[0].object.bytes = bytes.get();
         validate_managed_binding(&exact_limit).unwrap();
 
         let mut oversized = exact_limit;
         let bytes = NonZeroU64::new(bytes.get() + 1).unwrap();
         oversized.bundle.as_mut().unwrap().bytes = bytes;
-        oversized.bundle.as_mut().unwrap().object.bytes = bytes.get();
+        oversized.bundle.as_mut().unwrap().layers[0].bytes = bytes;
+        oversized.bundle.as_mut().unwrap().layers[0].object.bytes = bytes.get();
         assert_eq!(
             validate_managed_binding(&oversized).unwrap_err().code,
             EnvironmentErrorCode::BindingConflict
@@ -615,7 +688,8 @@ mod tests {
         );
 
         let first = validate_prepared_binding_projection(prepared, &binding, "root-1", "session-1")
-            .unwrap();
+            .unwrap()
+            .remove(0);
         let mut conflicting_descriptor = binding.clone();
         conflicting_descriptor.bundle.as_mut().unwrap().tool_name = "other".parse().unwrap();
         let second = validate_prepared_binding_projection(
@@ -624,15 +698,12 @@ mod tests {
             "root-1",
             "session-1",
         )
-        .unwrap();
+        .unwrap()
+        .remove(0);
         let mut required = HashMap::new();
         merge_validated_prepared_bundle(&mut required, first).unwrap();
-        assert_eq!(
-            merge_validated_prepared_bundle(&mut required, second)
-                .unwrap_err()
-                .code,
-            EnvironmentErrorCode::BindingConflict
-        );
+        merge_validated_prepared_bundle(&mut required, second).unwrap();
+        assert_eq!(required.len(), 1);
     }
 
     #[test]
@@ -707,15 +778,15 @@ mod tests {
     }
 
     #[test]
-    fn additional_control_port_never_overloads_default_lifecycle() {
-        let default: SandboxTarget = serde_json::from_value(serde_json::json!({
-            "binding_ref": "binding-default",
-            "kind": "default",
+    fn additional_control_port_never_overloads_environment_lifecycle() {
+        let environment: SandboxTarget = serde_json::from_value(serde_json::json!({
+            "binding_ref": "binding-environment",
+            "kind": "environment",
             "root_id": "root-1",
             "session_id": "session-1"
         }))
         .unwrap();
-        let error = require_additional_target(&default).unwrap_err();
+        let error = require_additional_target(&environment).unwrap_err();
         assert_eq!(error.code, EnvironmentErrorCode::InvalidRequest);
 
         let additional: SandboxTarget = serde_json::from_value(serde_json::json!({
@@ -894,7 +965,7 @@ mod tests {
                 },
                 "target": {
                     "binding_ref": "binding-1",
-                    "kind": "default",
+                    "kind": "environment",
                     "root_id": "root-1",
                     "session_id": "session-1"
                 }
@@ -923,7 +994,7 @@ mod tests {
                 "request_digest": "0".repeat(64),
                 "target": {
                     "binding_ref": "binding-1",
-                    "kind": "default",
+                    "kind": "environment",
                     "root_id": "root-1",
                     "session_id": "session-1"
                 },
@@ -980,7 +1051,7 @@ mod tests {
             },
             "target": {
                 "binding_ref": "binding-1",
-                "kind": "default",
+                "kind": "environment",
                 "root_id": "root-1",
                 "session_id": "session-1"
             }

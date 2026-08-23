@@ -21,7 +21,7 @@ impl SandboxFilesPort for AwsMicrovmEnvironment {
         if now_ms() >= installed.expires_at_ms {
             let reason = "physical target hard deadline reached";
             // Hard lifetime expiry is a confirmed physical loss, not an explicit logical
-            // termination. A default target may therefore get a fresh generation later, while an
+            // termination. An environment target may therefore get a fresh generation later, while an
             // additional target remains fenced by its durable Gone tombstone.
             self.confirm_provider_termination(&installed).await?;
             self.record_gone(&installed, reason).await?;
@@ -89,7 +89,10 @@ impl SandboxFilesPort for AwsMicrovmEnvironment {
         }
     }
 
-    async fn write(&self, request: SandboxFileWriteRequest) -> EnvironmentResult<SandboxFileWriteResult> {
+    async fn write(
+        &self,
+        request: SandboxFileWriteRequest,
+    ) -> EnvironmentResult<SandboxFileWriteResult> {
         if sandbox_file_write_request_digest(&request) != request.request_digest {
             return Err(invalid(
                 "sandbox file write request_digest is not canonical",

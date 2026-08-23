@@ -80,7 +80,7 @@ pub(crate) fn require_exact_root_seal(
         return Err(error(
             EnvironmentErrorCode::GenerationConflict,
             false,
-            "default sandbox must use the immutable prepared root seal",
+            "environment must use the immutable prepared root seal",
         ));
     }
     Ok(())
@@ -108,32 +108,72 @@ pub(crate) fn validate_prepared_binding_projection(
     binding: &SealedBinding,
     root_id: &str,
     session_id: &str,
-) -> EnvironmentResult<ValidatedPreparedBundle> {
+) -> EnvironmentResult<Vec<ValidatedPreparedBundle>> {
     if binding.root_id.as_str() != root_id || binding.session_id.as_str() != session_id {
         return Err(binding_error(
             "prepared binding is outside the exact root/session scope",
         ));
     }
     let descriptor = validate_managed_binding(binding)?;
-    if prepared.bundle_digests.len() != 1 || prepared.bundle_digests[0] != descriptor.bundle_digest
-    {
+    let expected = descriptor
+        .layers
+        .iter()
+        .map(|layer| layer.digest.as_str())
+        .collect::<HashSet<_>>();
+    let supplied = prepared
+        .bundle_digests
+        .iter()
+        .map(|digest| digest.as_str())
+        .collect::<HashSet<_>>();
+    if supplied.len() != prepared.bundle_digests.len() || supplied != expected {
         return Err(binding_error(
             "prepared bundle digests do not match the immutable binding descriptor",
         ));
     }
-    let descriptor_digest = canonical_digest(descriptor)
-        .map_err(|_| binding_error("bundle descriptor cannot be canonicalized"))?;
-    Ok(ValidatedPreparedBundle {
-        bytes: descriptor.bytes.get(),
-        descriptor_digest: descriptor_digest.to_string(),
-        digest: descriptor.bundle_digest.to_string(),
-    })
+    Ok(descriptor
+        .layers
+        .iter()
+        .map(|layer| ValidatedPreparedBundle {
+            bytes: layer.bytes.get(),
+            digest: layer.digest.to_string(),
+        })
+        .collect())
 }
 
 /// Rejects malformed or internally inconsistent immutable implementation metadata before it can
 /// become a durable binding definition. The guest repeats the byte/digest checks at installation,
 /// immediately before the first import of customer code.
-pub(crate) fn validate_managed_binding(binding: &SealedBinding) -> EnvironmentResult<&BundleDescriptor> {
+pub(crate) fn validate_managed_binding(
+    binding: &SealedBinding,
+) -> EnvironmentResult<&BundleDescriptor> {
+    if binding.extension.as_str() != "@aexhq/env-aws-microvm"
+        || binding.protocol != "environment/v1"
+        || binding.profile.kind != EnvironmentProfileKind::Computer
+        || binding.profile.platform != Some(EnvironmentProfilePlatform::LinuxArm64)
+        || binding.profile.network != EnvironmentProfileNetwork::Allowlist
+        || binding.profile.recovery != EnvironmentProfileRecovery::Retained
+    {
+        return Err(error(
+            EnvironmentErrorCode::CapabilityUnavailable,
+            false,
+            "the AWS environment declaration does not match this provider's authoritative profile",
+        ));
+    }
+    if binding.configuration.keys().any(|key| key != "region")
+        || binding.configuration.get("region").is_some_and(|region| {
+            region.as_str().is_none_or(|requested| {
+                std::env::var("AWS_REGION")
+                    .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+                    .map_or(true, |actual| actual != requested)
+            })
+        })
+    {
+        return Err(error(
+            EnvironmentErrorCode::CapabilityUnavailable,
+            false,
+            "the AWS environment configuration is unsupported by this provider instance",
+        ));
+    }
     let descriptor = binding.bundle.as_ref().ok_or_else(|| {
         error(
             EnvironmentErrorCode::CapabilityUnavailable,
@@ -151,12 +191,25 @@ pub(crate) fn validate_managed_binding(binding: &SealedBinding) -> EnvironmentRe
             "the AWS environment accepts only linux-arm64 artifacts with an exact contract and environment seal",
         ));
     }
-    if descriptor.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
-        || descriptor.object.bytes != descriptor.bytes.get()
-        || descriptor.object.sha256 != descriptor.bundle_digest
+    let mut layer_bytes = 0_u64;
+    let mut layer_digests = HashSet::with_capacity(descriptor.layers.len());
+    for layer in &descriptor.layers {
+        layer_bytes = layer_bytes.saturating_add(layer.bytes.get());
+        if layer.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
+            || layer.object.bytes != layer.bytes.get()
+            || layer.object.sha256 != layer.digest
+            || !layer_digests.insert(layer.digest.as_str())
+        {
+            return Err(binding_error(
+                "artifact layer size or object digest conflicts with its immutable seal",
+            ));
+        }
+    }
+    if layer_bytes != descriptor.bytes.get()
+        || descriptor.bytes.get() > brain_protocol::MAX_SESSION_BUNDLE_BYTES as u64
     {
         return Err(binding_error(
-            "bundle descriptor size or object digest conflicts with its immutable bundle seal",
+            "artifact manifest size conflicts with its immutable layers",
         ));
     }
     if descriptor.required_env.len() > brain_protocol::MAX_SESSION_SECRET_NAMES {
@@ -190,10 +243,10 @@ pub(crate) fn merge_validated_prepared_bundle(
     bundle: ValidatedPreparedBundle,
 ) -> EnvironmentResult<()> {
     if let Some(existing) = required.get(&bundle.digest)
-        && existing.descriptor_digest != bundle.descriptor_digest
+        && existing.bytes != bundle.bytes
     {
         return Err(binding_error(
-            "one bundle digest is sealed by conflicting immutable descriptors",
+            "one artifact layer digest is sealed with conflicting byte lengths",
         ));
     }
     required.insert(bundle.digest.clone(), bundle);

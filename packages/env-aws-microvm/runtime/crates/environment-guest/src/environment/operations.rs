@@ -45,6 +45,7 @@ impl Environment {
         if reservation == Reservation::New {
             let execution_request = BundleExecution {
                 bundle_path: execution.bundle_path,
+                node_path: execution.node_path,
                 descriptor: execution.descriptor,
                 envelope: request.envelope.clone(),
                 workspace: self.cfg.workspace.clone(),
@@ -83,7 +84,10 @@ impl Environment {
         self.observe_inner(request.operation, request.wait_ms).await
     }
 
-    pub async fn cancel(&self, request: CancelRequest) -> Result<CancellationReceipt, EnvironmentError> {
+    pub async fn cancel(
+        &self,
+        request: CancelRequest,
+    ) -> Result<CancellationReceipt, EnvironmentError> {
         let (accepted, cancellation) = {
             let mut operations = self.operations.book.lock().await;
             validate_operation_ref(
@@ -395,6 +399,7 @@ impl Environment {
         }
         Ok(ValidatedExecution {
             bundle_path: binding.bundle_path.clone(),
+            node_path: binding.node_path.clone(),
             descriptor,
             environment,
             identity: binding.identity,
@@ -638,6 +643,7 @@ impl Environment {
 
 pub(crate) struct ValidatedExecution {
     pub(crate) bundle_path: PathBuf,
+    pub(crate) node_path: PathBuf,
     pub(crate) descriptor: BundleDescriptor,
     pub(crate) environment: HashMap<String, String>,
     pub(crate) identity: Option<ToolIdentity>,

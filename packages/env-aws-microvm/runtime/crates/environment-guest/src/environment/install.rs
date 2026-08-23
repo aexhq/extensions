@@ -2,9 +2,24 @@
 
 use super::*;
 
+fn artifact_path(root: &Path, path: &str) -> Result<PathBuf, EnvironmentError> {
+    let relative = Path::new(path)
+        .strip_prefix("/")
+        .map_err(|_| invalid("artifact path must be absolute"))?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(invalid("artifact path must stay inside its immutable root"));
+    }
+    Ok(root.join(relative))
+}
+
 pub(crate) struct InstalledBinding {
     pub(crate) seal: SealedBinding,
     pub(crate) bundle_path: PathBuf,
+    pub(crate) node_path: PathBuf,
     pub(crate) identity: Option<ToolIdentity>,
 }
 
@@ -111,14 +126,20 @@ impl Environment {
         if metadata.descriptor.target != ArtifactTarget::LinuxArm64 {
             return Err(invalid("the AWS environment accepts linux-arm64 artifacts"));
         }
-        if metadata.descriptor.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
-            || metadata.descriptor.bytes.get() != bytes.len() as u64
-            || metadata.descriptor.object.bytes != bytes.len() as u64
-            || metadata.descriptor.object.sha256 != metadata.descriptor.bundle_digest
-            || hex::encode(Sha256::digest(bytes)) != metadata.descriptor.bundle_digest.as_str()
+        let layer = metadata
+            .descriptor
+            .layers
+            .iter()
+            .find(|layer| layer.digest.as_str() == metadata.layer_digest)
+            .ok_or_else(|| invalid("artifact layer is absent from the immutable manifest"))?;
+        if layer.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
+            || layer.bytes.get() != bytes.len() as u64
+            || layer.object.bytes != bytes.len() as u64
+            || layer.object.sha256 != layer.digest
+            || hex::encode(Sha256::digest(bytes)) != layer.digest.as_str()
         {
             return Err(invalid(
-                "bundle bytes do not match the immutable descriptor",
+                "artifact layer bytes do not match the immutable descriptor",
             ));
         }
         let required_env = metadata
@@ -138,24 +159,20 @@ impl Environment {
                 "bundle descriptor contains an invalid or reserved environment name",
             ));
         }
-        let digest = metadata.descriptor.bundle_digest.to_string();
-        let mut bundles = self.artifacts.bundles.write().await;
-        if let Some((existing, _)) = bundles.get(&digest) {
-            return if canonical_equal(existing, &metadata.descriptor)? {
-                Ok(InstallReceipt {
-                    installed: true,
-                    replayed: true,
-                })
-            } else {
-                Err(environment_error(
-                    EnvironmentErrorCode::BindingConflict,
-                    false,
-                    "bundle digest is already installed with a different descriptor",
-                ))
-            };
+        let digest = layer.digest.to_string();
+        let mut layers = self.artifacts.layers.write().await;
+        if layers.contains_key(&digest) {
+            return Ok(InstallReceipt {
+                installed: true,
+                replayed: true,
+            });
         }
-        let path = self.cfg.tool_dir.join(format!("{digest}.mjs"));
-        let temporary = self.cfg.tool_dir.join(format!(".{digest}.install"));
+        let layer_dir = self.cfg.tool_dir.join("layers");
+        tokio::fs::create_dir_all(&layer_dir)
+            .await
+            .map_err(|_| unavailable("could not create the artifact-layer directory"))?;
+        let path = layer_dir.join(&digest);
+        let temporary = layer_dir.join(format!(".{digest}.install"));
         let mut options = tokio::fs::OpenOptions::new();
         options.create_new(true).write(true);
         #[cfg(unix)]
@@ -179,11 +196,87 @@ impl Environment {
         tokio::fs::rename(&temporary, &path)
             .await
             .map_err(|_| unavailable("could not install the Tool bundle"))?;
-        bundles.insert(digest, (metadata.descriptor, path));
+        layers.insert(digest, path);
         Ok(InstallReceipt {
             installed: true,
             replayed: false,
         })
+    }
+
+    async fn materialize_bundle(
+        &self,
+        descriptor: &BundleDescriptor,
+        layers: &HashMap<String, PathBuf>,
+    ) -> Result<PathBuf, EnvironmentError> {
+        const NODE_RUNTIME_DIGEST: &str =
+            "fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8";
+        let root = self
+            .cfg
+            .tool_dir
+            .join("artifacts")
+            .join(descriptor.bundle_digest.as_str());
+        if tokio::fs::try_exists(&root).await.unwrap_or(false) {
+            return Ok(root);
+        }
+        let temporary = root.with_extension(format!("{}.install", std::process::id()));
+        tokio::fs::create_dir_all(&temporary)
+            .await
+            .map_err(|_| unavailable("could not stage the Tool artifact"))?;
+        for layer in &descriptor.layers {
+            let source = layers.get(layer.digest.as_str()).ok_or_else(|| {
+                invalid("binding references an artifact layer that is not installed")
+            })?;
+            let destination = artifact_path(&temporary, layer.mount_path.as_str())?;
+            match layer.unpack {
+                brain_protocol::environment::ArtifactLayerDescriptorUnpack::File => {
+                    if let Some(parent) = destination.parent() {
+                        tokio::fs::create_dir_all(parent)
+                            .await
+                            .map_err(|_| unavailable("could not create an artifact directory"))?;
+                    }
+                    tokio::fs::copy(source, &destination)
+                        .await
+                        .map_err(|_| unavailable("could not materialize an artifact file"))?;
+                }
+                brain_protocol::environment::ArtifactLayerDescriptorUnpack::TarXz => {
+                    if layer.digest.as_str() != NODE_RUNTIME_DIGEST
+                        || layer.mount_path.as_str() != "/runtime"
+                    {
+                        return Err(invalid(
+                            "the AWS environment accepts only the pinned Node runtime layer",
+                        ));
+                    }
+                    tokio::fs::create_dir_all(&destination)
+                        .await
+                        .map_err(|_| unavailable("could not create the runtime directory"))?;
+                    let status = tokio::process::Command::new("/usr/bin/tar")
+                        .args(["-xJf"])
+                        .arg(source)
+                        .args([
+                            "--strip-components=1",
+                            "--no-same-owner",
+                            "--no-same-permissions",
+                            "-C",
+                        ])
+                        .arg(&destination)
+                        .status()
+                        .await
+                        .map_err(|_| unavailable("could not start artifact extraction"))?;
+                    if !status.success() {
+                        return Err(invalid("the pinned runtime layer could not be extracted"));
+                    }
+                }
+            }
+        }
+        if let Some(parent) = root.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|_| unavailable("could not create the artifact directory"))?;
+        }
+        tokio::fs::rename(&temporary, &root)
+            .await
+            .map_err(|_| unavailable("could not publish the Tool artifact"))?;
+        Ok(root)
     }
 
     pub async fn install_binding(
@@ -219,12 +312,44 @@ impl Environment {
                 "bundle and binding environment names differ",
             ));
         }
-        let bundles = self.artifacts.bundles.read().await;
-        let bundle_path = match bundles.get(descriptor.bundle_digest.as_str()) {
-            Some((installed, path)) if canonical_equal(installed, descriptor)? => path.clone(),
-            _ => return Err(invalid("binding references a bundle that is not installed")),
+        let bundle_root = {
+            let bundles = self.artifacts.bundles.read().await;
+            match bundles.get(descriptor.bundle_digest.as_str()) {
+                Some((installed, path)) if canonical_equal(installed, descriptor)? => {
+                    Some(path.clone())
+                }
+                Some(_) => {
+                    return Err(environment_error(
+                        EnvironmentErrorCode::BindingConflict,
+                        false,
+                        "artifact digest is already installed with a different manifest",
+                    ));
+                }
+                None => None,
+            }
         };
-        drop(bundles);
+        let bundle_root = match bundle_root {
+            Some(path) => path,
+            None => {
+                let layers = self.artifacts.layers.read().await;
+                let root = self.materialize_bundle(descriptor, &layers).await?;
+                drop(layers);
+                self.artifacts.bundles.write().await.insert(
+                    descriptor.bundle_digest.to_string(),
+                    (descriptor.clone(), root.clone()),
+                );
+                root
+            }
+        };
+        let bundle_path = artifact_path(&bundle_root, descriptor.execute_path.as_str())?;
+        let node_path = bundle_root.join("runtime/bin/node");
+        if !tokio::fs::try_exists(&bundle_path).await.unwrap_or(false)
+            || !tokio::fs::try_exists(&node_path).await.unwrap_or(false)
+        {
+            return Err(invalid(
+                "materialized artifact entrypoint or runtime is absent",
+            ));
+        }
         let requires_undeclared_secret = self
             .artifacts
             .secrets
@@ -270,6 +395,7 @@ impl Environment {
             InstalledBinding {
                 seal: request.binding,
                 bundle_path,
+                node_path,
                 identity,
             },
         );

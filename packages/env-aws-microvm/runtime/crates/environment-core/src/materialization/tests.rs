@@ -53,7 +53,7 @@ fn physical(target_ref: impl Into<String>, generation: impl Into<String>) -> Phy
 
 fn request(now_ms: u64, reservation: &str, generation: &str) -> AcquireTarget {
     AcquireTarget {
-        key: TargetKey::for_default_target("root-1").unwrap(),
+        key: TargetKey::for_environment("root-1", "binding-1").unwrap(),
         spec: target_spec(ConnectorClass::Allowlist),
         reservation_id: reservation.into(),
         generation: generation.into(),
@@ -428,11 +428,11 @@ async fn different_target_spec_is_a_permanent_conflict() {
 async fn plane_capacity_is_reserved_atomically_and_refunded_once() {
     let registry = MemoryTargetRegistry::with_capacity(2_048);
     let mut first = request(1, "reservation-1", "generation-1");
-    first.key = TargetKey::for_default_target("root-1").unwrap();
+    first.key = TargetKey::for_environment("root-1", "binding-1").unwrap();
     let mut second = request(1, "reservation-2", "generation-2");
-    second.key = TargetKey::for_default_target("root-2").unwrap();
+    second.key = TargetKey::for_environment("root-2", "binding-2").unwrap();
     let mut third = request(1, "reservation-3", "generation-3");
-    third.key = TargetKey::for_default_target("root-3").unwrap();
+    third.key = TargetKey::for_environment("root-3", "binding-3").unwrap();
     let AcquireOutcome::Acquired(first_lease) = registry.acquire(&first).await.unwrap() else {
         panic!("first target reserves")
     };
@@ -481,7 +481,9 @@ async fn scheduled_hard_deadline_reconciliation_reclaims_abandoned_capacity() {
             &format!("reservation-{index}"),
             &format!("generation-{index}"),
         );
-        target.key = TargetKey::for_default_target(format!("root-{index}")).unwrap();
+        target.key =
+            TargetKey::for_environment(format!("root-{index}"), format!("binding-{index}"))
+                .unwrap();
         let AcquireOutcome::Acquired(lease) = registry.acquire(&target).await.unwrap() else {
             panic!("abandoned target reserves")
         };
@@ -643,10 +645,10 @@ async fn terminated_additional_id_remains_fenced_until_explicit_root_purge() {
 
 #[test]
 fn identifiers_match_the_brain_contract_boundary() {
-    assert!(TargetKey::for_default_target("A._:-9").is_ok());
+    assert!(TargetKey::for_environment("A._:-9", "binding-1").is_ok());
     for invalid in ["", "-starts-wrong", "has space", "é", &"a".repeat(129)] {
         assert!(
-            TargetKey::for_default_target(invalid).is_err(),
+            TargetKey::for_environment(invalid, "binding-1").is_err(),
             "{invalid:?}"
         );
     }

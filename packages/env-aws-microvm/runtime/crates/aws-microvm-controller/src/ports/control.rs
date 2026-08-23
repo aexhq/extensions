@@ -6,7 +6,12 @@ use crate::*;
 impl SandboxControlPort for AwsMicrovmEnvironment {
     async fn create(&self, request: CreateSandboxRequest) -> EnvironmentResult<SandboxStatus> {
         require_additional_target(&request.target)?;
-        let preparation = self.preparation(request.target.session_id.as_str()).await?;
+        let preparation = self
+            .preparation(
+                request.target.session_id.as_str(),
+                request.target.binding_ref.as_str(),
+            )
+            .await?;
         if preparation.request.root_id != request.target.root_id {
             return Err(binding_error(
                 "additional sandbox target does not belong to the prepared root",
@@ -56,7 +61,10 @@ impl SandboxControlPort for AwsMicrovmEnvironment {
         }
     }
 
-    async fn write_stdin(&self, request: WriteStdinRequest) -> EnvironmentResult<WriteStdinReceipt> {
+    async fn write_stdin(
+        &self,
+        request: WriteStdinRequest,
+    ) -> EnvironmentResult<WriteStdinReceipt> {
         require_additional_target(&request.target)?;
         if write_stdin_request_digest(&request) != request.request_digest {
             return Err(invalid("write_stdin request_digest is not canonical"));

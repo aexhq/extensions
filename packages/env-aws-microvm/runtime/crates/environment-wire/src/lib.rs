@@ -211,6 +211,7 @@ pub struct InstallBindingRequest {
 #[serde(deny_unknown_fields)]
 pub struct InstallBundleMetadata {
     pub descriptor: BundleDescriptor,
+    pub layer_digest: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

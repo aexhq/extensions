@@ -48,7 +48,7 @@ fn sandbox_identity() -> ToolIdentity {
 fn default_file_target() -> SandboxTarget {
     serde_json::from_value(serde_json::json!({
         "binding_ref": "file-binding-1",
-        "kind": "default",
+        "kind": "environment",
         "root_id": "root-1",
         "session_id": "session-1"
     }))
@@ -137,13 +137,17 @@ async fn file_write_lost_success_replays_and_conflict_never_mutates_workspace() 
     let config = Config::for_test(directory.path());
     let workspace = config.workspace.clone();
     let environment = Environment::new(config).unwrap();
-    environment.arm("target-1".into(), run_payload(NetworkCeiling::None))
+    environment
+        .arm("target-1".into(), run_payload(NetworkCeiling::None))
         .await
         .unwrap();
 
     let identity = file_effect_identity("file-operation-1", 'a');
     assert!(matches!(
-        environment.reserve_file_effect(identity.clone()).await.unwrap(),
+        environment
+            .reserve_file_effect(identity.clone())
+            .await
+            .unwrap(),
         FileEffectReservation::New
     ));
     let mut request = GuestFileWriteRequest {
@@ -156,7 +160,8 @@ async fn file_write_lost_success_replays_and_conflict_never_mutates_workspace() 
         },
         target: default_file_target(),
     };
-    let FileEffectStoredResult::Write(first) = environment.write_file(request.clone()).await.unwrap()
+    let FileEffectStoredResult::Write(first) =
+        environment.write_file(request.clone()).await.unwrap()
     else {
         panic!("file write returned a copy result");
     };
@@ -172,7 +177,8 @@ async fn file_write_lost_success_replays_and_conflict_never_mutates_workspace() 
     request.source = GuestFileWriteSource::Inline {
         content_base64: base64::engine::general_purpose::STANDARD.encode(b"second"),
     };
-    let FileEffectStoredResult::Write(replayed) = environment.write_file(request).await.unwrap() else {
+    let FileEffectStoredResult::Write(replayed) = environment.write_file(request).await.unwrap()
+    else {
         panic!("file write replay returned a copy result");
     };
     assert!(replayed.replayed);
@@ -201,11 +207,15 @@ async fn file_write_intent_only_restart_is_unknown_and_never_mutates_workspace()
     let identity = file_effect_identity("file-operation-restart", 'a');
     {
         let environment = Environment::new(config.clone()).unwrap();
-        environment.arm("target-1".into(), run_payload(NetworkCeiling::None))
+        environment
+            .arm("target-1".into(), run_payload(NetworkCeiling::None))
             .await
             .unwrap();
         assert!(matches!(
-            environment.reserve_file_effect(identity.clone()).await.unwrap(),
+            environment
+                .reserve_file_effect(identity.clone())
+                .await
+                .unwrap(),
             FileEffectReservation::New
         ));
     }
@@ -245,7 +255,7 @@ fn exact_max_inline_terminal_fits_the_reserved_full_observation() {
             "request_digest": "a".repeat(64),
             "target": {
                 "binding_ref": "b".repeat(128),
-                "kind": "default",
+                "kind": "environment",
                 "root_id": "t".repeat(128),
                 "session_id": "s".repeat(128)
             },
@@ -273,60 +283,96 @@ fn exact_max_inline_terminal_fits_the_reserved_full_observation() {
 async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String) {
     let directory = tempfile::tempdir().unwrap();
     let environment = Environment::new(Config::for_test(directory.path())).unwrap();
-    environment.arm("mvm-1".into(), run_payload(NetworkCeiling::None))
+    environment
+        .arm("mvm-1".into(), run_payload(NetworkCeiling::None))
         .await
         .unwrap();
     let bytes = br#"export default {kind:'tool-runtime/v1',name:'fixture',execute: async () => ({ok:true})};"#;
     let digest = hex::encode(Sha256::digest(bytes));
+    let node = b"#!/bin/sh\nexit 0\n";
+    let node_digest = hex::encode(Sha256::digest(node));
     let descriptor: BundleDescriptor = serde_json::from_value(serde_json::json!({
         "bundle_digest": digest,
-        "bytes": bytes.len(),
+        "bytes": bytes.len() + node.len(),
         "contract_digest": "a".repeat(64),
-        "object": {
+        "layers": [{
+            "digest": node_digest,
+            "bytes": node.len(),
+            "media_type": "application/javascript+esm",
+            "mount_path": "/runtime/bin/node",
+            "unpack": "file",
+            "object": {"bytes": node.len(), "object_id": "object-node", "sha256": node_digest}
+        }, {
+            "digest": digest,
             "bytes": bytes.len(),
-            "object_id": "object-1",
-            "sha256": digest
-        },
+            "media_type": "application/javascript+esm",
+            "mount_path": "/tool/runtime.mjs",
+            "unpack": "file",
+            "object": {"bytes": bytes.len(), "object_id": "object-code", "sha256": digest}
+        }],
         "required_env": ["FIXTURE_SECRET"],
         "target": "linux-arm64",
-        "execute_path": format!("/artifacts/{digest}/execute"),
+        "execute_path": "/tool/runtime.mjs",
         "environment_name": "workspace",
         "tool_name": "fixture"
     }))
     .unwrap();
-    environment.install_bundle(
-        InstallBundleMetadata {
-            descriptor: descriptor.clone(),
-        },
-        bytes,
-    )
-    .await
-    .unwrap();
+    environment
+        .install_bundle(
+            InstallBundleMetadata {
+                descriptor: descriptor.clone(),
+                layer_digest: node_digest,
+            },
+            node,
+        )
+        .await
+        .unwrap();
+    environment
+        .install_bundle(
+            InstallBundleMetadata {
+                descriptor: descriptor.clone(),
+                layer_digest: digest.clone(),
+            },
+            bytes,
+        )
+        .await
+        .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        let installed = std::fs::metadata(environment.cfg.tool_dir.join(format!("{digest}.mjs"))).unwrap();
+        let installed =
+            std::fs::metadata(environment.cfg.tool_dir.join("layers").join(&digest)).unwrap();
         assert_eq!(installed.permissions().mode() & 0o777, 0o640);
     }
     let binding: SealedBinding = serde_json::from_value(serde_json::json!({
         "binding_id": "binding-1",
         "bundle": descriptor,
         "capability": "fixture",
+        "configuration": {},
         "contract_digest": "a".repeat(64),
+        "extension": "@aexhq/env-aws-microvm",
         "implementation_identity": "b".repeat(64),
         "policy_digest": "c".repeat(64),
         "environment_name": "workspace",
+        "profile": {
+            "kind":"computer",
+            "platform":"linux-arm64",
+            "network":"allowlist",
+            "recovery":"retained"
+        },
+        "protocol":"environment/v1",
         "required_capabilities": ["execution"],
         "root_id": "root-1",
         "session_id": "session-1"
     }))
     .unwrap();
-    environment.install_binding(InstallBindingRequest {
-        binding_ref: "binding-ref-1".into(),
-        binding,
-    })
-    .await
-    .unwrap();
+    environment
+        .install_binding(InstallBindingRequest {
+            binding_ref: "binding-ref-1".into(),
+            binding,
+        })
+        .await
+        .unwrap();
     (directory, environment, digest)
 }
 
@@ -334,7 +380,8 @@ async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String)
 async fn root_network_and_resource_seals_cannot_be_widened() {
     let directory = tempfile::tempdir().unwrap();
     let environment = Environment::new(Config::for_test(directory.path())).unwrap();
-    environment.arm("mvm-1".into(), run_payload(NetworkCeiling::None))
+    environment
+        .arm("mvm-1".into(), run_payload(NetworkCeiling::None))
         .await
         .unwrap();
     let error = environment
@@ -361,7 +408,13 @@ async fn secrets_are_declared_exact_replay_only_and_absent_from_receipts() {
     };
     let first = environment.install_secrets(request()).await.unwrap();
     assert!(!first.replayed);
-    assert!(environment.install_secrets(request()).await.unwrap().replayed);
+    assert!(
+        environment
+            .install_secrets(request())
+            .await
+            .unwrap()
+            .replayed
+    );
     let conflict = environment
         .install_secrets(InstallSecretsRequest {
             session_id: "session-1".into(),
@@ -403,7 +456,8 @@ async fn guest_repeats_the_exact_brain_secret_document_boundary() {
     exact_environment.install_secrets(exact).await.unwrap();
 
     let oversized_directory = tempfile::tempdir().unwrap();
-    let oversized_environment = Environment::new(Config::for_test(oversized_directory.path())).unwrap();
+    let oversized_environment =
+        Environment::new(Config::for_test(oversized_directory.path())).unwrap();
     oversized_environment
         .arm("mvm-oversized".into(), run_payload(NetworkCeiling::None))
         .await
@@ -484,7 +538,7 @@ fn sandbox_request(
         },
         "target": {
             "binding_ref": "sandbox-binding-1",
-            "kind": "default",
+            "kind": "environment",
             "root_id": "root-1",
             "session_id": "session-1"
         }
@@ -496,13 +550,14 @@ fn sandbox_request(
 
 #[cfg(unix)]
 async fn wait_terminal(environment: &Environment, operation: OperationRef) -> OperationObservation {
-    environment.observe(ObserveRequest {
-        cursor: "0".parse().unwrap(),
-        operation,
-        wait_ms: 5_000,
-    })
-    .await
-    .unwrap()
+    environment
+        .observe(ObserveRequest {
+            cursor: "0".parse().unwrap(),
+            operation,
+            wait_ms: 5_000,
+        })
+        .await
+        .unwrap()
 }
 
 #[cfg(unix)]
@@ -512,7 +567,9 @@ async fn sandbox_exact_replay_and_conflicting_digest_never_repeat_the_effect() {
     let first = sandbox_request("sandbox-execution-1", "printf first >> effect.txt", false);
     let receipt = environment.execute_sandbox(first.clone()).await.unwrap();
     assert_eq!(
-        wait_terminal(&environment, receipt.operation.clone()).await.state,
+        wait_terminal(&environment, receipt.operation.clone())
+            .await
+            .state,
         ContractOperationState::Terminal
     );
 
@@ -552,13 +609,15 @@ async fn terminal_ack_replays_and_permanently_fences_resubmission() {
         terminal_digest: terminal.terminal_digest,
     };
     assert!(
-        environment.acknowledge_terminal(acknowledgement.clone())
+        environment
+            .acknowledge_terminal(acknowledgement.clone())
             .await
             .unwrap()
             .acknowledged
     );
     assert!(
-        environment.acknowledge_terminal(acknowledgement)
+        environment
+            .acknowledge_terminal(acknowledgement)
             .await
             .unwrap()
             .acknowledged
@@ -590,7 +649,10 @@ async fn write_stdin_is_exact_pair_idempotent() {
         "IFS= read -r line; printf '%s' \"$line\" > stdin.txt",
         true,
     );
-    let receipt = environment.execute_sandbox(execution.clone()).await.unwrap();
+    let receipt = environment
+        .execute_sandbox(execution.clone())
+        .await
+        .unwrap();
     let mut write: WriteStdinRequest = serde_json::from_value(serde_json::json!({
         "execution_id": execution.execution_id.clone(),
         "expected_generation": "generation-1",
@@ -642,7 +704,10 @@ async fn write_stdin_is_exact_pair_idempotent() {
 async fn write_stdin_supports_explicit_eof_and_observation_only_poll() {
     let (_directory, environment, _digest) = prepared_environment().await;
     let execution = sandbox_request("sandbox-execution-eof", "cat > stdin-eof.txt", true);
-    let submitted = environment.execute_sandbox(execution.clone()).await.unwrap();
+    let submitted = environment
+        .execute_sandbox(execution.clone())
+        .await
+        .unwrap();
     let mut close: WriteStdinRequest = serde_json::from_value(serde_json::json!({
         "eof": true,
         "execution_id": execution.execution_id.clone(),
@@ -686,11 +751,12 @@ async fn write_stdin_supports_explicit_eof_and_observation_only_poll() {
     assert!(!polled.accepted);
     assert_eq!(polled.observation.state, ContractOperationState::Terminal);
     assert_eq!(environment.stdin.book.lock().await.records.len(), 2);
-    environment.acknowledge_terminal(AcknowledgeTerminalRequest {
-        operation: submitted.operation,
-        terminal_digest: terminal.terminal.unwrap().terminal_digest,
-    })
-    .await
-    .unwrap();
+    environment
+        .acknowledge_terminal(AcknowledgeTerminalRequest {
+            operation: submitted.operation,
+            terminal_digest: terminal.terminal.unwrap().terminal_digest,
+        })
+        .await
+        .unwrap();
     assert!(environment.stdin.book.lock().await.records.is_empty());
 }

@@ -31,8 +31,9 @@ test("official tools are prepared computer extensions with explicit requirements
 
 test("the prepared runtime uses an immutable absolute entrypoint", async () => {
   const manifest = JSON.parse(await readFile(new URL("../dist/bash.artifact.json", import.meta.url), "utf8"));
-  assert.equal(manifest.execute, `/artifacts/${manifest.digest}/execute`);
-  const runtimeModule = (await import(new URL(`../dist/${manifest.blobs[0].file}`, import.meta.url))).default;
+  assert.equal(manifest.execute, "/tool/runtime.mjs");
+  const code = manifest.blobs.find((blob) => blob.file.endsWith(".mjs"));
+  const runtimeModule = (await import(new URL(`../dist/${code.file}`, import.meta.url))).default;
   assert.equal(runtimeModule.kind, "tool-runtime/v1");
   assert.equal(runtimeModule.name, "bash");
   assert.equal(typeof runtimeModule.execute, "function");
@@ -43,6 +44,8 @@ test("SDK creation binds every official tool to the one compatible environment",
   const aex = new Aex({
     apiKey: "aex_sk_test",
     fetch: async (_input, init) => {
+      if (init.method === "HEAD") return new Response(null, { status: 404 });
+      if (init.method === "PUT") return new Response(null, { status: 201 });
       body = JSON.parse(init.body);
       return Response.json({
         id: "ses_01",

@@ -58,7 +58,10 @@ impl AwsEnvironmentPlane {
             .cloned()
     }
 
-    pub(crate) async fn sign_capability(&self, capability: &Capability) -> EnvironmentResult<String> {
+    pub(crate) async fn sign_capability(
+        &self,
+        capability: &Capability,
+    ) -> EnvironmentResult<String> {
         use aws_sdk_kms::primitives::Blob;
         use aws_sdk_kms::types::{MessageType, SigningAlgorithmSpec};
         let payload = unsigned_capability_bytes(capability)

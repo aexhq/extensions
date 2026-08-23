@@ -56,7 +56,7 @@ impl InstalledTarget {
 }
 
 /// Why a closed target reached its terminal state. The stored disposition decides whether the
-/// shared default target may be replaced after confirmed loss.
+/// named environment target may be replaced after confirmed loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disposition {
     /// The provider lost the physical target (crash, hard deadline, external loss).
@@ -191,7 +191,7 @@ pub struct AcquireTarget {
     pub lease_duration_ms: u64,
     /// Maximum physical target lifetime. It must fit strictly inside the uncertainty lease.
     pub target_lifetime_ms: u64,
-    /// Only the shared default target may get a fresh generation after confirmed loss.
+    /// Only a named environment target may get a fresh generation after confirmed loss.
     pub replace_after_loss: bool,
 }
 
@@ -208,7 +208,7 @@ impl AcquireTarget {
         if self.attempt_duration_ms == 0 || self.attempt_duration_ms >= self.lease_duration_ms {
             return Err(MaterializationError::InvalidLease);
         }
-        if self.replace_after_loss && !self.key.is_default() {
+        if self.replace_after_loss && !self.key.is_environment() {
             return Err(MaterializationError::InvalidReplacement);
         }
         Ok(())

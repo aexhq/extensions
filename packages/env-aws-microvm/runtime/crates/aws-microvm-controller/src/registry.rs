@@ -220,7 +220,7 @@ impl DynamoTargetRegistry {
         }))
     }
 
-    async fn replace_gone_default(
+    async fn replace_gone_environment(
         &self,
         current: &DurableTargetRecord,
         request: &AcquireTarget,
@@ -280,7 +280,7 @@ impl DynamoTargetRegistry {
             .transact_items(TransactWriteItem::builder().update(capacity).build())
             .send()
             .await;
-        transaction_result("replace gone default", result)
+        transaction_result("replace gone environment", result)
     }
 
     /// Removes one already-unaccounted terminal target during explicit root deletion. Capacity
@@ -438,7 +438,10 @@ impl TargetReservations for DynamoTargetRegistry {
                     disposition: Disposition::Lost,
                     ..
                 } if request.replace_after_loss => {
-                    if self.replace_gone_default(&current, request, &lease).await? {
+                    if self
+                        .replace_gone_environment(&current, request, &lease)
+                        .await?
+                    {
                         return Ok(AcquireOutcome::Acquired(lease));
                     }
                     // A transaction cancellation also represents a target-row race, so never
@@ -643,7 +646,7 @@ impl TargetDirectory for DynamoTargetRegistry {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<TargetPage, MaterializationError> {
-        TargetKey::for_default_target(root_id)?.validate()?;
+        TargetKey::for_environment(root_id, "validation")?.validate()?;
         let limit = limit.clamp(1, MAX_TARGET_PAGE);
         let start_key = cursor.map(|cursor| {
             HashMap::from([(ROOT_ID.into(), s(root_id)), (TARGET_KEY.into(), s(cursor))])
@@ -998,7 +1001,7 @@ mod tests {
 
     fn lease() -> MaterializationLease {
         AcquireTarget {
-            key: TargetKey::for_default_target("root-1").unwrap(),
+            key: TargetKey::for_environment("root-1", "binding-1").unwrap(),
             spec: TargetSpec::new(
                 ConnectorClass::Allowlist,
                 "image-1",

@@ -30,7 +30,10 @@ impl Environment {
         })
     }
 
-    pub async fn stat_file(&self, request: SandboxFileRequest) -> Result<FileEntry, EnvironmentError> {
+    pub async fn stat_file(
+        &self,
+        request: SandboxFileRequest,
+    ) -> Result<FileEntry, EnvironmentError> {
         self.fence(&request.target, request.expected_generation.as_str())
             .await?;
         let files = self.workspace_files()?;

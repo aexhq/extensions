@@ -20,7 +20,9 @@ enum SubmitRoute<'a> {
     Lazy,
 }
 
-fn submit_route(envelope: &brain_protocol::environment::OperationEnvelope) -> EnvironmentResult<SubmitRoute<'_>> {
+fn submit_route(
+    envelope: &brain_protocol::environment::OperationEnvelope,
+) -> EnvironmentResult<SubmitRoute<'_>> {
     match (&envelope.target_ref, &envelope.generation) {
         (Some(target_ref), Some(generation)) => Ok(SubmitRoute::Established {
             target_ref: target_ref.as_str(),
@@ -57,7 +59,9 @@ pub struct AwsMicrovmEnvironment {
 impl AwsMicrovmEnvironment {
     pub async fn from_env() -> anyhow::Result<Arc<Self>> {
         let cfg = AwsEnvironmentConfig::from_env()?;
-        Ok(Self::with_plane(Arc::new(AwsEnvironmentPlane::from_env(cfg).await?)))
+        Ok(Self::with_plane(Arc::new(
+            AwsEnvironmentPlane::from_env(cfg).await?,
+        )))
     }
 
     pub fn with_plane(plane: Arc<AwsEnvironmentPlane>) -> Arc<Self> {
@@ -98,7 +102,10 @@ impl AwsMicrovmEnvironment {
 
     /// Completes the deliberate Brain↔Environment composition cycle. It must be called before a session
     /// with declared secrets first materializes; replacing an installed callback is refused.
-    pub fn attach_secret_delivery(&self, port: Arc<dyn SecretDeliveryPort>) -> EnvironmentResult<()> {
+    pub fn attach_secret_delivery(
+        &self,
+        port: Arc<dyn SecretDeliveryPort>,
+    ) -> EnvironmentResult<()> {
         let mut slot = self
             .secret_delivery
             .write()
@@ -128,7 +135,7 @@ impl AwsMicrovmEnvironment {
     pub(crate) async fn validate_prepared_bindings(
         &self,
         request: &PrepareSessionRequest,
-    ) -> EnvironmentResult<HashMap<String, ValidatedPreparedBundle>> {
+    ) -> EnvironmentResult<(HashMap<String, ValidatedPreparedBundle>, String)> {
         let mut seen = HashSet::with_capacity(request.bindings.len());
         for prepared in &request.bindings {
             if !seen.insert(prepared.binding_ref.to_string()) {
@@ -141,12 +148,13 @@ impl AwsMicrovmEnvironment {
                 let binding = self
                     .binding(request.root_id.as_str(), prepared.binding_ref.as_str())
                     .await?;
-                validate_prepared_binding_projection(
+                let layers = validate_prepared_binding_projection(
                     &prepared,
                     &binding,
                     request.root_id.as_str(),
                     request.session_id.as_str(),
-                )
+                )?;
+                Ok((binding.environment_name.to_string(), layers))
             },
         ))
         // Preparation is a cold control operation, but validating a large fixed Tool set one
@@ -156,17 +164,42 @@ impl AwsMicrovmEnvironment {
         .await;
 
         let mut required = HashMap::with_capacity(validations.len());
+        let mut environment_name = None::<String>;
         for validation in validations {
-            merge_validated_prepared_bundle(&mut required, validation?)?;
+            let (name, layers) = validation?;
+            if environment_name
+                .replace(name.clone())
+                .is_some_and(|current| current != name)
+            {
+                return Err(binding_error(
+                    "one preparation cannot span logical environments",
+                ));
+            }
+            for layer in layers {
+                merge_validated_prepared_bundle(&mut required, layer)?;
+            }
         }
-        Ok(required)
+        let environment_name = environment_name
+            .ok_or_else(|| binding_error("preparation contains no environment bindings"))?;
+        Ok((
+            required,
+            brain_protocol::contract::environment_binding_ref(
+                request.root_id.as_str(),
+                &environment_name,
+            )
+            .to_string(),
+        ))
     }
 
-    pub(crate) async fn preparation(&self, session_id: &str) -> EnvironmentResult<Preparation> {
+    pub(crate) async fn preparation(
+        &self,
+        session_id: &str,
+        environment_ref: &str,
+    ) -> EnvironmentResult<Preparation> {
         self.preparation_cache
             .read()
             .await
-            .get(session_id)
+            .get(session_id, environment_ref)
             .ok_or_else(|| {
                 error(
                     EnvironmentErrorCode::CapabilityUnavailable,
@@ -182,8 +215,19 @@ impl AwsMicrovmEnvironment {
     ) -> EnvironmentResult<InstalledTarget> {
         let envelope = &request.envelope;
         let route = submit_route(envelope)?;
+        let binding = self
+            .binding(envelope.root_id.as_str(), envelope.binding_ref.as_str())
+            .await?;
+        let environment_ref = brain_protocol::contract::environment_binding_ref(
+            envelope.root_id.as_str(),
+            binding.environment_name.as_str(),
+        );
         let prep = self
-            .preparation_for_root(envelope.session_id.as_str(), envelope.root_id.as_str())
+            .preparation_for_root(
+                envelope.session_id.as_str(),
+                envelope.root_id.as_str(),
+                environment_ref.as_str(),
+            )
             .await?;
         validate_operation_root_seal(envelope, &prep.request)?;
         match route {
@@ -203,7 +247,7 @@ impl AwsMicrovmEnvironment {
                 // guest network namespace. Resolve that durable row even for an established
                 // operation so a restarted Environment never invents or loses the bearer.
                 let installed = self
-                    .resolve_target(&default_target(envelope)?, Some(generation))
+                    .resolve_target(&environment_target(envelope, &binding)?, Some(generation))
                     .await?;
                 if installed.target_ref != target_ref || installed.spec_digest != spec.digest() {
                     return Err(generation_error());
@@ -212,13 +256,19 @@ impl AwsMicrovmEnvironment {
             }
             SubmitRoute::Lazy => {
                 self.materialize(
-                    TargetKey::for_default_target(envelope.root_id.as_str())
-                        .map_err(materialization_error)?,
+                    TargetKey::for_environment(
+                        envelope.root_id.as_str(),
+                        brain_protocol::contract::environment_binding_ref(
+                            envelope.root_id.as_str(),
+                            binding.environment_name.as_str(),
+                        ),
+                    )
+                    .map_err(materialization_error)?,
                     envelope.session_id.as_str(),
                     &prep.request.resources,
                     &prep.request.network,
                     RESOURCE_CLASS,
-                    MaterializationMode::LazyDefault,
+                    MaterializationMode::LazyEnvironment,
                 )
                 .await
             }
@@ -231,8 +281,9 @@ impl AwsMicrovmEnvironment {
         &self,
         session_id: &str,
         root_id: &str,
+        environment_ref: &str,
     ) -> EnvironmentResult<Preparation> {
-        let prep = self.preparation(session_id).await?;
+        let prep = self.preparation(session_id, environment_ref).await?;
         if prep.request.root_id.as_str() != root_id {
             return Err(binding_error(
                 "prepared session does not belong to the operation root",
@@ -323,9 +374,8 @@ impl AwsMicrovmEnvironment {
             .already_installed(&route.target_ref, &install_key)
             .await;
         if !installed {
-            // Brain's maximum Tool bundle is 4 MiB. Bound concurrent transient request-body
-            // copies in the hosted process and buffered bodies in a 1-GiB guest when many first
-            // calls arrive at once; established calls skip this cold path entirely.
+            // Bound concurrent transient layer copies in the hosted process and guest when many
+            // first calls arrive at once; established calls skip this cold path entirely.
             let _install_permit = self
                 .bundle_install_permits
                 .acquire()
@@ -335,29 +385,32 @@ impl AwsMicrovmEnvironment {
                 })?;
             // Cached bundle lookup only reads (the access clock is atomic), so concurrent
             // installs are not serialized behind the write lock.
-            let bundle = self
-                .preparation_cache
-                .read()
-                .await
-                .bundle(descriptor.bundle_digest.as_str())
-                .ok_or_else(|| {
-                    error(
-                        EnvironmentErrorCode::CapabilityUnavailable,
-                        false,
-                        "bundle bytes are not cached; Brain must prepare the session again",
+            for layer in &descriptor.layers {
+                let bundle = self
+                    .preparation_cache
+                    .read()
+                    .await
+                    .bundle(layer.digest.as_str())
+                    .ok_or_else(|| {
+                        error(
+                            EnvironmentErrorCode::CapabilityUnavailable,
+                            false,
+                            "artifact layer is not cached; Brain must prepare the session again",
+                        )
+                    })?;
+                self.plane
+                    .guest
+                    .post_blob(
+                        route,
+                        &format!("/internal/bundles/{}", layer.digest.as_str()),
+                        &InstallBundleMetadata {
+                            descriptor: descriptor.clone(),
+                            layer_digest: layer.digest.to_string(),
+                        },
+                        bundle.as_slice(),
                     )
-                })?;
-            self.plane
-                .guest
-                .post_blob(
-                    route,
-                    &format!("/internal/bundles/{}", descriptor.bundle_digest.as_str()),
-                    &InstallBundleMetadata {
-                        descriptor: descriptor.clone(),
-                    },
-                    bundle.as_slice(),
-                )
-                .await?;
+                    .await?;
+            }
             self.plane
                 .guest
                 .post_json(
@@ -447,7 +500,16 @@ impl AwsMicrovmEnvironment {
                 .map_err(|error| {
                     temporary_from("secret installation admission is unavailable", error)
                 })?;
-        let preparation = self.preparation(envelope.session_id.as_str()).await?;
+        let binding = self
+            .binding(envelope.root_id.as_str(), envelope.binding_ref.as_str())
+            .await?;
+        let environment_ref = brain_protocol::contract::environment_binding_ref(
+            envelope.root_id.as_str(),
+            binding.environment_name.as_str(),
+        );
+        let preparation = self
+            .preparation(envelope.session_id.as_str(), environment_ref.as_str())
+            .await?;
         let capability = preparation
             .request
             .secret_capability
@@ -476,14 +538,18 @@ impl AwsMicrovmEnvironment {
                     "secret delivery port is not attached",
                 )
             })?;
-        let target = default_target(envelope)?;
+        let target = environment_target(envelope, &binding)?;
         let capability_ref = capability.capability_ref.clone();
         // Remove the bearer before crossing the asynchronous callback boundary. Cancellation,
         // timeout, or an uncertain response can therefore never reuse a single-use capability.
         // Brain may prepare a fresh grant; the guest install is exact-idempotent if the first
         // response was merely lost.
-        self.consume_secret_capability(envelope.session_id.as_str(), capability_ref.as_str())
-            .await;
+        self.consume_secret_capability(
+            envelope.session_id.as_str(),
+            environment_ref.as_str(),
+            capability_ref.as_str(),
+        )
+        .await;
         let material = port
             .redeem(SecretDeliveryRequest {
                 capability_ref,
@@ -529,9 +595,18 @@ impl AwsMicrovmEnvironment {
             .is_some_and(|items| items.contains(artifact))
     }
 
-    async fn consume_secret_capability(&self, session_id: &str, capability_ref: &str) {
+    async fn consume_secret_capability(
+        &self,
+        session_id: &str,
+        environment_ref: &str,
+        capability_ref: &str,
+    ) {
         let mut cache = self.preparation_cache.write().await;
-        let Some(preparation) = cache.store.sessions.get_mut(session_id) else {
+        let Some(preparation) = cache
+            .store
+            .sessions
+            .get_mut(&(session_id.to_owned(), environment_ref.to_owned()))
+        else {
             return;
         };
         if preparation
@@ -580,7 +655,11 @@ impl AwsMicrovmEnvironment {
         let installed = match record.state {
             DurableTargetState::Installed { .. } => record.installed().expect("installed target"),
             DurableTargetState::Closed { .. } => {
-                return Err(error(EnvironmentErrorCode::SandboxGone, false, "sandbox is gone"));
+                return Err(error(
+                    EnvironmentErrorCode::SandboxGone,
+                    false,
+                    "sandbox is gone",
+                ));
             }
             DurableTargetState::Materializing { .. } => {
                 return Err(temporary("sandbox materialization is in progress"));
@@ -684,7 +763,7 @@ impl AwsMicrovmEnvironment {
     }
 
     /// A provider-confirmed loss must release this plane's charged capacity before Brain is told
-    /// that a fresh default generation may be created. Otherwise the durable registry would keep
+    /// that a fresh environment generation may be created. Otherwise the durable registry would keep
     /// routing retries to a dead VM and status would lie indefinitely.
     pub(crate) async fn record_gone(
         &self,
@@ -704,7 +783,10 @@ impl AwsMicrovmEnvironment {
     /// GetMicrovm still says RUNNING. It does not, by itself, prove that provider memory was
     /// released. Terminate and reconcile first; otherwise keep the reservation charged and ask
     /// Brain to retry recovery.
-    async fn retire_endpoint_lost_target(&self, installed: &InstalledTarget) -> EnvironmentResult<()> {
+    async fn retire_endpoint_lost_target(
+        &self,
+        installed: &InstalledTarget,
+    ) -> EnvironmentResult<()> {
         self.confirm_provider_termination(installed).await?;
         self.record_gone(
             installed,

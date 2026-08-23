@@ -22,7 +22,7 @@ pub(crate) fn operation_ref(
         request_digest: envelope.request_digest.clone(),
         target: SandboxTarget {
             binding_ref: envelope.binding_ref.clone(),
-            kind: TargetKind::Default,
+            kind: TargetKind::Environment,
             root_id: envelope.root_id.clone(),
             sandbox_id: None,
             session_id: envelope.session_id.clone(),
@@ -143,7 +143,10 @@ pub(crate) fn validate_resource_subset(
     }
 }
 
-pub(crate) fn canonical_equal<T: serde::Serialize>(left: &T, right: &T) -> Result<bool, EnvironmentError> {
+pub(crate) fn canonical_equal<T: serde::Serialize>(
+    left: &T,
+    right: &T,
+) -> Result<bool, EnvironmentError> {
     let left =
         serde_jcs::to_vec(left).map_err(|_| invalid("sealed value is not canonicalizable"))?;
     let right =

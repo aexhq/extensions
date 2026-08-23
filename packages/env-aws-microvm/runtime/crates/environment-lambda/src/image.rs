@@ -29,14 +29,6 @@ use crate::{AGENT_PORT, SUPERVISOR_UID, TOOL_GID, TOOL_UID};
 /// build environment pulls anonymously and Docker Hub throttles anonymous pulls from AWS IPs.
 pub const CONTAINER_BASE: &str = "public.ecr.aws/ubuntu/ubuntu:24.04@sha256:a54764b5b6340c272ffb45e303fe4c8064bbdfb76d732b325b79ae6b92900e4c";
 
-/// The JavaScript runtime used by deployable Brain tools. The MicroVM image is ARM64-only, so
-/// its archive digest can be pinned directly. Keep the plain-Docker image's ARM64 pin in sync.
-pub const NODE_VERSION: &str = "22.23.2";
-pub const NODE_ARM64_SHA256: &str =
-    "fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8";
-/// Patched npm replacing the vulnerable copy bundled with the pinned Node archive.
-pub const NPM_VERSION: &str = "11.19.0";
-
 /// The Lambda-managed MicroVM base every image must sit on.
 pub fn base_image_arn(region: &str) -> String {
     format!("arn:aws:lambda:{region}:aws:microvm-image:al2023-1")
@@ -116,16 +108,7 @@ FROM {CONTAINER_BASE}
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     HOME=/home/agent \
-    CARGO_HOME=/workspace/.environment/cargo \
-    RUSTUP_HOME=/workspace/.environment/rustup \
-    GOPATH=/workspace/.environment/go \
-    GOMODCACHE=/workspace/.environment/go/pkg/mod \
-    npm_config_prefix=/workspace/.environment/npm \
-    PIP_CACHE_DIR=/workspace/.environment/pip \
-    PIPX_HOME=/workspace/.environment/pipx \
-    PIPX_BIN_DIR=/workspace/.environment/bin \
-    UV_CACHE_DIR=/workspace/.environment/uv \
-    PATH=/workspace/.environment/bin:/workspace/.environment/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/workspace/.environment/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     ENVIRONMENT_WORKSPACE=/workspace \
     ENVIRONMENT_TOOL_DIR=/var/environment/tools \
     ENVIRONMENT_TOOL_RUNNER=/usr/local/lib/environment/tool-runner.mjs \
@@ -138,19 +121,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git openssh-client \
       build-essential pkg-config \
-      python3 python3-venv python3-pip pipx \
       ripgrep jq unzip zip zstd xz-utils file less \
       procps coreutils bash libcap2-bin util-linux iproute2 \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl --fail --location --retry 5 \
-         --output /tmp/node.tar.xz \
-         "https://nodejs.org/dist/v{NODE_VERSION}/node-v{NODE_VERSION}-linux-arm64.tar.xz" \
-    && echo "{NODE_ARM64_SHA256}  /tmp/node.tar.xz" | sha256sum --check --strict \
-    && tar --extract --file /tmp/node.tar.xz --directory /usr/local --strip-components=1 \
-    && rm /tmp/node.tar.xz \
-    && test "$(node --version)" = "v{NODE_VERSION}" \
-    && npm_config_prefix=/usr/local npm install --global npm@{NPM_VERSION} \
-    && test "$(npm --version)" = "{NPM_VERSION}"
+    && rm -rf /var/lib/apt/lists/*
 
 # ubuntu:24.04 ships a uid-1000 "ubuntu" user; remove it, then create "agent" as uid 1000.
 RUN deluser --remove-home ubuntu 2>/dev/null || true; \
@@ -974,24 +947,16 @@ mod tests {
     #[test]
     fn the_dev_dockerfile_carries_the_production_pins() {
         let dev = include_str!("../../../image/Dockerfile");
-        assert!(
-            dev.contains(&format!("https://nodejs.org/dist/v{NODE_VERSION}/")),
-            "image/Dockerfile installs Node {NODE_VERSION}"
-        );
-        assert!(
-            dev.contains(NODE_ARM64_SHA256),
-            "image/Dockerfile pins the same ARM64 Node archive"
-        );
-        assert!(
-            dev.contains(&format!("npm@{NPM_VERSION}")),
-            "image/Dockerfile installs npm {NPM_VERSION}"
-        );
+        assert!(!dev.contains("nodejs.org"));
+        assert!(!dev.contains("python3"));
+        assert!(!dockerfile().contains("nodejs.org"));
+        assert!(!dockerfile().contains("python3"));
         for shared in [
             &format!("ENVIRONMENT_SUPERVISOR_UID={SUPERVISOR_UID}"),
             &format!("ENVIRONMENT_TOOL_UID={TOOL_UID}"),
             &format!("ENVIRONMENT_TOOL_GID={TOOL_GID}"),
             &format!("ENVIRONMENT_LISTEN=0.0.0.0:{AGENT_PORT}"),
-            &"PATH=/workspace/.environment/bin:/workspace/.environment/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+            &"PATH=/workspace/.environment/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
         ] {
             assert!(
                 dev.contains(shared) && dockerfile().contains(shared),
@@ -1006,11 +971,8 @@ mod tests {
         let df = dockerfile();
         assert!(df.contains("@sha256:"), "base must be digest-pinned");
         assert!(df.contains(&format!("EXPOSE {AGENT_PORT}")));
-        assert!(df.contains(&format!("node-v{NODE_VERSION}-linux-arm64.tar.xz")));
-        assert!(df.contains(NODE_ARM64_SHA256));
-        assert!(df.contains(&format!(r#"test "$(node --version)" = "v{NODE_VERSION}""#)));
-        assert!(df.contains(&format!("npm@{NPM_VERSION}")));
-        assert!(df.contains(&format!(r#"test "$(npm --version)" = "{NPM_VERSION}""#)));
+        assert!(!df.contains("nodejs.org"));
+        assert!(!df.contains("python3"));
         assert!(
             !df.contains("\nUSER "),
             "the boot script drops privileges; the Dockerfile must not"
@@ -1051,9 +1013,9 @@ mod tests {
             "the launcher must not replace a provider-owned descriptor"
         );
         assert!(df.contains("cc -static -O2"));
-        assert!(
-            df.contains("! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP")
-        );
+        assert!(df.contains(
+            "! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP"
+        ));
         assert!(df.contains("find / -xdev -type f -perm /6000 -print -quit"));
         assert!(df.contains("test -z \"$(getcap -r / 2>/dev/null)\""));
         assert!(df.contains("find / -xdev -type f -perm /6000 -exec chmod a-s {} +"));

@@ -11,7 +11,6 @@ use aws_sdk_lambdamicrovms::types::MicrovmState;
 use base64::Engine as _;
 use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
 use brain_protocol::environment::{EnvironmentError, EnvironmentErrorCode};
-use futures_util::{SinkExt as _, StreamExt as _};
 use environment_core::materialization::InstalledTarget;
 use environment_lambda::control::{AUTH_HEADER, Control, ControlError, is_terminated};
 use environment_lambda::launch::{self, LaunchedEnvironment};
@@ -20,6 +19,7 @@ use environment_wire::{
     MAX_INSTALL_METADATA_BYTES, MAX_WIRE_FRAME_BYTES, OBJECT_METADATA_HEADER, RequestCall,
     RequestFrame, ResponseFrame, ResponseReply,
 };
+use futures_util::{SinkExt as _, StreamExt as _};
 use tokio::io::AsyncReadExt as _;
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
@@ -86,7 +86,10 @@ impl GuestClient {
         self.endpoints.write().await.remove(target_ref);
     }
 
-    async fn endpoint(&self, target: &InstalledTarget) -> Result<LaunchedEnvironment, EnvironmentError> {
+    async fn endpoint(
+        &self,
+        target: &InstalledTarget,
+    ) -> Result<LaunchedEnvironment, EnvironmentError> {
         let target_ref = target.target_ref.as_str();
         if let Some(endpoint) = self.endpoints.read().await.get(target_ref)
             && endpoint.minted_at.elapsed() < AUTH_REFRESH_AFTER
@@ -204,14 +207,17 @@ impl GuestClient {
                             }
                             Ok(Message::Pong(_)) => continue,
                             Ok(Message::Close(_)) | Err(_) => {
-                                return Err(
-                                    temporary("Environment connection ended before its receipt").into()
-                                );
+                                return Err(temporary(
+                                    "Environment connection ended before its receipt",
+                                )
+                                .into());
                             }
                             Ok(Message::Frame(_)) => continue,
                         };
-                        let response: ResponseFrame = serde_json::from_str(&text)
-                            .map_err(|error| temporary_from("Environment response is malformed", error))?;
+                        let response: ResponseFrame =
+                            serde_json::from_str(&text).map_err(|error| {
+                                temporary_from("Environment response is malformed", error)
+                            })?;
                         if response.request_id != frame.request_id {
                             continue;
                         }
@@ -239,7 +245,9 @@ impl GuestClient {
                 .await
                 {
                     Ok(result) => result,
-                    Err(_) => Err(RpcAttemptError::Environment(temporary("Environment request timed out"))),
+                    Err(_) => Err(RpcAttemptError::Environment(temporary(
+                        "Environment request timed out",
+                    ))),
                 };
             match result {
                 Ok(reply) => return Ok(reply),
@@ -307,31 +315,35 @@ impl GuestClient {
             )
         })?;
         let metadata = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(metadata);
-        self.endpoint_request(target, "guest object install", |endpoint: LaunchedEnvironment| {
-            let metadata = metadata.clone();
-            async move {
-                let file = tokio::fs::File::open(file_path).await.map_err(|error| {
-                    EndpointAttemptError::Fatal(temporary_from(
-                        "staged object is unavailable",
-                        error,
-                    ))
-                })?;
-                let body = reqwest::Body::wrap_stream(ReaderStream::new(
-                    file.take(bytes.saturating_add(1)),
-                ));
-                self.http
-                    .post(format!("{}{path}", endpoint.endpoint))
-                    .header(AUTH_HEADER, &endpoint.auth_token)
-                    .header(CONTROL_AUTH_HEADER, target.control_token.expose())
-                    .header(OBJECT_METADATA_HEADER, &metadata)
-                    .header(reqwest::header::CONTENT_LENGTH, bytes)
-                    .body(body)
-                    .timeout(Duration::from_secs(15 * 60))
-                    .send()
-                    .await
-                    .map_err(EndpointAttemptError::Transport)
-            }
-        })
+        self.endpoint_request(
+            target,
+            "guest object install",
+            |endpoint: LaunchedEnvironment| {
+                let metadata = metadata.clone();
+                async move {
+                    let file = tokio::fs::File::open(file_path).await.map_err(|error| {
+                        EndpointAttemptError::Fatal(temporary_from(
+                            "staged object is unavailable",
+                            error,
+                        ))
+                    })?;
+                    let body = reqwest::Body::wrap_stream(ReaderStream::new(
+                        file.take(bytes.saturating_add(1)),
+                    ));
+                    self.http
+                        .post(format!("{}{path}", endpoint.endpoint))
+                        .header(AUTH_HEADER, &endpoint.auth_token)
+                        .header(CONTROL_AUTH_HEADER, target.control_token.expose())
+                        .header(OBJECT_METADATA_HEADER, &metadata)
+                        .header(reqwest::header::CONTENT_LENGTH, bytes)
+                        .body(body)
+                        .timeout(Duration::from_secs(15 * 60))
+                        .send()
+                        .await
+                        .map_err(EndpointAttemptError::Transport)
+                }
+            },
+        )
         .await
         .map(|_| ())
     }
@@ -349,21 +361,25 @@ impl GuestClient {
             )
         })?;
         let response = self
-            .endpoint_request(target, "guest file export", |endpoint: LaunchedEnvironment| {
-                let encoded = encoded.clone();
-                async move {
-                    self.http
-                        .post(format!("{}/internal/files/export", endpoint.endpoint))
-                        .header(AUTH_HEADER, &endpoint.auth_token)
-                        .header(CONTROL_AUTH_HEADER, target.control_token.expose())
-                        .header("content-type", "application/json")
-                        .body(encoded.clone())
-                        .timeout(Duration::from_secs(15 * 60))
-                        .send()
-                        .await
-                        .map_err(EndpointAttemptError::Transport)
-                }
-            })
+            .endpoint_request(
+                target,
+                "guest file export",
+                |endpoint: LaunchedEnvironment| {
+                    let encoded = encoded.clone();
+                    async move {
+                        self.http
+                            .post(format!("{}/internal/files/export", endpoint.endpoint))
+                            .header(AUTH_HEADER, &endpoint.auth_token)
+                            .header(CONTROL_AUTH_HEADER, target.control_token.expose())
+                            .header("content-type", "application/json")
+                            .body(encoded.clone())
+                            .timeout(Duration::from_secs(15 * 60))
+                            .send()
+                            .await
+                            .map_err(EndpointAttemptError::Transport)
+                    }
+                },
+            )
             .await?;
         let metadata = response
             .headers()
@@ -553,14 +569,19 @@ pub(crate) fn control_error(error_value: ControlError) -> EnvironmentError {
     }
 }
 
-pub fn error(code: EnvironmentErrorCode, retryable: bool, message: impl Into<String>) -> EnvironmentError {
+pub fn error(
+    code: EnvironmentErrorCode,
+    retryable: bool,
+    message: impl Into<String>,
+) -> EnvironmentError {
     EnvironmentError {
         code,
         details: serde_json::Map::new(),
-        message: message
-            .into()
-            .parse()
-            .unwrap_or_else(|_| "Environment request failed".parse().expect("fallback message")),
+        message: message.into().parse().unwrap_or_else(|_| {
+            "Environment request failed"
+                .parse()
+                .expect("fallback message")
+        }),
         retryable,
     }
 }

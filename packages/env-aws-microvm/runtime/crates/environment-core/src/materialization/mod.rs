@@ -12,7 +12,7 @@ use sha2::{Digest as _, Sha256};
 use crate::connector::ConnectorClass;
 
 pub const TARGET_KEY_PREFIX: &str = "target:";
-pub const DEFAULT_TARGET_KEY: &str = "target:default";
+pub const ENVIRONMENT_TARGET_PREFIX: &str = "target:environment:";
 pub use crate::page::MAX_PAGE as MAX_TARGET_PAGE;
 /// A durable uncertainty lease can span the provider's full target lifetime, but callers waiting
 /// on the worker that owns a normal launch must poll on a short bounded cadence. Exposing the
@@ -88,7 +88,7 @@ pub enum MaterializationError {
     InvalidLaunchRequest,
     #[error("generation control token is outside its exact secret boundary")]
     InvalidControlToken,
-    #[error("only the default target may be replaced after confirmed loss")]
+    #[error("only an environment target may be replaced after confirmed loss")]
     InvalidReplacement,
     #[error("target materialized memory must be a positive bounded MiB value")]
     InvalidCapacity,

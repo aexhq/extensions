@@ -14,20 +14,20 @@ use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use base64::Engine as _;
 use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
-use futures_util::StreamExt;
 use environment_wire::{
     CONTROL_AUTH_HEADER, FILE_ENTRY_HEADER, InstallBindingRequest, InstallBundleMetadata,
     InstallObjectMetadata, InstallSecretsRequest, MAX_INSTALL_BODY_BYTES, MAX_OBJECT_BYTES,
     MAX_WIRE_FRAME_BYTES, OBJECT_METADATA_HEADER, RequestCall, RequestFrame, ResponseFrame,
     ResponseReply,
 };
+use futures_util::StreamExt;
 use sha2::{Digest as _, Sha256};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio_util::io::ReaderStream;
 
-use crate::errors::{environment_error, invalid, status_for};
 use crate::environment::Environment;
+use crate::errors::{environment_error, invalid, status_for};
 use crate::hooks;
 
 const CONTROL_AUTH_PROTOCOL_PREFIX: &str = "aex-environment-control.";
@@ -107,7 +107,10 @@ fn inherited_listener(expected: SocketAddr) -> anyhow::Result<Option<TcpListener
         );
         // SAFETY: fcntl validates the inherited descriptor before ownership transfers below.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-        anyhow::ensure!(flags >= 0, "ENVIRONMENT_LISTEN_FD is not an open descriptor");
+        anyhow::ensure!(
+            flags >= 0,
+            "ENVIRONMENT_LISTEN_FD is not an open descriptor"
+        );
         // Tool children execute separate programs. Close the supervisor listener at every later
         // exec boundary so it can never leak into an untrusted process.
         // SAFETY: fd was validated above and F_SETFD does not access Rust-managed memory.
@@ -126,7 +129,11 @@ fn inherited_listener(expected: SocketAddr) -> anyhow::Result<Option<TcpListener
     }
 }
 
-async fn require_control(State(environment): State<Arc<Environment>>, request: Request, next: Next) -> Response {
+async fn require_control(
+    State(environment): State<Arc<Environment>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let candidate = control_candidate(request.headers());
     if !environment.control_authorized(candidate).await {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -238,7 +245,9 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
             Ok(text) if text.len() <= MAX_WIRE_FRAME_BYTES => {
                 let canary_exit = match terminal_operation_id(&response) {
                     Some(operation_id)
-                        if environment.should_exit_after_canary_receipt(operation_id).await =>
+                        if environment
+                            .should_exit_after_canary_receipt(operation_id)
+                            .await =>
                     {
                         match commit_canary_terminal_receipt(&environment, text.as_bytes()).await {
                             Ok(()) => true,
@@ -302,7 +311,10 @@ fn terminal_operation_id(response: &ResponseFrame) -> Option<&str> {
         .map(|_| observation.operation.operation_id.as_str())
 }
 
-async fn commit_canary_terminal_receipt(environment: &Environment, bytes: &[u8]) -> std::io::Result<()> {
+async fn commit_canary_terminal_receipt(
+    environment: &Environment,
+    bytes: &[u8],
+) -> std::io::Result<()> {
     let temporary = environment.cfg.state_dir.join(".image-canary-terminal.tmp");
     let committed = environment.cfg.state_dir.join("image-canary-terminal.json");
     let mut options = tokio::fs::OpenOptions::new();
@@ -332,9 +344,17 @@ async fn dispatch(
     call: RequestCall,
 ) -> Result<ResponseReply, brain_protocol::environment::EnvironmentError> {
     match call {
-        RequestCall::Submit(request) => environment.submit(*request).await.map(ResponseReply::Submit),
-        RequestCall::Observe(request) => environment.observe(request).await.map(ResponseReply::Observe),
-        RequestCall::Cancel(request) => environment.cancel(request).await.map(ResponseReply::Cancel),
+        RequestCall::Submit(request) => environment
+            .submit(*request)
+            .await
+            .map(ResponseReply::Submit),
+        RequestCall::Observe(request) => environment
+            .observe(request)
+            .await
+            .map(ResponseReply::Observe),
+        RequestCall::Cancel(request) => {
+            environment.cancel(request).await.map(ResponseReply::Cancel)
+        }
         RequestCall::AcknowledgeTerminal(request) => environment
             .acknowledge_terminal(request)
             .await
@@ -344,18 +364,22 @@ async fn dispatch(
             .await
             .map(ResponseReply::Status)
             .ok_or_else(|| invalid("target is not armed")),
-        RequestCall::ListFiles(request) => {
-            environment.list_files(request).await.map(ResponseReply::ListFiles)
-        }
-        RequestCall::StatFile(request) => {
-            environment.stat_file(request).await.map(ResponseReply::StatFile)
-        }
-        RequestCall::ReadFile(request) => {
-            environment.read_file(request).await.map(ResponseReply::ReadFile)
-        }
-        RequestCall::WriteFile(request) => {
-            environment.write_file(request).await.map(ResponseReply::WriteFile)
-        }
+        RequestCall::ListFiles(request) => environment
+            .list_files(request)
+            .await
+            .map(ResponseReply::ListFiles),
+        RequestCall::StatFile(request) => environment
+            .stat_file(request)
+            .await
+            .map(ResponseReply::StatFile),
+        RequestCall::ReadFile(request) => environment
+            .read_file(request)
+            .await
+            .map(ResponseReply::ReadFile),
+        RequestCall::WriteFile(request) => environment
+            .write_file(request)
+            .await
+            .map(ResponseReply::WriteFile),
         RequestCall::ReserveFileEffect(identity) => environment
             .reserve_file_effect(identity)
             .await
@@ -368,12 +392,14 @@ async fn dispatch(
             .complete_file_effect(result)
             .await
             .map(ResponseReply::CompleteFileEffect),
-        RequestCall::FindFiles(request) => {
-            environment.find_files(request).await.map(ResponseReply::FindFiles)
-        }
-        RequestCall::GrepFiles(request) => {
-            environment.grep_files(request).await.map(ResponseReply::GrepFiles)
-        }
+        RequestCall::FindFiles(request) => environment
+            .find_files(request)
+            .await
+            .map(ResponseReply::FindFiles),
+        RequestCall::GrepFiles(request) => environment
+            .grep_files(request)
+            .await
+            .map(ResponseReply::GrepFiles),
         RequestCall::ExecuteSandbox(request) => environment
             .execute_sandbox(request)
             .await
@@ -409,7 +435,7 @@ async fn install_bundle(
             );
         }
     };
-    if metadata.descriptor.bundle_digest.as_str() != digest {
+    if metadata.layer_digest != digest {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "digest mismatch"})),
@@ -541,7 +567,8 @@ async fn install_object(
     }
     drop(file);
     reply(
-        environment.install_object_file(metadata, temporary, count, &hex::encode(hash.finalize()))
+        environment
+            .install_object_file(metadata, temporary, count, &hex::encode(hash.finalize()))
             .await,
     )
     .into_response()

@@ -1,7 +1,7 @@
 [package]
 name = "environment-guest"
 version = "0.1.0"
-description = "Default Environment guest: serves Brain's Environment ABI inside a container or microVM"
+description = "AWS MicroVM environment guest implementing Brain's Environment ABI"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

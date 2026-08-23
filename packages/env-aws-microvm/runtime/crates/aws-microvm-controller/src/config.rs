@@ -19,8 +19,9 @@ pub struct AwsEnvironmentConfig {
 impl AwsEnvironmentConfig {
     pub fn from_env() -> anyhow::Result<Self> {
         let required = |name: &str| -> anyhow::Result<String> {
-            let value = std::env::var(name)
-                .map_err(|_| anyhow::anyhow!("{name} is required for the production Environment"))?;
+            let value = std::env::var(name).map_err(|_| {
+                anyhow::anyhow!("{name} is required for the production Environment")
+            })?;
             anyhow::ensure!(!value.trim().is_empty(), "{name} cannot be empty");
             Ok(value)
         };

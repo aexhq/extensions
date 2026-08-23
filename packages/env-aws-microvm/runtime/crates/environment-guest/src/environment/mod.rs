@@ -15,9 +15,9 @@ use brain_protocol::contract::{
 };
 use brain_protocol::environment::{
     AcknowledgeTerminalRequest, Acknowledgement, ArtifactTarget, BundleDescriptor, CancelRequest,
-    CancellationReceipt, Digest, FileEntry, FileEntryKind, EnvironmentError,
-    EnvironmentErrorCode, NetworkCeiling, ObserveRequest, OperationEnvelope, OperationObservation,
-    OperationRef, OperationState as ContractOperationState, ResourceCeiling, SandboxCopyResult,
+    CancellationReceipt, Digest, EnvironmentError, EnvironmentErrorCode, FileEntry, FileEntryKind,
+    NetworkCeiling, ObserveRequest, OperationEnvelope, OperationObservation, OperationRef,
+    OperationState as ContractOperationState, ResourceCeiling, SandboxCopyResult,
     SandboxExecutionRequest, SandboxFileRequest, SandboxFileWriteResult, SandboxTarget,
     SealedBinding, SubmitReceipt, SubmitRequest, TargetKind, TargetReceipt, TerminalOutcome,
     TerminalResult, WriteStdinReceipt, WriteStdinRequest,
@@ -50,7 +50,7 @@ use crate::config::{
     MAX_STDIN_REPLAY_WAIT_MS, MAX_TARGET_LIFETIME_MS, MAX_WAIT_MS, ToolIdentity, wall_ms,
 };
 use crate::errors::{
-    ack_store_error, file_effect_store_error, generation_conflict, environment_error, invalid,
+    ack_store_error, environment_error, file_effect_store_error, generation_conflict, invalid,
     operation_error, stdin_conflict, unavailable,
 };
 use crate::file_effects::{EffectReservation, FileEffectStore};
@@ -105,6 +105,7 @@ pub(crate) struct TargetState {
 /// Immutable installed artifacts: bundle bytes on disk, sealed bindings, per-binding kernel
 /// identities, and session secret material.
 pub(crate) struct Artifacts {
+    pub(crate) layers: RwLock<HashMap<String, PathBuf>>,
     pub(crate) bundles: RwLock<HashMap<String, (BundleDescriptor, PathBuf)>>,
     pub(crate) bindings: RwLock<HashMap<String, InstalledBinding>>,
     pub(crate) identities: Mutex<BindingIdentityRegistry>,
@@ -150,6 +151,7 @@ impl Environment {
                 armed: RwLock::new(None),
             },
             artifacts: Artifacts {
+                layers: RwLock::new(HashMap::new()),
                 bundles: RwLock::new(HashMap::new()),
                 bindings: RwLock::new(HashMap::new()),
                 identities: Mutex::new(BindingIdentityRegistry::production()),

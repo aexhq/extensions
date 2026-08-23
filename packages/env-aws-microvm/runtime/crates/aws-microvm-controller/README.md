@@ -110,16 +110,16 @@ Debug-redacted, never logged, and removed in the same CAS that installs the targ
 request is corrupt or conflicts with its immutable target seal, Environments fails closed and retains the
 conservative uncertainty fence rather than refunding capacity unsafely.
 
-Brain owns the logical additional-sandbox inventory and enforces the MVP limit of two live
-additional sandboxes per root. Environment never offers a broad list operation: create, inspect, execute,
-file access, and terminate all require the exact rooted target and generation fence.
+The environment extension owns additional-sandbox inventory and capacity limits. It never offers a
+broad unauthenticated list operation: create, inspect, execute, file access, and terminate require
+the exact rooted target and generation fence.
 
-The shared default target's connector and physical network ceiling are sealed from the root
-preparation, never from the first narrower Tool call. Environments rejects an operation that widens that
-seal using Brain's canonical subset rules. MVP does not claim per-process enforcement of a Tool's
-narrower network declaration inside a shared default MicroVM: bindings share the root connector.
-Code that requires a physically narrower connector must use an explicitly created additional
-sandbox. There is no connector fallback in either path.
+A logical environment's connector and physical network ceiling are sealed from its preparation,
+never from the first narrower Tool call. The extension rejects an operation that widens that seal
+using Brain's canonical subset rules. MVP does not claim per-process enforcement of a Tool's
+narrower network declaration inside a shared logical environment: bindings share its connector.
+Code that requires a physically narrower connector must use a separately declared environment or
+an explicitly created additional sandbox. There is no connector fallback in either path.
 
 Sandbox status is an on-demand provider observation, not a metering stream. A returned
 `suspended` state is authoritative only at the instant of the `GetMicrovm` response. The provider

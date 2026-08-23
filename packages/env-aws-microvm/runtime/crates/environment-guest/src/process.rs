@@ -36,6 +36,7 @@ const POST_CHILD_IO_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct BundleExecution {
     pub bundle_path: PathBuf,
+    pub node_path: PathBuf,
     pub descriptor: BundleDescriptor,
     pub envelope: OperationEnvelope,
     pub workspace: PathBuf,
@@ -263,7 +264,7 @@ async fn execute_bundle_inner(request: &BundleExecution) -> Result<ExecutionResu
     })?;
     let result_fd = result_writer.as_raw_fd();
 
-    let mut command = Command::new(NODE_EXECUTABLE);
+    let mut command = Command::new(&request.node_path);
     command
         .arg(&request.runner)
         .arg(&request.bundle_path)
@@ -639,7 +640,7 @@ fn base_environment(workspace: &Path) -> HashMap<String, String> {
     HashMap::from([
         (
             "PATH".into(),
-            "/workspace/.environment/bin:/workspace/.environment/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
+            "/workspace/.environment/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
         ),
         ("HOME".into(), "/home/agent".into()),
         ("USER".into(), "agent".into()),
@@ -648,31 +649,12 @@ fn base_environment(workspace: &Path) -> HashMap<String, String> {
         ("TERM".into(), "dumb".into()),
         ("CI".into(), "1".into()),
         ("GIT_TERMINAL_PROMPT".into(), "0".into()),
-        ("CARGO_HOME".into(), "/workspace/.environment/cargo".into()),
-        ("RUSTUP_HOME".into(), "/workspace/.environment/rustup".into()),
-        ("GOPATH".into(), "/workspace/.environment/go".into()),
-        (
-            "GOMODCACHE".into(),
-            "/workspace/.environment/go/pkg/mod".into(),
-        ),
-        ("npm_config_prefix".into(), "/workspace/.environment/npm".into()),
-        (
-            "npm_config_cache".into(),
-            "/workspace/.environment/npm-cache".into(),
-        ),
-        ("PIP_CACHE_DIR".into(), "/workspace/.environment/pip".into()),
-        ("PIPX_HOME".into(), "/workspace/.environment/pipx".into()),
-        ("PIPX_BIN_DIR".into(), "/workspace/.environment/bin".into()),
-        ("UV_CACHE_DIR".into(), "/workspace/.environment/uv".into()),
         (
             "AEX_WORKSPACE".into(),
             workspace.to_string_lossy().into_owned(),
         ),
     ])
 }
-
-#[cfg(any(unix, test))]
-const NODE_EXECUTABLE: &str = "/usr/local/bin/node";
 
 fn install_boundary_environment(command: &mut Command, library: Option<&Path>) {
     if let Some(library) = library {
@@ -1007,10 +989,8 @@ mod tests {
             environment.get("HOME").map(String::as_str),
             Some("/home/agent")
         );
-        assert_eq!(
-            environment.get("npm_config_prefix").map(String::as_str),
-            Some("/workspace/.environment/npm")
-        );
+        assert!(!environment.contains_key("npm_config_prefix"));
+        assert!(!environment.contains_key("PIP_CACHE_DIR"));
         for inherited_secret in [
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
@@ -1020,13 +1000,6 @@ mod tests {
         ] {
             assert!(!environment.contains_key(inherited_secret));
         }
-    }
-
-    #[test]
-    fn tool_runtime_cannot_be_shadowed_by_the_writable_workspace_path() {
-        assert!(NODE_EXECUTABLE.starts_with('/'));
-        assert!(!NODE_EXECUTABLE.starts_with("/workspace/"));
-        assert_eq!(NODE_EXECUTABLE, "/usr/local/bin/node");
     }
 
     #[test]

@@ -318,7 +318,7 @@ mod tests {
             "request_digest": request.to_string().repeat(64),
             "target": {
                 "binding_ref": "binding-1",
-                "kind": "default",
+                "kind": "environment",
                 "root_id": "root-1",
                 "session_id": "session-1"
             },
@@ -434,7 +434,7 @@ mod tests {
             "request_digest": "b".repeat(64),
             "target": {
                 "binding_ref": "binding-1",
-                "kind": "default",
+                "kind": "environment",
                 "root_id": "root-1",
                 "session_id": "session-1"
             },

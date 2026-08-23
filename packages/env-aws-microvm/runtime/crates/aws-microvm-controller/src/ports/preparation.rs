@@ -5,20 +5,22 @@ use crate::*;
 #[async_trait]
 impl SessionPreparationPort for AwsMicrovmEnvironment {
     async fn prepare(&self, request: PrepareSessionRequest) -> EnvironmentResult<PreparedSession> {
-        let (required_bundles, supplied_bundles, projection) =
+        let (required_bundles, supplied_bundles, projection, environment_ref) =
             self.validate_prepare_request(&request).await?;
         let digest = self
-            .persist_preparation_definitions(&request, &projection)
+            .persist_preparation_definitions(&request, &environment_ref, &projection)
             .await?;
         let preparation_ref = format!("preparation:{digest}");
         let fetched = self
             .admit_and_fetch_bundles(&required_bundles, &supplied_bundles)
             .await?;
         let request = cacheable_preparation(request);
-        self.preparation_cache
-            .write()
-            .await
-            .install(request, digest, fetched.bundles)?;
+        self.preparation_cache.write().await.install(
+            request,
+            environment_ref,
+            digest,
+            fetched.bundles,
+        )?;
         // `fetched` still holds the fetch reservation and resident-bundle borrows; they are
         // released only now that the bytes are accounted inside the cache.
         drop(fetched.guards);
@@ -27,17 +29,15 @@ impl SessionPreparationPort for AwsMicrovmEnvironment {
         })
     }
 
-    async fn materialize_default(
-        &self,
-        request: CreateSandboxRequest,
-    ) -> EnvironmentResult<SandboxStatus> {
-        if request.target.kind != TargetKind::Default || request.target.sandbox_id.is_some() {
-            return Err(invalid("default sandbox target is required"));
+    async fn materialize(&self, request: CreateSandboxRequest) -> EnvironmentResult<SandboxStatus> {
+        if request.target.kind != TargetKind::Environment || request.target.sandbox_id.is_some() {
+            return Err(invalid("environment target is required"));
         }
         let preparation = self
             .preparation_for_root(
                 request.target.session_id.as_str(),
                 request.target.root_id.as_str(),
+                request.target.binding_ref.as_str(),
             )
             .await?;
         require_exact_root_seal(&request, &preparation.request)?;
@@ -48,15 +48,15 @@ impl SessionPreparationPort for AwsMicrovmEnvironment {
                 &preparation.request.resources,
                 &preparation.request.network,
                 request.resource_class.as_str(),
-                MaterializationMode::ExplicitDefault(request.generation_intent.as_str()),
+                MaterializationMode::ExplicitEnvironment(request.generation_intent.as_str()),
             )
             .await?;
         Ok(running_status(request.target, &installed))
     }
 
-    async fn dematerialize_default(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus> {
-        if target.kind != TargetKind::Default || target.sandbox_id.is_some() {
-            return Err(invalid("default sandbox target is required"));
+    async fn dematerialize(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus> {
+        if target.kind != TargetKind::Environment || target.sandbox_id.is_some() {
+            return Err(invalid("environment target is required"));
         }
         // An abandoned materialization (its owning turn cancelled between the capacity
         // reservation and completion; attempt window lapsed with no live owner) never
@@ -84,12 +84,12 @@ impl SessionPreparationPort for AwsMicrovmEnvironment {
             ));
         }
         let installed = self.resolve_target(&target, None).await?;
-        self.terminate_target(&installed, "explicit default lifecycle operation")
+        self.terminate_target(&installed, "explicit environment lifecycle operation")
             .await?;
         Ok(terminated_status(
             target,
             &installed,
-            "explicit default lifecycle operation",
+            "explicit environment lifecycle operation",
         ))
     }
 
@@ -163,6 +163,7 @@ impl AwsMicrovmEnvironment {
         HashMap<String, ValidatedPreparedBundle>,
         HashMap<String, BundleFetch>,
         serde_json::Value,
+        String,
     )> {
         if request.bundles.len() > MAX_PREPARED_BUNDLES
             || request.bindings.len() > MAX_PREPARED_BUNDLES
@@ -176,7 +177,7 @@ impl AwsMicrovmEnvironment {
             &request.network,
             RESOURCE_CLASS,
         )?;
-        let required_bundles = self.validate_prepared_bindings(request).await?;
+        let (required_bundles, environment_ref) = self.validate_prepared_bindings(request).await?;
         let mut supplied_bundles = HashMap::with_capacity(request.bundles.len());
         for fetch in &request.bundles {
             let digest = fetch.bundle_digest.to_string();
@@ -189,7 +190,12 @@ impl AwsMicrovmEnvironment {
                 return Err(invalid("preparation repeats a bundle fetch"));
             }
         }
-        Ok((required_bundles, supplied_bundles, projection))
+        Ok((
+            required_bundles,
+            supplied_bundles,
+            projection,
+            environment_ref,
+        ))
     }
 
     /// Writes the immutable root seal and preparation definition rows; returns the canonical
@@ -197,6 +203,7 @@ impl AwsMicrovmEnvironment {
     async fn persist_preparation_definitions(
         &self,
         request: &PrepareSessionRequest,
+        environment_ref: &str,
         projection: &serde_json::Value,
     ) -> EnvironmentResult<String> {
         let digest = canonical_digest(projection)
@@ -223,7 +230,12 @@ impl AwsMicrovmEnvironment {
         let record = DefinitionRecord::canonical(
             request.root_id.as_str(),
             DefinitionKind::Preparation,
-            request.session_id.as_str(),
+            format!(
+                "prep_{}",
+                &hex::encode(Sha256::digest(
+                    format!("{}\0{environment_ref}", request.session_id.as_str()).as_bytes()
+                ))[..24]
+            ),
             projection,
             now_ms(),
         )

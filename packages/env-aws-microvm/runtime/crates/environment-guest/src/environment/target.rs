@@ -46,9 +46,15 @@ impl Environment {
 
     /// Arms an unconfigured generation exactly once. An exact provider retry is harmless; a
     /// different root/generation/network/resource seal is a permanent conflict.
-    pub async fn arm(&self, target_ref: String, payload: RunPayload) -> Result<bool, EnvironmentError> {
+    pub async fn arm(
+        &self,
+        target_ref: String,
+        payload: RunPayload,
+    ) -> Result<bool, EnvironmentError> {
         if payload.contract_digest != ENVIRONMENT_CONTRACT_DIGEST.trim() {
-            return Err(invalid("Environment contract digest does not match the image"));
+            return Err(invalid(
+                "Environment contract digest does not match the image",
+            ));
         }
         let now = wall_ms();
         if payload.expires_at_ms <= now
@@ -68,7 +74,9 @@ impl Environment {
             .as_ref()
             .is_some_and(|id| {
                 !id.starts_with("image-canary-")
-                    || id.parse::<brain_protocol::environment::Identifier>().is_err()
+                    || id
+                        .parse::<brain_protocol::environment::Identifier>()
+                        .is_err()
             })
         {
             return Err(invalid("image canary operation id is invalid"));

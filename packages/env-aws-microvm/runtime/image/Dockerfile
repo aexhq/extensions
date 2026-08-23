@@ -10,16 +10,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     HOME=/home/agent \
-    CARGO_HOME=/workspace/.environment/cargo \
-    RUSTUP_HOME=/workspace/.environment/rustup \
-    GOPATH=/workspace/.environment/go \
-    GOMODCACHE=/workspace/.environment/go/pkg/mod \
-    npm_config_prefix=/workspace/.environment/npm \
-    PIP_CACHE_DIR=/workspace/.environment/pip \
-    PIPX_HOME=/workspace/.environment/pipx \
-    PIPX_BIN_DIR=/workspace/.environment/bin \
-    UV_CACHE_DIR=/workspace/.environment/uv \
-    PATH=/workspace/.environment/bin:/workspace/.environment/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/workspace/.environment/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     ENVIRONMENT_WORKSPACE=/workspace \
     ENVIRONMENT_TOOL_DIR=/var/environment/tools \
     ENVIRONMENT_TOOL_RUNNER=/usr/local/lib/environment/tool-runner.mjs \
@@ -31,29 +22,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Curated toolchain. Installers are redirected into /workspace/.environment/** (see ENV above) so their
 # output stays in the live workspace generation; no automatic checkpoint or restore exists.
-# Node 22.23.2 bundles npm with node-tar 7.5.11 (CVE-2026-59873), so replace that bundled
-# installation in place; leaving it beside a newer npm would leave vulnerable files in the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git openssh-client \
       build-essential pkg-config \
-      python3 python3-venv python3-pip pipx \
       ripgrep jq unzip zip zstd xz-utils file less \
       procps coreutils bash libcap2-bin util-linux iproute2 \
-    && rm -rf /var/lib/apt/lists/* \
-    && case "$(dpkg --print-architecture)" in \
-         arm64) node_arch=arm64; node_sha=fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8 ;; \
-         amd64) node_arch=x64; node_sha=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307 ;; \
-         *) echo "unsupported Node architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
-       esac \
-    && curl --fail --location --retry 5 \
-         --output /tmp/node.tar.xz \
-         "https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-${node_arch}.tar.xz" \
-    && echo "${node_sha}  /tmp/node.tar.xz" | sha256sum --check --strict \
-    && tar --extract --file /tmp/node.tar.xz --directory /usr/local --strip-components=1 \
-    && rm /tmp/node.tar.xz \
-    && test "$(node --version)" = v22.23.2 \
-    && npm_config_prefix=/usr/local npm install --global npm@11.19.0 \
-    && test "$(npm --version)" = 11.19.0
+    && rm -rf /var/lib/apt/lists/*
 
 # ubuntu:24.04 ships a uid-1000 "ubuntu" user; remove it, then create "agent" as uid 1000.
 RUN deluser --remove-home ubuntu 2>/dev/null || true; \

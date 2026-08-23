@@ -4,8 +4,9 @@ use crate::*;
 
 pub(crate) fn target_key(target: &SandboxTarget) -> EnvironmentResult<TargetKey> {
     match target.kind {
-        TargetKind::Default if target.sandbox_id.is_none() => {
-            TargetKey::for_default_target(target.root_id.as_str()).map_err(materialization_error)
+        TargetKind::Environment if target.sandbox_id.is_none() => {
+            TargetKey::for_environment(target.root_id.as_str(), target.binding_ref.as_str())
+                .map_err(materialization_error)
         }
         TargetKind::Additional => TargetKey::additional(
             target.root_id.as_str(),
@@ -16,16 +17,20 @@ pub(crate) fn target_key(target: &SandboxTarget) -> EnvironmentResult<TargetKey>
                 .as_str(),
         )
         .map_err(materialization_error),
-        TargetKind::Default => Err(invalid("default target cannot carry sandbox_id")),
+        TargetKind::Environment => Err(invalid("environment target cannot carry sandbox_id")),
     }
 }
 
-pub(crate) fn default_target(
+pub(crate) fn environment_target(
     envelope: &brain_protocol::environment::OperationEnvelope,
+    binding: &SealedBinding,
 ) -> EnvironmentResult<SandboxTarget> {
     Ok(SandboxTarget {
-        binding_ref: envelope.binding_ref.clone(),
-        kind: TargetKind::Default,
+        binding_ref: brain_protocol::contract::environment_binding_ref(
+            envelope.root_id.as_str(),
+            binding.environment_name.as_str(),
+        ),
+        kind: TargetKind::Environment,
         root_id: envelope.root_id.clone(),
         sandbox_id: None,
         session_id: envelope.session_id.clone(),
@@ -158,8 +163,8 @@ pub(crate) fn terminated_status(
     }
 }
 
-pub(crate) fn sandbox_identity(key: &TargetKey) -> EnvironmentResult<String> {
-    key.sandbox_identity()
+pub(crate) fn target_identity(key: &TargetKey) -> EnvironmentResult<String> {
+    key.target_identity()
         .map(str::to_owned)
         .map_err(|_| invalid("target key has an unrecognized shape"))
 }

@@ -12,17 +12,22 @@ pub const MAX_MATERIALIZED_MIB: u64 = 1_048_576;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TargetKey {
     pub root_id: String,
-    /// `target:default` or `target:additional:<sandbox_id>`.
+    /// `target:environment:<binding_ref>` or `target:additional:<sandbox_id>`.
     pub target_key: String,
 }
 
 impl TargetKey {
-    pub fn for_default_target(root_id: impl Into<String>) -> Result<Self, MaterializationError> {
+    pub fn for_environment(
+        root_id: impl Into<String>,
+        binding_ref: impl Into<String>,
+    ) -> Result<Self, MaterializationError> {
         let root_id = root_id.into();
+        let binding_ref = binding_ref.into();
         validate_identifier(&root_id, "root_id")?;
+        validate_identifier(&binding_ref, "binding_ref")?;
         Ok(Self {
             root_id,
-            target_key: DEFAULT_TARGET_KEY.into(),
+            target_key: format!("{ENVIRONMENT_TARGET_PREFIX}{binding_ref}"),
         })
     }
 
@@ -41,24 +46,27 @@ impl TargetKey {
     }
 
     #[must_use]
-    pub fn is_default(&self) -> bool {
-        self.target_key == DEFAULT_TARGET_KEY
+    pub fn is_environment(&self) -> bool {
+        self.target_key.starts_with(ENVIRONMENT_TARGET_PREFIX)
     }
 
     pub fn validate(&self) -> Result<(), MaterializationError> {
         validate_identifier(&self.root_id, "root_id")?;
-        if self.is_default() {
-            return Ok(());
-        }
-        validate_identifier(self.sandbox_identity()?, "sandbox_id")
+        let identity = self.target_identity()?;
+        validate_identifier(
+            identity,
+            if self.is_environment() {
+                "binding_ref"
+            } else {
+                "sandbox_id"
+            },
+        )
     }
 
-    /// Sandbox identity for capability minting and status projection: `"default"` for the
-    /// default target, the sandbox id for additional targets. Fails on any other key shape
-    /// instead of guessing.
-    pub fn sandbox_identity(&self) -> Result<&str, MaterializationError> {
-        if self.is_default() {
-            return Ok("default");
+    /// Environment binding or additional sandbox identity used for capability minting.
+    pub fn target_identity(&self) -> Result<&str, MaterializationError> {
+        if let Some(binding_ref) = self.target_key.strip_prefix(ENVIRONMENT_TARGET_PREFIX) {
+            return Ok(binding_ref);
         }
         self.target_key
             .strip_prefix("target:additional:")

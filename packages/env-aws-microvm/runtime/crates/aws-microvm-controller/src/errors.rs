@@ -53,7 +53,10 @@ pub(crate) fn bundle_cache_entry_capacity_error() -> EnvironmentError {
 
 /// Sanitized retryable failure that still leaves an operator trail. The cause is logged here
 /// precisely because it must never enter the public Environment contract.
-pub(crate) fn temporary_from(message: &'static str, cause: impl std::fmt::Display) -> EnvironmentError {
+pub(crate) fn temporary_from(
+    message: &'static str,
+    cause: impl std::fmt::Display,
+) -> EnvironmentError {
     tracing::warn!(%cause, "{message}");
     temporary(message)
 }
@@ -152,9 +155,11 @@ pub(crate) fn materialization_error(error_value: MaterializationError) -> Enviro
                 .insert("retry_after_ms".into(), retry_after_ms.into());
             value
         }
-        MaterializationError::Gone | MaterializationError::Terminated => {
-            error(EnvironmentErrorCode::SandboxGone, false, error_value.to_string())
-        }
+        MaterializationError::Gone | MaterializationError::Terminated => error(
+            EnvironmentErrorCode::SandboxGone,
+            false,
+            error_value.to_string(),
+        ),
         MaterializationError::SpecConflict => error(
             EnvironmentErrorCode::GenerationConflict,
             false,

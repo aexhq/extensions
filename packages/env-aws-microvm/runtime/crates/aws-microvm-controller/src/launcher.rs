@@ -56,7 +56,7 @@ impl GenerationLauncher {
             let capability = Capability {
                 root_id: self.key.root_id.clone(),
                 session_id: self.owner_session_id.clone(),
-                sandbox_id: sandbox_identity(&self.key)?,
+                sandbox_id: target_identity(&self.key)?,
                 generation: lease.generation.clone(),
                 issued_at_ms,
                 // The grant never outlives Brain's journaled physical target deadline. That
@@ -178,7 +178,7 @@ pub(crate) fn recovery_request(lease: &MaterializationLease, now_ms: u64) -> Acq
         lease_duration_ms: TARGET_LEASE_MS,
         target_lifetime_ms: TARGET_LIFETIME_MS,
         // Deletion is reconciliation of one exact existing row. It must never replace a gone
-        // default target or create a fresh physical generation.
+        // environment target or create a fresh physical generation.
         replace_after_loss: false,
     }
 }
@@ -236,8 +236,12 @@ impl PhysicalTargetLauncher for GenerationLauncher {
                     LaunchError::KnownNoTarget(message)
                 }
             })?;
-        PhysicalTarget::new(environment.microvm_id, lease.generation.clone(), control_token)
-            .map_err(|error| LaunchError::OutcomeUnknown(error.to_string()))
+        PhysicalTarget::new(
+            environment.microvm_id,
+            lease.generation.clone(),
+            control_token,
+        )
+        .map_err(|error| LaunchError::OutcomeUnknown(error.to_string()))
     }
 
     async fn terminate_stale(&self, target: &PhysicalTarget) -> Result<(), String> {

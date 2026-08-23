@@ -18,14 +18,13 @@ pub(crate) struct CachedBundle {
 #[derive(Debug)]
 pub(crate) struct ValidatedPreparedBundle {
     pub(crate) bytes: u64,
-    pub(crate) descriptor_digest: String,
     pub(crate) digest: String,
 }
 
 /// Session preparation metadata: one LRU bounded by bytes and entries.
 pub(crate) struct PreparationStore {
-    pub(crate) sessions: HashMap<String, Preparation>,
-    pub(crate) root_sessions: HashMap<String, HashSet<String>>,
+    pub(crate) sessions: HashMap<(String, String), Preparation>,
+    pub(crate) root_sessions: HashMap<String, HashSet<(String, String)>>,
     pub(crate) preparation_bytes: usize,
     pub(crate) max_preparation_bytes: usize,
     pub(crate) max_preparations: usize,
@@ -82,8 +81,8 @@ impl PreparationCache {
         }
     }
 
-    pub(crate) fn get(&self, session_id: &str) -> Option<Preparation> {
-        self.store.get(session_id)
+    pub(crate) fn get(&self, session_id: &str, environment_ref: &str) -> Option<Preparation> {
+        self.store.get(session_id, environment_ref)
     }
 
     pub(crate) fn bundle(&self, digest: &str) -> Option<Arc<Vec<u8>>> {
@@ -97,27 +96,27 @@ impl PreparationCache {
 }
 
 impl PreparationStore {
-    pub(crate) fn get(&self, session_id: &str) -> Option<Preparation> {
+    pub(crate) fn get(&self, session_id: &str, environment_ref: &str) -> Option<Preparation> {
         let access = self
             .access_clock
             .fetch_add(1, Ordering::Relaxed)
             .saturating_add(1);
         self.sessions
-            .get(session_id)
+            .get(&(session_id.to_owned(), environment_ref.to_owned()))
             .cloned()
             .inspect(|preparation| {
                 preparation.last_access.store(access, Ordering::Relaxed);
             })
     }
 
-    fn remove_session(&mut self, session_id: &str) -> Option<Preparation> {
-        let removed = self.sessions.remove(session_id)?;
+    fn remove_session(&mut self, key: &(String, String)) -> Option<Preparation> {
+        let removed = self.sessions.remove(key)?;
         self.preparation_bytes = self
             .preparation_bytes
             .saturating_sub(removed.metadata_bytes);
         let root_id = removed.request.root_id.to_string();
         if let Some(sessions) = self.root_sessions.get_mut(&root_id) {
-            sessions.remove(session_id);
+            sessions.remove(key);
             if sessions.is_empty() {
                 self.root_sessions.remove(&root_id);
             }
@@ -129,7 +128,7 @@ impl PreparationStore {
         &mut self,
         additional_bytes: usize,
         additional_entries: usize,
-        protected_session_id: &str,
+        protected_key: &(String, String),
     ) -> EnvironmentResult<()> {
         loop {
             let bytes_fit = self
@@ -147,9 +146,9 @@ impl PreparationStore {
             let candidate = self
                 .sessions
                 .iter()
-                .filter(|(session_id, _)| session_id.as_str() != protected_session_id)
+                .filter(|(key, _)| *key != protected_key)
                 .min_by_key(|(_, preparation)| preparation.last_access.load(Ordering::Relaxed))
-                .map(|(session_id, _)| session_id.clone())
+                .map(|(key, _)| key.clone())
                 .ok_or_else(|| preparation_cache_capacity_error(self.max_preparation_bytes))?;
             self.remove_session(&candidate)
                 .expect("preparation eviction candidate exists");
@@ -231,15 +230,17 @@ impl PreparationCache {
     pub(crate) fn install(
         &mut self,
         request: PrepareSessionRequest,
+        environment_ref: String,
         public_digest: String,
         fetched: HashMap<String, Arc<Vec<u8>>>,
     ) -> EnvironmentResult<()> {
         let session_id = request.session_id.to_string();
         let root_id = request.root_id.to_string();
+        let key = (session_id, environment_ref);
         if self
             .store
             .sessions
-            .get(&session_id)
+            .get(&key)
             .is_some_and(|old| old.request.root_id != request.root_id)
         {
             return Err(binding_error(
@@ -249,7 +250,7 @@ impl PreparationCache {
         if self
             .store
             .sessions
-            .get(&session_id)
+            .get(&key)
             .is_some_and(|old| old.public_digest != public_digest)
         {
             return Err(binding_error(
@@ -287,12 +288,12 @@ impl PreparationCache {
         let prior_metadata_bytes = self
             .store
             .sessions
-            .get(&session_id)
+            .get(&key)
             .map_or(0, |preparation| preparation.metadata_bytes);
         let additional_bytes = metadata_bytes.saturating_sub(prior_metadata_bytes);
-        let additional_entries = usize::from(!self.store.sessions.contains_key(&session_id));
+        let additional_entries = usize::from(!self.store.sessions.contains_key(&key));
         self.store
-            .evict_preparations_to_fit(additional_bytes, additional_entries, &session_id)?;
+            .evict_preparations_to_fit(additional_bytes, additional_entries, &key)?;
 
         let missing = required
             .iter()
@@ -313,8 +314,8 @@ impl PreparationCache {
             }
             let _ = self.bundles.get(digest);
         }
-        if self.store.sessions.contains_key(&session_id) {
-            self.store.remove_session(&session_id);
+        if self.store.sessions.contains_key(&key) {
+            self.store.remove_session(&key);
         }
         let last_access = self
             .store
@@ -327,7 +328,7 @@ impl PreparationCache {
             .checked_add(metadata_bytes)
             .ok_or_else(|| preparation_cache_capacity_error(self.store.max_preparation_bytes))?;
         self.store.sessions.insert(
-            session_id.clone(),
+            key.clone(),
             Preparation {
                 request: Arc::new(request),
                 public_digest,
@@ -339,7 +340,7 @@ impl PreparationCache {
             .root_sessions
             .entry(root_id)
             .or_default()
-            .insert(session_id);
+            .insert(key);
         debug_assert_eq!(
             self.bundles.bundle_bytes,
             self.bundles
@@ -355,15 +356,15 @@ impl PreparationCache {
 impl PreparationStore {
     /// Drops at most `limit` logical preparations and their bundle references.
     pub(crate) fn purge_root_page(&mut self, root_id: &str, limit: usize) -> bool {
-        let session_ids = self
+        let keys = self
             .root_sessions
             .get(root_id)
             .into_iter()
             .flat_map(|sessions| sessions.iter().take(limit))
             .cloned()
             .collect::<Vec<_>>();
-        for session_id in session_ids {
-            let _ = self.remove_session(&session_id);
+        for key in keys {
+            let _ = self.remove_session(&key);
         }
         let complete = self
             .root_sessions
@@ -425,21 +426,23 @@ pub(crate) fn preparation_public_projection(
 
 #[derive(Clone, Copy)]
 pub(crate) enum MaterializationMode<'a> {
-    LazyDefault,
-    ExplicitDefault(&'a str),
+    LazyEnvironment,
+    ExplicitEnvironment(&'a str),
     Additional(&'a str),
 }
 
 impl<'a> MaterializationMode<'a> {
     pub(crate) fn generation_intent(self) -> Option<&'a str> {
         match self {
-            Self::LazyDefault => None,
-            Self::ExplicitDefault(generation) | Self::Additional(generation) => Some(generation),
+            Self::LazyEnvironment => None,
+            Self::ExplicitEnvironment(generation) | Self::Additional(generation) => {
+                Some(generation)
+            }
         }
     }
 
     pub(crate) fn replace_after_loss(self) -> bool {
-        matches!(self, Self::LazyDefault | Self::ExplicitDefault(_))
+        matches!(self, Self::LazyEnvironment | Self::ExplicitEnvironment(_))
     }
 }
 
