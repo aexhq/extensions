@@ -1,0 +1,12 @@
+{
+  "name": "@aexhq/env-aws-microvm",
+  "version": "0.1.0",
+  "description": "AWS MicroVM environment extension for Aex",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
+  "files": ["index.mjs", "index.d.ts", "README.md"],
+  "scripts": { "test": "node --test" },
+  "dependencies": { "@aexhq/environment": "file:../../../aex/packages/environment" }
+}

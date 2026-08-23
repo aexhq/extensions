@@ -22,7 +22,7 @@
     "name": "pi"
   },
   "exports": {
-    ".": "./index.mjs",
+    ".": { "types": "./index.d.ts", "import": "./index.mjs" },
     "./bundle": "./dist/loop.bundle.mjs",
     "./identity": "./dist/identity.json",
     "./package.json": "./package.json"
@@ -31,10 +31,12 @@
     "dist",
     "src",
     "index.mjs",
+    "index.d.ts",
     "README.md"
   ],
   "scripts": {
     "build": "node build.mjs",
+    "test": "npm run build && node --test",
     "prepack": "npm run build"
   },
   "devDependencies": {

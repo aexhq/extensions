@@ -1,0 +1,12 @@
+{
+  "name": "@aexhq/env-app",
+  "version": "0.1.0",
+  "description": "Aex callback environment for tools running in the application process",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
+  "files": ["index.mjs", "index.d.ts", "README.md"],
+  "scripts": { "test": "node --test" },
+  "dependencies": { "@aexhq/environment": "file:../../../aex/packages/environment" }
+}
