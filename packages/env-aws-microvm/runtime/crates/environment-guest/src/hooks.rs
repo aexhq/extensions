@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{RunEnvelope, RunPayload};
@@ -46,7 +46,7 @@ pub async fn run(State(environment): State<Arc<Environment>>, body: String) -> R
         );
     };
     match environment.arm(target_ref, payload).await {
-        Ok(replayed) => run_response(StatusCode::OK, json!({"replayed": replayed})),
+        Ok(_) => StatusCode::OK.into_response(),
         Err(error) => run_response(
             StatusCode::CONFLICT,
             json!({"error": error.message.as_str(), "code": error.code}),
@@ -55,9 +55,7 @@ pub async fn run(State(environment): State<Arc<Environment>>, body: String) -> R
 }
 
 fn run_response(status: StatusCode, body: Value) -> Response {
-    // The provider owns this one lifecycle request. Closing it with the response prevents its
-    // 60-second hook deadline from remaining attached to an already-armed MicroVM.
-    (status, [(header::CONNECTION, "close")], Json(body)).into_response()
+    (status, Json(body)).into_response()
 }
 
 /// Build-only rootfs contract. Once armed it intentionally disappears.
@@ -136,20 +134,7 @@ pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCod
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{StatusCode, header};
     use environment_wire::{RunEnvelope, RunPayload};
-    use serde_json::json;
-
-    use super::run_response;
-
-    #[test]
-    fn run_hook_response_closes_the_provider_connection() {
-        let response = run_response(StatusCode::OK, json!({"ok": true}));
-        assert_eq!(
-            response.headers().get(header::CONNECTION),
-            Some(&axum::http::HeaderValue::from_static("close"))
-        );
-    }
 
     #[test]
     fn provider_envelope_carries_a_closed_cloud_credential_free_payload() {
