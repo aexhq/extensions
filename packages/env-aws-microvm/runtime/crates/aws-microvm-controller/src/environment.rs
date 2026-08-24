@@ -750,8 +750,25 @@ impl AwsMicrovmEnvironment {
         &self,
         operation: &OperationRef,
     ) -> EnvironmentResult<InstalledTarget> {
+        if operation.target.kind != TargetKind::Environment || operation.target.sandbox_id.is_some()
+        {
+            return Err(invalid(
+                "operation receipt must target a declared environment",
+            ));
+        }
+        let binding = self
+            .binding(
+                operation.target.root_id.as_str(),
+                operation.target.binding_ref.as_str(),
+            )
+            .await?;
+        let target = logical_environment_target(
+            operation.target.root_id.clone(),
+            operation.target.session_id.clone(),
+            binding.environment_name.as_str(),
+        )?;
         let installed = self
-            .resolve_target(&operation.target, Some(operation.generation.as_str()))
+            .resolve_target(&target, Some(operation.generation.as_str()))
             .await?;
         if installed.target_ref != operation.target_ref.as_str() {
             return Err(generation_error());
