@@ -553,15 +553,18 @@ fn connector_routed_special_use_ipv4_fixtures() -> Vec<&'static str> {
         .collect()
 }
 
-/// Wraps a canary module script (with the shared probe helper spliced in) into the in-guest
-/// heredoc command.
-fn canary_node_command(marker: &str, script: &str) -> String {
-    format!(
-        "node --input-type=module <<'{marker}'\n{}\n{marker}",
-        script
-            .replace("__PROBE__", include_str!("canary/probe.mjs").trim_end())
-            .trim_end()
-    )
+/// Wraps a canary shell script into the in-guest heredoc command. Network release proofs use only
+/// the image's base operating-system tools because language runtimes belong to tool setup.
+fn canary_shell_command(marker: &str, script: &str) -> String {
+    format!("bash <<'{marker}'\n{}\n{marker}", script.trim_end())
+}
+
+fn shell_words(values: impl IntoIterator<Item = impl AsRef<str>>) -> String {
+    values
+        .into_iter()
+        .map(|value| format!("'{}'", value.as_ref()))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn restricted_network_execution(
@@ -606,22 +609,17 @@ fn restricted_network_execution(
         ),
     };
 
-    let command = canary_node_command(
+    let command = canary_shell_command(
         "AEX_RESTRICTED_NETWORK_CANARY",
-        &include_str!("canary/restricted-network.mjs")
-            .replace("__CLASS__", &serde_json::to_string(label)?)
-            .replace("__DENIED__", &serde_json::to_string(&denied)?)
-            .replace("__CONTROLS__", &serde_json::to_string(&controls)?)
-            .replace(
-                "__GATEWAY__",
-                &serde_json::to_string(&serde_json::json!({
-                    "host": gateway.host(),
-                    "port": gateway.port().get()
-                }))?,
-            )
+        &include_str!("canary/restricted-network.sh")
+            .replace("__CLASS__", label)
+            .replace("__DENIED__", &shell_words(&denied))
+            .replace("__CONTROLS__", &shell_words(&controls))
+            .replace("__GATEWAY_HOST__", gateway.host())
+            .replace("__GATEWAY_PORT__", &gateway.port().get().to_string())
             .replace(
                 "__REQUIRE_GATEWAY__",
-                if require_gateway { "true" } else { "false" },
+                if require_gateway { "1" } else { "0" },
             ),
     );
     let mut request: SandboxExecutionRequest = serde_json::from_value(serde_json::json!({
@@ -671,15 +669,24 @@ fn public_network_execution(
         serde_json::json!({"host": "api-dev.aex.dev", "path": "/v1/rates"}),
     ];
 
-    let command = canary_node_command(
+    let command = canary_shell_command(
         "AEX_NETWORK_CANARY",
-        &include_str!("canary/public-network.mjs")
-            .replace("__DENIED__", &serde_json::to_string(&denied)?)
-            .replace("__CONTROLS__", &serde_json::to_string(&controls)?)
-            .replace("__HTTP_SURFACES__", &serde_json::to_string(&http_surfaces)?)
+        &include_str!("canary/public-network.sh")
+            .replace("__DENIED__", &shell_words(&denied))
+            .replace("__CONTROLS__", &shell_words(&controls))
+            .replace(
+                "__HTTP_SURFACES__",
+                &shell_words(http_surfaces.iter().map(|surface| {
+                    format!(
+                        "{}|{}",
+                        surface["host"].as_str().expect("static host"),
+                        surface["path"].as_str().expect("static path")
+                    )
+                })),
+            )
             .replace(
                 "__CUSTOMER_ENVIRONMENT_HOSTS__",
-                &serde_json::to_string(customer_environment_hosts)?,
+                &shell_words(customer_environment_hosts),
             ),
     );
     let mut request: SandboxExecutionRequest = serde_json::from_value(serde_json::json!({
@@ -1000,17 +1007,12 @@ mod tests {
                 assert!(request.input.command.contains(address), "{address}");
             }
         }
-        assert!(request.input.command.contains("reachableSpecial"));
-        assert!(
-            request
-                .input
-                .command
-                .contains("reachableControls.length === 0")
-        );
-        assert!(!request.input.command.contains("from \"node:http\";"));
+        assert!(request.input.command.contains("reachable_special"));
+        assert!(request.input.command.contains("reachable_controls"));
+        assert!(!request.input.command.contains("node --input-type"));
         assert!(request.input.command.contains("Aex HTTPS surface"));
         assert!(request.input.command.contains("checkip.amazonaws.com"));
-        assert!(request.input.command.contains("observedPublicSource"));
+        assert!(request.input.command.contains("observed_public_source"));
         for host in [
             "aex.dev",
             "api.aex.dev",
@@ -1047,7 +1049,7 @@ mod tests {
                 request.request_digest,
                 sandbox_execution_request_digest(&request)
             );
-            assert!(request.input.command.contains("dns.lookup"));
+            assert!(request.input.command.contains("getent ahostsv4"));
             assert!(request.input.command.contains("10.42.0.10"));
             let denied = connector_routed_special_use_ipv4_fixtures();
             for &(address, _) in brain_protocol::network::SPECIAL_USE_FIXTURES {
@@ -1067,24 +1069,14 @@ mod tests {
             match class {
                 RestrictedClass::None => {
                     assert!(matches!(request.network, NetworkCeiling::None));
-                    assert!(
-                        request
-                            .input
-                            .command
-                            .contains("const requireGateway = false;")
-                    );
+                    assert!(request.input.command.contains("require_gateway=0"));
                 }
                 RestrictedClass::Allowlist => {
                     assert!(matches!(request.network, NetworkCeiling::Allowlist(_)));
-                    assert!(
-                        request
-                            .input
-                            .command
-                            .contains("const requireGateway = true;")
-                    );
+                    assert!(request.input.command.contains("require_gateway=1"));
                     assert!(request.input.command.contains("CONNECT example.com"));
-                    assert!(request.input.command.contains("unauthenticated !== 407"));
-                    assert!(request.input.command.contains("invalid !== 403"));
+                    assert!(request.input.command.contains("$unauthenticated == 407"));
+                    assert!(request.input.command.contains("$invalid == 403"));
                 }
             }
         }
