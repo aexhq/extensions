@@ -471,15 +471,26 @@ async fn run_on_known_target(
             == Some("marker_count=1\n"),
         "canary marker was not written exactly once before the crash"
     );
-    send(
+    let acknowledgement = AcknowledgeTerminalRequest {
+        operation,
+        terminal_digest: terminal.terminal_digest,
+    };
+    match call(
         &mut socket,
         &mut request_number,
-        RequestCall::AcknowledgeTerminal(AcknowledgeTerminalRequest {
-            operation,
-            terminal_digest: terminal.terminal_digest,
-        }),
+        RequestCall::AcknowledgeTerminal(acknowledgement.clone()),
     )
-    .await?;
+    .await?
+    {
+        ResponseReply::AcknowledgeTerminal(receipt) if receipt.acknowledged => {}
+        _ => bail!("image canary terminal acknowledgement was refused"),
+    }
+    let _ = send(
+        &mut socket,
+        &mut request_number,
+        RequestCall::AcknowledgeTerminal(acknowledgement),
+    )
+    .await;
     drop(socket);
 
     assert_persistent_502(control, http, &environment, "after deliberate crash").await?;
