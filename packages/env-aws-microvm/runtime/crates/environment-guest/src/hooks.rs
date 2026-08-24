@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse as _, Response};
 use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{RunEnvelope, RunPayload};
 use serde_json::{Value, json};
@@ -17,43 +18,46 @@ use crate::environment::Environment;
 
 pub const HOOK_PREFIX: &str = "/aws/lambda-microvms/runtime/v1";
 
-pub async fn run(
-    State(environment): State<Arc<Environment>>,
-    body: String,
-) -> (StatusCode, Json<Value>) {
+pub async fn run(State(environment): State<Arc<Environment>>, body: String) -> Response {
     let envelope: RunEnvelope = match serde_json::from_str(&body) {
         Ok(envelope) => envelope,
         Err(_) => {
-            return (
+            return run_response(
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": "malformed provider run envelope"})),
+                json!({"error": "malformed provider run envelope"}),
             );
         }
     };
     let payload: RunPayload = match serde_json::from_str(&envelope.run_hook_payload) {
         Ok(payload) => payload,
         Err(_) => {
-            return (
+            return run_response(
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": "malformed Environment run payload"})),
+                json!({"error": "malformed Environment run payload"}),
             );
         }
     };
     // Every real caller sends microvmId; inventing a target from the generation would
     // surface later as baffling GenerationConflicts far from this hook. Refuse at the door.
     let Some(target_ref) = envelope.microvm_id else {
-        return (
+        return run_response(
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "the run envelope is missing microvmId"})),
+            json!({"error": "the run envelope is missing microvmId"}),
         );
     };
     match environment.arm(target_ref, payload).await {
-        Ok(replayed) => (StatusCode::OK, Json(json!({"replayed": replayed}))),
-        Err(error) => (
+        Ok(replayed) => run_response(StatusCode::OK, json!({"replayed": replayed})),
+        Err(error) => run_response(
             StatusCode::CONFLICT,
-            Json(json!({"error": error.message.as_str(), "code": error.code})),
+            json!({"error": error.message.as_str(), "code": error.code}),
         ),
     }
+}
+
+fn run_response(status: StatusCode, body: Value) -> Response {
+    // The provider owns this one lifecycle request. Closing it with the response prevents its
+    // 60-second hook deadline from remaining attached to an already-armed MicroVM.
+    (status, [(header::CONNECTION, "close")], Json(body)).into_response()
 }
 
 /// Build-only rootfs contract. Once armed it intentionally disappears.
@@ -132,7 +136,20 @@ pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCod
 
 #[cfg(test)]
 mod tests {
+    use axum::http::{StatusCode, header};
     use environment_wire::{RunEnvelope, RunPayload};
+    use serde_json::json;
+
+    use super::run_response;
+
+    #[test]
+    fn run_hook_response_closes_the_provider_connection() {
+        let response = run_response(StatusCode::OK, json!({"ok": true}));
+        assert_eq!(
+            response.headers().get(header::CONNECTION),
+            Some(&axum::http::HeaderValue::from_static("close"))
+        );
+    }
 
     #[test]
     fn provider_envelope_carries_a_closed_cloud_credential_free_payload() {
