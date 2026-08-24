@@ -37,7 +37,7 @@ export default {
   return { bytes, checksum: createHash("sha256").update(bytes).digest("hex") };
 }
 
-function request(bundleDigest, digest = contractDigest, operationId = "operation-1", input = { value: "ok" }) {
+function request(executeDigest, digest = contractDigest, operationId = "operation-1", input = { value: "ok" }) {
   return {
     operation_id: operationId,
     session_id: "session-1",
@@ -46,7 +46,7 @@ function request(bundleDigest, digest = contractDigest, operationId = "operation
       name: "runner_fixture",
       description: "Environments runner fixture.",
       contract_digest: digest,
-      bundle_digest: bundleDigest,
+      execute_digest: executeDigest,
       required_env: ["RUNNER_SECRET"],
     },
     input,

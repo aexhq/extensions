@@ -45,6 +45,7 @@ impl Environment {
         if reservation == Reservation::New {
             let execution_request = BundleExecution {
                 bundle_path: execution.bundle_path,
+                execute_digest: execution.execute_digest,
                 node_path: execution.node_path,
                 descriptor: execution.descriptor,
                 envelope: request.envelope.clone(),
@@ -399,6 +400,7 @@ impl Environment {
         }
         Ok(ValidatedExecution {
             bundle_path: binding.bundle_path.clone(),
+            execute_digest: binding.execute_digest.clone(),
             node_path: binding.node_path.clone(),
             descriptor,
             environment,
@@ -643,6 +645,7 @@ impl Environment {
 
 pub(crate) struct ValidatedExecution {
     pub(crate) bundle_path: PathBuf,
+    pub(crate) execute_digest: String,
     pub(crate) node_path: PathBuf,
     pub(crate) descriptor: BundleDescriptor,
     pub(crate) environment: HashMap<String, String>,

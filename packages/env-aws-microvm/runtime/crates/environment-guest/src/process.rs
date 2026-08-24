@@ -36,6 +36,7 @@ const POST_CHILD_IO_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct BundleExecution {
     pub bundle_path: PathBuf,
+    pub execute_digest: String,
     pub node_path: PathBuf,
     pub descriptor: BundleDescriptor,
     pub envelope: OperationEnvelope,
@@ -231,7 +232,7 @@ async fn execute_bundle_inner(request: &BundleExecution) -> Result<ExecutionResu
             "name": request.descriptor.tool_name.as_str(),
             "description": description,
             "contract_digest": request.descriptor.contract_digest.as_str(),
-            "bundle_digest": request.descriptor.bundle_digest.as_str(),
+            "execute_digest": request.execute_digest,
             "required_env": request.descriptor.required_env.iter().map(|name| name.as_str()).collect::<Vec<_>>(),
         },
         "input": input,

@@ -292,7 +292,7 @@ async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String)
     let node = b"#!/bin/sh\nexit 0\n";
     let node_digest = hex::encode(Sha256::digest(node));
     let descriptor: BundleDescriptor = serde_json::from_value(serde_json::json!({
-        "bundle_digest": digest,
+        "bundle_digest": "b".repeat(64),
         "bytes": bytes.len() + node.len(),
         "contract_digest": "a".repeat(64),
         "layers": [{
