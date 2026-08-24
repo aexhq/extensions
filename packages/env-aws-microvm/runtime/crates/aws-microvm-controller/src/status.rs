@@ -25,15 +25,27 @@ pub(crate) fn environment_target(
     envelope: &brain_protocol::environment::OperationEnvelope,
     binding: &SealedBinding,
 ) -> EnvironmentResult<SandboxTarget> {
+    logical_environment_target(
+        envelope.root_id.clone(),
+        envelope.session_id.clone(),
+        binding.environment_name.as_str(),
+    )
+}
+
+pub(crate) fn logical_environment_target(
+    root_id: brain_protocol::environment::Identifier,
+    session_id: brain_protocol::environment::Identifier,
+    environment_name: &str,
+) -> EnvironmentResult<SandboxTarget> {
     Ok(SandboxTarget {
         binding_ref: brain_protocol::contract::environment_binding_ref(
-            envelope.root_id.as_str(),
-            binding.environment_name.as_str(),
+            root_id.as_str(),
+            environment_name,
         ),
         kind: TargetKind::Environment,
-        root_id: envelope.root_id.clone(),
+        root_id,
         sandbox_id: None,
-        session_id: envelope.session_id.clone(),
+        session_id,
     })
 }
 
@@ -180,4 +192,23 @@ pub(crate) fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("system clock is after the UNIX epoch")
         .as_millis() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_receipts_route_to_the_logical_environment_target() {
+        let root_id = "ses_root".parse().unwrap();
+        let session_id = "ses_child".parse().unwrap();
+        let target = logical_environment_target(root_id, session_id, "workspace").unwrap();
+        assert_eq!(
+            target.binding_ref,
+            brain_protocol::contract::environment_binding_ref("ses_root", "workspace")
+        );
+        assert_ne!(target.binding_ref.as_str(), "binding:tool");
+        assert_eq!(target.kind, TargetKind::Environment);
+        assert!(target.sandbox_id.is_none());
+    }
 }
