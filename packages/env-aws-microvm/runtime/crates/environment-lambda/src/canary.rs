@@ -250,7 +250,9 @@ fn require_completed_stdout<'a>(
     let diagnostic = terminal_diagnostic(terminal.inline.as_ref());
     ensure!(
         terminal.outcome == TerminalOutcome::Completed,
-        "{what} canary command failed: {diagnostic}"
+        "{what} canary command ended as {} with exit code {:?}: {diagnostic}",
+        terminal.outcome,
+        terminal.exit_code
     );
     terminal
         .inline
@@ -327,14 +329,9 @@ async fn run_restricted_network_on_known_target(
         class,
     )?;
     let mut request_number = 1u64;
-    let terminal = execute_and_observe(
-        &mut socket,
-        &mut request_number,
-        request,
-        "restricted network",
-    )
-    .await?;
-    let stdout = require_completed_stdout(&terminal, "restricted network")?;
+    let what = format!("{} restricted network", class.label());
+    let terminal = execute_and_observe(&mut socket, &mut request_number, request, &what).await?;
+    let stdout = require_completed_stdout(&terminal, &what)?;
     ensure!(
         stdout.starts_with(&format!(
             "restricted_network_canary=ok class={} ",
