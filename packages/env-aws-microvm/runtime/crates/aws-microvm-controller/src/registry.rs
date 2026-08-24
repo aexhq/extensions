@@ -99,6 +99,63 @@ impl DynamoTargetRegistry {
             .ok_or_else(|| corrupt("capacity row has no valid reserved_mib"))
     }
 
+    pub(crate) async fn expired_target(
+        &self,
+        now_ms: u64,
+    ) -> Result<Option<DurableTargetRecord>, MaterializationError> {
+        // Capacity pressure is rare and the MVP table has no expiry index. Keep ordinary
+        // reservations on their two-write transaction and pay for this scan only to recover a
+        // target whose accounting-safe provider deadline has already elapsed.
+        let mut start_key = None;
+        loop {
+            let output = self
+                .db
+                .scan()
+                .table_name(&self.table)
+                .filter_expression("begins_with(#target_key, :target_prefix)")
+                .expression_attribute_names("#target_key", TARGET_KEY)
+                .expression_attribute_values(":target_prefix", s(TARGET_KEY_PREFIX))
+                .consistent_read(true)
+                .limit(100)
+                .set_exclusive_start_key(start_key)
+                .send()
+                .await
+                .map_err(|error| storage_error("scan expired targets", &error))?;
+            for item in output.items() {
+                let record = parse_record(item)?;
+                if target_reap_deadline(&record).is_some_and(|deadline| deadline <= now_ms) {
+                    return Ok(Some(record));
+                }
+            }
+            start_key = output
+                .last_evaluated_key()
+                .filter(|key| !key.is_empty())
+                .cloned();
+            if start_key.is_none() {
+                return Ok(None);
+            }
+        }
+    }
+
+    async fn live_additional_targets(&self, root_id: &str) -> Result<u64, MaterializationError> {
+        let output = self
+            .db
+            .get_item()
+            .table_name(&self.table)
+            .set_key(Some(additional_counter_key(root_id)))
+            .consistent_read(true)
+            .send()
+            .await
+            .map_err(|error| storage_error("get additional sandbox capacity", &error))?;
+        let Some(item) = output.item() else {
+            return Ok(0);
+        };
+        item.get(LIVE_ADDITIONAL_TARGETS)
+            .and_then(|value| value.as_n().ok())
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| corrupt("additional sandbox capacity row has no valid live count"))
+    }
+
     async fn replace_expired_materialization(
         &self,
         current: &DurableTargetRecord,
@@ -938,6 +995,72 @@ fn plane_capacity_error(
     })
 }
 
+fn root_additional_capacity_error(live: u64, maximum: u64) -> Option<MaterializationError> {
+    (live >= maximum).then(|| MaterializationError::Capacity {
+        scope: "root_additional_sandboxes".into(),
+        retry_after_ms: 1_000,
+        message: format!("root already has the maximum of {maximum} live additional sandboxes"),
+    })
+}
+
+fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
+    match &record.state {
+        DurableTargetState::Installed { expires_at_ms, .. } => Some(*expires_at_ms),
+        DurableTargetState::Materializing {
+            lease_expires_at_ms,
+            ..
+        } => Some(*lease_expires_at_ms),
+        DurableTargetState::Closed { .. } => None,
+    }
+}
+
+fn additional_count_add_update(
+    table: &str,
+    root_id: &str,
+    maximum: u64,
+    now_ms: u64,
+) -> Result<Update, MaterializationError> {
+    Update::builder()
+        .table_name(table)
+        .set_key(Some(additional_counter_key(root_id)))
+        .condition_expression(
+            "attribute_not_exists(live_additional_targets) OR live_additional_targets < :maximum",
+        )
+        .update_expression(
+            "SET live_additional_targets = if_not_exists(live_additional_targets, :zero) + :one, updated_at_ms = :now",
+        )
+        .expression_attribute_values(":maximum", n(maximum))
+        .expression_attribute_values(":zero", n(0))
+        .expression_attribute_values(":one", n(1))
+        .expression_attribute_values(":now", n(now_ms))
+        .build()
+        .map_err(|error| {
+            MaterializationError::Storage(format!("additional sandbox capacity add build: {error}"))
+        })
+}
+
+fn additional_count_subtract_update(
+    table: &str,
+    root_id: &str,
+    now_ms: u64,
+) -> Result<Update, MaterializationError> {
+    Update::builder()
+        .table_name(table)
+        .set_key(Some(additional_counter_key(root_id)))
+        .condition_expression("live_additional_targets >= :one")
+        .update_expression(
+            "SET live_additional_targets = live_additional_targets - :one, updated_at_ms = :now",
+        )
+        .expression_attribute_values(":one", n(1))
+        .expression_attribute_values(":now", n(now_ms))
+        .build()
+        .map_err(|error| {
+            MaterializationError::Storage(format!(
+                "additional sandbox capacity subtract build: {error}"
+            ))
+        })
+}
+
 fn capacity_add_update(
     table: &str,
     materialized_mib: u64,
@@ -1102,5 +1225,49 @@ mod tests {
         assert_eq!(scope, "plane_materialized_memory_mib");
         assert_eq!(retry_after_ms, 1_000);
         assert!(message.contains("remaining plane allocation of 0 MiB"));
+    }
+
+    #[test]
+    fn root_additional_capacity_classification_is_independent_of_plane_memory() {
+        assert!(root_additional_capacity_error(1, 2).is_none());
+        let MaterializationError::Capacity {
+            scope,
+            retry_after_ms,
+            message,
+        } = root_additional_capacity_error(2, 2).unwrap()
+        else {
+            panic!("full root must return typed capacity");
+        };
+        assert_eq!(scope, "root_additional_sandboxes");
+        assert_eq!(retry_after_ms, 1_000);
+        assert!(message.contains("maximum of 2"));
+    }
+
+    #[test]
+    fn reaping_waits_for_the_accounting_safe_deadline() {
+        let lease = lease();
+        let materializing = parse_record(&materializing_item(&lease, 10)).unwrap();
+        assert_eq!(
+            target_reap_deadline(&materializing),
+            Some(lease.lease_expires_at_ms)
+        );
+
+        let mut installed = materializing_item(&lease, 10);
+        installed.insert(STATE.into(), s(INSTALLED));
+        installed.remove("reservation_id");
+        installed.remove(LAUNCH_REQUEST);
+        installed.remove(ATTEMPT_ID);
+        installed.remove(ATTEMPT_EXPIRES_AT_MS);
+        installed.remove("lease_expires_at_ms");
+        installed.insert("target_ref".into(), s("mvm-1"));
+        installed.insert(
+            CONTROL_TOKEN.into(),
+            AttributeValue::B(Blob::new(format!("control-{}", "c".repeat(64)))),
+        );
+        installed.insert("installed_at_ms".into(), n(20));
+        assert_eq!(
+            target_reap_deadline(&parse_record(&installed).unwrap()),
+            Some(lease.target_expires_at_ms)
+        );
     }
 }

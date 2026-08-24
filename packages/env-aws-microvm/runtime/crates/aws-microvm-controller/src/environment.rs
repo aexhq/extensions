@@ -42,6 +42,14 @@ enum ProviderLiveness {
     Live,
 }
 
+fn is_plane_capacity_error(error: &MaterializationError) -> bool {
+    matches!(
+        error,
+        MaterializationError::Capacity { scope, .. }
+            if scope == "plane_materialized_memory_mib"
+    )
+}
+
 /// The canonical production implementation of Brain's Environment ports.
 pub struct AwsMicrovmEnvironment {
     pub(crate) plane: Arc<AwsEnvironmentPlane>,
@@ -49,6 +57,7 @@ pub struct AwsMicrovmEnvironment {
     pub(crate) prepared_targets: RwLock<HashMap<String, HashSet<InstalledArtifact>>>,
     pub(crate) secret_install_locks: [Mutex<()>; SECRET_INSTALL_LOCK_SHARDS],
     pub(crate) file_effect_locks: [Mutex<()>; FILE_EFFECT_LOCK_SHARDS],
+    pub(crate) capacity_recovery_lock: Mutex<()>,
     pub(crate) secret_delivery: StdRwLock<Option<Arc<dyn SecretDeliveryPort>>>,
     pub(crate) bundle_fetch_reserved: Arc<StdMutex<BundleFetchInFlight>>,
     pub(crate) bundle_fetch_max_bytes: usize,
@@ -184,6 +193,7 @@ impl AwsMicrovmEnvironment {
             prepared_targets: RwLock::new(HashMap::new()),
             secret_install_locks: std::array::from_fn(|_| Mutex::new(())),
             file_effect_locks: std::array::from_fn(|_| Mutex::new(())),
+            capacity_recovery_lock: Mutex::new(()),
             secret_delivery: StdRwLock::new(None),
             bundle_fetch_reserved: Arc::new(StdMutex::new(BundleFetchInFlight::default())),
             bundle_fetch_max_bytes,
@@ -460,10 +470,65 @@ impl AwsMicrovmEnvironment {
         };
         let preview = request.lease().map_err(materialization_error)?;
         request.launch_request = launcher.seal_launch(&preview).await?;
-        TargetMaterializer::new(self.plane.registry.clone(), launcher)
+        match TargetMaterializer::new(self.plane.registry.clone(), launcher.clone())
             .ensure(&request)
             .await
-            .map_err(materialization_error)
+        {
+            Ok(target) => Ok(target),
+            Err(error) if is_plane_capacity_error(&error) => {
+                // Serialize the exceptional recovery path and retry first: the previous caller
+                // may already have refunded capacity while this request waited for the lock.
+                let _recovery = self.capacity_recovery_lock.lock().await;
+                match TargetMaterializer::new(self.plane.registry.clone(), launcher.clone())
+                    .ensure(&request)
+                    .await
+                {
+                    Ok(target) => return Ok(target),
+                    Err(retry) if is_plane_capacity_error(&retry) => {}
+                    Err(retry) => return Err(materialization_error(retry)),
+                }
+                let Some(expired) = self
+                    .plane
+                    .registry
+                    .expired_target(now_ms())
+                    .await
+                    .map_err(materialization_error)?
+                else {
+                    return Err(materialization_error(error));
+                };
+                self.reap_expired_target(expired).await?;
+                TargetMaterializer::new(self.plane.registry.clone(), launcher)
+                    .ensure(&request)
+                    .await
+                    .map_err(materialization_error)
+            }
+            Err(error) => Err(materialization_error(error)),
+        }
+    }
+
+    async fn reap_expired_target(
+        &self,
+        record: environment_core::materialization::DurableTargetRecord,
+    ) -> EnvironmentResult<()> {
+        if let Some(installed) = record.installed() {
+            return self
+                .terminate_target(&installed, "physical target hard deadline reached")
+                .await;
+        }
+        match record.state {
+            DurableTargetState::Materializing { .. } => self
+                .plane
+                .registry
+                .expire_lease(
+                    &record.recovery_lease().map_err(materialization_error)?,
+                    now_ms(),
+                )
+                .await
+                .map_err(materialization_error),
+            DurableTargetState::Closed { .. } | DurableTargetState::Installed { .. } => {
+                Err(temporary("expired target changed during capacity recovery"))
+            }
+        }
     }
 
     pub(crate) async fn install_for_operation(

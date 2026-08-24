@@ -2,6 +2,7 @@
 
 use crate::*;
 
+#[derive(Clone)]
 pub(crate) struct GenerationLauncher {
     pub(crate) plane: Arc<AwsEnvironmentPlane>,
     pub(crate) key: TargetKey,
