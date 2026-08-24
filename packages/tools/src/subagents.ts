@@ -31,8 +31,8 @@ function required(value: string | undefined, name: string): string {
 }
 
 const subagents = tool(input, async function subagents(request, context) {
-  const baseUrl = required(process.env.AEX_API_URL, "environment variable AEX_API_URL").replace(/\/$/u, "");
-  const token = required(process.env.AEX_TOOL_TOKEN, "environment variable AEX_TOOL_TOKEN");
+  const baseUrl = required(process.env.SUBAGENTS_API_URL, "environment variable SUBAGENTS_API_URL").replace(/\/$/u, "");
+  const token = required(process.env.SUBAGENTS_TOKEN, "environment variable SUBAGENTS_TOKEN");
   const child = request.child_id === undefined ? undefined : encodeURIComponent(request.child_id);
   let method = "GET";
   let path = `/v1/sessions/${encodeURIComponent(context.sessionId)}/children`;
@@ -103,6 +103,9 @@ const subagents = tool(input, async function subagents(request, context) {
   .named("subagents")
   .describe("Create and explicitly interact with durable direct child sessions.")
   .returns(z.unknown())
-  .needs({ network: [{ host: "api.aex.dev", port: 443 }] });
+  .needs({
+    env: ["SUBAGENTS_API_URL", "SUBAGENTS_TOKEN"],
+    network: [{ host: "api.aex.dev", port: 443 }],
+  });
 
 export default subagents;
