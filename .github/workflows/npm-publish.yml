@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Bootstrap new package names, publish versions under next, or promote them to latest
+        description: Bootstrap release ownership, stage versions under next, or promote them to latest
         type: choice
         required: true
         default: stage
@@ -225,10 +225,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
-      - name: Publish only package names absent from npm
+      - name: Publish only exact versions awaiting release ownership
         env:
-          # npm cannot configure OIDC for a package before its first publish. This protected token
-          # may create names; every later version still goes through the ordinary stage operation.
+          # A package cannot trust this repository before its name exists, and packages moving from
+          # Hands still trust their former owner. This protected token establishes this release;
+          # ordinary releases use the stage operation.
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" bootstrap
