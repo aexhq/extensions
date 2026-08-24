@@ -235,39 +235,43 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
             }
         };
         let request_id = frame.request_id.clone();
+        let canary_exit = match &frame.call {
+            RequestCall::AcknowledgeTerminal(request) => {
+                environment
+                    .should_exit_for_canary_operation(request.operation.operation_id.as_str())
+                    .await
+            }
+            _ => false,
+        };
         let result = if frame.contract_digest != ENVIRONMENT_CONTRACT_DIGEST.trim() {
             Err(invalid("Environment contract digest mismatch"))
         } else {
             dispatch(&environment, frame.call).await
         };
+        if canary_exit && result.is_ok() {
+            // The publisher sends this acknowledgement only after validating the terminal, so
+            // the deliberate crash has a protocol ordering boundary instead of a proxy delay.
+            std::process::abort();
+        }
         let response = ResponseFrame { request_id, result };
         match serde_json::to_string(&response) {
             Ok(text) if text.len() <= MAX_WIRE_FRAME_BYTES => {
-                let canary_exit = match terminal_operation_id(&response) {
+                match terminal_operation_id(&response) {
                     Some(operation_id)
                         if environment
-                            .should_exit_after_canary_receipt(operation_id)
+                            .should_exit_for_canary_operation(operation_id)
                             .await =>
                     {
-                        match commit_canary_terminal_receipt(&environment, text.as_bytes()).await {
-                            Ok(()) => true,
-                            Err(error) => {
-                                tracing::error!(%error, "image canary terminal receipt sync failed");
-                                false
-                            }
+                        if let Err(error) =
+                            commit_canary_terminal_receipt(&environment, text.as_bytes()).await
+                        {
+                            tracing::error!(%error, "image canary terminal receipt sync failed");
                         }
                     }
-                    _ => false,
-                };
+                    _ => {}
+                }
                 if socket.send(Message::Text(text.into())).await.is_err() {
                     break;
-                }
-                if canary_exit {
-                    // `SinkExt::send` includes the WebSocket sink flush. A short grace lets the
-                    // provider proxy forward those already-written bytes before this deliberate
-                    // image-canary crash. There is no runtime route that can trigger this branch.
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                    std::process::abort();
                 }
             }
             // A response one byte over the frame bound must surface as an addressable error, not
