@@ -19,6 +19,7 @@ fn artifact_path(root: &Path, path: &str) -> Result<PathBuf, EnvironmentError> {
 pub(crate) struct InstalledBinding {
     pub(crate) seal: SealedBinding,
     pub(crate) bundle_path: PathBuf,
+    pub(crate) execute_digest: String,
     pub(crate) node_path: PathBuf,
     pub(crate) identity: Option<ToolIdentity>,
 }
@@ -341,6 +342,19 @@ impl Environment {
                 root
             }
         };
+        let mut execute_layers = descriptor.layers.iter().filter(|layer| {
+            layer.mount_path.as_str() == descriptor.execute_path.as_str()
+                && layer.unpack == brain_protocol::environment::ArtifactLayerDescriptorUnpack::File
+        });
+        let execute_layer = execute_layers.next().ok_or_else(|| {
+            invalid("artifact entrypoint must resolve to exactly one immutable file layer")
+        })?;
+        if execute_layers.next().is_some() {
+            return Err(invalid(
+                "artifact entrypoint must resolve to exactly one immutable file layer",
+            ));
+        }
+        let execute_digest = execute_layer.digest.to_string();
         let bundle_path = artifact_path(&bundle_root, descriptor.execute_path.as_str())?;
         let node_path = bundle_root.join("runtime/bin/node");
         if !tokio::fs::try_exists(&bundle_path).await.unwrap_or(false)
@@ -395,6 +409,7 @@ impl Environment {
             InstalledBinding {
                 seal: request.binding,
                 bundle_path,
+                execute_digest,
                 node_path,
                 identity,
             },

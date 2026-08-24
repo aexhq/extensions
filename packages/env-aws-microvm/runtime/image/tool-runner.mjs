@@ -64,9 +64,9 @@ const writeResult = (maxOutputBytes, value, inline) => {
 
 try {
   const bundleBytes = await readFile(bundlePath);
-  const bundleDigest = createHash("sha256").update(bundleBytes).digest("hex");
-  if (bundleDigest !== request.seal.bundle_digest) {
-    throw new TypeError("bundle bytes do not match the sealed digest");
+  const executeDigest = createHash("sha256").update(bundleBytes).digest("hex");
+  if (executeDigest !== request.seal.execute_digest) {
+    throw new TypeError("executable bytes do not match the sealed digest");
   }
   // This import is intentionally the first evaluation of customer code. The Environment runner is
   // spawned only after Brain has durably journaled this operation's call intent, and the exact
