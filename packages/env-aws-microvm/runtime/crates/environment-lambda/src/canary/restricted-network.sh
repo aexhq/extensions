@@ -28,14 +28,14 @@ probe_hosts() {
 }
 
 gateway_status() {
-  local request=$1 line
-  exec 3<>"/dev/tcp/$gateway_host/$gateway_port" || return 1
-  printf '%b' "$request" >&3
-  IFS= read -r -t 3 line <&3 || return 1
-  exec 3>&- 3<&-
-  line=${line%$'\r'}
-  [[ $line =~ ^HTTP/1\.1\ ([0-9]{3})\  ]] || return 1
-  printf '%s\n' "${BASH_REMATCH[1]}"
+  timeout 3 bash -c '
+    exec 3<>"/dev/tcp/$1/$2" || exit 1
+    printf "%b" "$3" >&3
+    IFS= read -r line <&3 || exit 1
+    exec 3>&- 3<&-
+    [[ $line =~ ^HTTP/1\.1\ ([0-9]{3})\  ]] || exit 1
+    printf "%s\n" "${BASH_REMATCH[1]}"
+  ' gateway-status "$gateway_host" "$gateway_port" "$1"
 }
 
 if timeout 3 getent ahostsv4 example.com >/dev/null 2>&1; then
