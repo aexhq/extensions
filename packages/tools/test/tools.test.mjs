@@ -22,6 +22,13 @@ test("subagents is a prepared environment Tool with deployment-selectable API eg
   assert.match(value.artifact.digest, /^[0-9a-f]{64}$/);
   assert.equal(value.artifact.target, "linux-arm64");
 });
+
+test("subagents requests only extension-owned environment variables", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../dist/subagents.artifact.json", import.meta.url), "utf8"));
+  const code = manifest.blobs.find((blob) => blob.file.endsWith(".mjs"));
+  const runtimeModule = (await import(new URL(`../dist/${code.file}`, import.meta.url))).default;
+  assert.deepEqual(runtimeModule.requiredEnv, ["SUBAGENTS_API_URL", "SUBAGENTS_TOKEN"]);
+});
 const loop = Object.freeze({ source: "export const activate=()=>{}", sha256: "a".repeat(64), toolchain: "test-loop" });
 
 test("official tools are prepared computer extensions with explicit requirements", () => {

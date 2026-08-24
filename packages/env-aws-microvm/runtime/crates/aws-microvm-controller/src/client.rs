@@ -109,6 +109,20 @@ impl GuestClient {
                 temporary_from("physical sandbox endpoint did not become ready", error)
             })?;
         }
+        if state_requires_resume(&vm.state) {
+            self.control
+                .resume(target_ref)
+                .await
+                .map_err(control_error)?;
+            vm = launch::wait_for_state(
+                &self.control,
+                target_ref,
+                &MicrovmState::Running,
+                INITIAL_TARGET_READY_TIMEOUT,
+            )
+            .await
+            .map_err(|error| temporary_from("physical sandbox did not resume", error))?;
+        }
         if is_terminated(&vm.state) {
             return Err(error(
                 EnvironmentErrorCode::SandboxGone,
@@ -479,6 +493,10 @@ impl GuestClient {
     }
 }
 
+fn state_requires_resume(state: &MicrovmState) -> bool {
+    state == &MicrovmState::Suspended
+}
+
 /// One request attempt against the guest endpoint: a transport failure is retried once with a
 /// refreshed endpoint, while a fatal failure already carries its exact classification.
 enum EndpointAttemptError {
@@ -612,6 +630,13 @@ mod tests {
         let gone = endpoint_application_gone();
         assert_eq!(gone.code, EnvironmentErrorCode::SandboxGone);
         assert!(!gone.retryable);
+    }
+
+    #[test]
+    fn a_suspended_endpoint_requires_resume_before_reconnect() {
+        assert!(state_requires_resume(&MicrovmState::Suspended));
+        assert!(!state_requires_resume(&MicrovmState::Running));
+        assert!(!state_requires_resume(&MicrovmState::Pending));
     }
 
     #[test]
