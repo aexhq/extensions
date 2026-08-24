@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { chmod, readFile, stat } from "node:fs/promises";
 
 const authority = "http://127.0.0.1:8080";
 const ready = await fetch(`${authority}/aws/lambda-microvms/runtime/v1/ready`, {
@@ -243,23 +243,42 @@ export default {
 // Installs one fixture bundle plus its sealed binding; both installs derive from one descriptor.
 async function installFixtureBinding(bundleBytes, options) {
   const digest = createHash("sha256").update(bundleBytes).digest("hex");
+  const nodeBytes = Buffer.from("#!/bin/sh\nexec /workspace/.environment/bin/node \"$@\"\n");
+  const nodeDigest = createHash("sha256").update(nodeBytes).digest("hex");
   const descriptor = {
     bundle_digest: digest,
-    bytes: bundleBytes.length,
+    bytes: bundleBytes.length + nodeBytes.length,
     contract_digest: contractDigest,
     description: options.description,
-    object: {
+    environment_name: "workspace",
+    execute_path: "/tool/runtime.mjs",
+    layers: [{
+      digest: nodeDigest,
+      bytes: nodeBytes.length,
+      media_type: "application/javascript+esm",
+      mount_path: "/runtime/bin/node",
+      unpack: "file",
+      object: { bytes: nodeBytes.length, object_id: "node-ci", sha256: nodeDigest },
+    }, {
+      digest,
       bytes: bundleBytes.length,
-      object_id: options.objectId,
-      sha256: digest,
-    },
+      media_type: "application/javascript+esm",
+      mount_path: "/tool/runtime.mjs",
+      unpack: "file",
+      object: { bytes: bundleBytes.length, object_id: options.objectId, sha256: digest },
+    }],
     required_env: options.requiredEnv,
-    runtime: "node22",
+    target: "linux-arm64",
     tool_name: options.toolName,
   };
   await postInstall(
+    `/internal/bundles/${nodeDigest}`,
+    Buffer.concat([Buffer.from(`${JSON.stringify({ descriptor, layer_digest: nodeDigest })}\n`), nodeBytes]),
+    "application/octet-stream",
+  );
+  await postInstall(
     `/internal/bundles/${digest}`,
-    Buffer.concat([Buffer.from(`${JSON.stringify({ descriptor })}\n`), bundleBytes]),
+    Buffer.concat([Buffer.from(`${JSON.stringify({ descriptor, layer_digest: digest })}\n`), bundleBytes]),
     "application/octet-stream",
   );
   await postInstall("/internal/bindings", {
@@ -268,14 +287,25 @@ async function installFixtureBinding(bundleBytes, options) {
       binding_id: options.bindingRef,
       bundle: descriptor,
       capability: options.toolName,
+      configuration: {},
       contract_digest: contractDigest,
+      environment_name: "workspace",
+      extension: "@aexhq/env-aws-microvm",
       implementation_identity: options.implementationIdentity,
       policy_digest: options.policyDigest,
+      profile: {
+        kind: "computer",
+        platform: "linux-arm64",
+        network: "none",
+        recovery: "retained",
+      },
+      protocol: "environment/v1",
       required_capabilities: ["execution"],
       root_id: "root-ci",
       session_id: "session-ci",
     },
   });
+  await chmod(`/var/environment/tools/artifacts/${digest}/runtime/bin/node`, 0o750);
   return descriptor;
 }
 
