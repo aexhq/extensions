@@ -1,4 +1,5 @@
 set -euo pipefail
+trap 'status=$?; (( status == 0 )) || printf "public network canary shell failed: status=%s\n" "$status" >&2' EXIT
 
 denied=(__DENIED__)
 controls=(__CONTROLS__)
@@ -6,35 +7,39 @@ http_surfaces=(__HTTP_SURFACES__)
 customer_environment_hosts=(__CUSTOMER_ENVIRONMENT_HOSTS__)
 
 probe() {
-  timeout 3 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
+  timeout 1.5 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
 }
 
 probe_hosts() {
-  local output=$1 ports=$2
-  shift 2
+  local ports=$1 host port pid
+  local -a pids=()
+  shift
   for host in "$@"; do
     (
       for port in $ports; do
         if probe "$host" "$port"; then
-          printf '%s\n' "$host" >>"$output"
-          break
+          printf '%s\n' "$host"
+          exit 0
         fi
       done
+      exit 0
     ) &
+    pids+=("$!")
+    if (( ${#pids[@]} == 8 )); then
+      for pid in "${pids[@]}"; do wait "$pid" || true; done
+      pids=()
+    fi
   done
-  wait
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
 }
 
-reachable_special=$(mktemp)
-reachable_controls=$(mktemp)
-trap 'rm -f "$reachable_special" "$reachable_controls"' EXIT
-probe_hosts "$reachable_special" '80 443' "${denied[@]}"
-if [[ -s $reachable_special ]]; then
-  echo "special-use destinations accepted TCP: $(paste -sd, "$reachable_special")" >&2
+reachable_special=$(probe_hosts '80 443' "${denied[@]}")
+if [[ -n $reachable_special ]]; then
+  echo "special-use destinations accepted TCP: ${reachable_special//$'\n'/,}" >&2
   exit 1
 fi
-probe_hosts "$reachable_controls" '53 80 443' "${controls[@]}"
-if [[ ! -s $reachable_controls ]]; then
+reachable_controls=$(probe_hosts '53 80 443' "${controls[@]}")
+if [[ -z $reachable_controls ]]; then
   echo 'no public control was reachable' >&2
   exit 1
 fi

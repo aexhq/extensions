@@ -1,4 +1,5 @@
 set -euo pipefail
+trap 'status=$?; (( status == 0 )) || printf "restricted network canary shell failed: status=%s\n" "$status" >&2' EXIT
 
 connector_class=__CLASS__
 denied=(__DENIED__)
@@ -8,7 +9,30 @@ gateway_port=__GATEWAY_PORT__
 require_gateway=__REQUIRE_GATEWAY__
 
 probe() {
-  timeout 3 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
+  timeout 1.5 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
+}
+
+probe_hosts() {
+  local ports=$1 host port pid
+  local -a pids=()
+  shift
+  for host in "$@"; do
+    (
+      for port in $ports; do
+        if probe "$host" "$port"; then
+          printf '%s\n' "$host"
+          exit 0
+        fi
+      done
+      exit 0
+    ) &
+    pids+=("$!")
+    if (( ${#pids[@]} == 8 )); then
+      for pid in "${pids[@]}"; do wait "$pid" || true; done
+      pids=()
+    fi
+  done
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
 }
 
 gateway_status() {
@@ -31,21 +55,9 @@ direct_hosts=("${denied[@]}" "${controls[@]}")
 if (( ! require_gateway )); then
   direct_hosts+=("$gateway_host")
 fi
-reachable_direct=$(mktemp)
-trap 'rm -f "$reachable_direct"' EXIT
-for host in "${direct_hosts[@]}"; do
-  (
-    for port in 53 80 443 8443; do
-      if probe "$host" "$port"; then
-        printf '%s\n' "$host" >>"$reachable_direct"
-        break
-      fi
-    done
-  ) &
-done
-wait
-if [[ -s $reachable_direct ]]; then
-  echo "restricted connector accepted direct TCP: $(paste -sd, "$reachable_direct")" >&2
+reachable_direct=$(probe_hosts '53 80 443 8443' "${direct_hosts[@]}")
+if [[ -n $reachable_direct ]]; then
+  echo "restricted connector accepted direct TCP: ${reachable_direct//$'\n'/,}" >&2
   exit 1
 fi
 
