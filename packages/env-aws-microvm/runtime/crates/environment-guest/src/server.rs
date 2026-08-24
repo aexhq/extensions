@@ -211,6 +211,7 @@ async fn root(
 }
 
 async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) {
+    let mut canary_exit_armed = false;
     while let Some(message) = socket.next().await {
         let text = match message {
             Ok(Message::Text(text)) => text.to_string(),
@@ -234,8 +235,13 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
                 continue;
             }
         };
+        if canary_exit_armed {
+            // The publisher sends this second frame only after receiving the acknowledgement, so
+            // the deliberate crash has a protocol ordering boundary instead of a proxy delay.
+            std::process::abort();
+        }
         let request_id = frame.request_id.clone();
-        let canary_exit = match &frame.call {
+        let arm_canary_exit = match &frame.call {
             RequestCall::AcknowledgeTerminal(request) => {
                 environment
                     .should_exit_for_canary_operation(request.operation.operation_id.as_str())
@@ -248,11 +254,7 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
         } else {
             dispatch(&environment, frame.call).await
         };
-        if canary_exit && result.is_ok() {
-            // The publisher sends this acknowledgement only after validating the terminal, so
-            // the deliberate crash has a protocol ordering boundary instead of a proxy delay.
-            std::process::abort();
-        }
+        let arm_canary_exit = arm_canary_exit && result.is_ok();
         let response = ResponseFrame { request_id, result };
         match serde_json::to_string(&response) {
             Ok(text) if text.len() <= MAX_WIRE_FRAME_BYTES => {
@@ -273,6 +275,7 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
                 if socket.send(Message::Text(text.into())).await.is_err() {
                     break;
                 }
+                canary_exit_armed = arm_canary_exit;
             }
             // A response one byte over the frame bound must surface as an addressable error, not
             // as a silent connection drop the client can only read as Environment loss.
