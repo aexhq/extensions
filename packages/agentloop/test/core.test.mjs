@@ -130,6 +130,33 @@ test("typed op errors surface with their code and can be handled", async () => {
   assert.equal(caught.code, "unsealed_tool");
 });
 
+test("an aborted ctx op aborts the activation without failing the turn", async () => {
+  const requests = scriptedHost({
+    tools_dispatch: [
+      {
+        op_id: "x",
+        error: { code: "aborted", message: "the turn was cancelled", retryable: false },
+      },
+    ],
+  });
+  const { activate } = defineAgentloop({
+    async onMessage(ctx) {
+      await ctx.tools.dispatch([{ tool_call_id: "c1", name: "bash", input: {} }]);
+    },
+  });
+
+  const returned = JSON.parse(await activate("message", messagePayload()));
+  assert.deepEqual(returned, {
+    activation_id: "act-1",
+    outcome: "aborted",
+    error: { code: "aborted", message: "the turn was cancelled", retryable: false },
+  });
+  assert.deepEqual(
+    requests.map((request) => request.op.op),
+    ["tools_dispatch"],
+  );
+});
+
 test("a return_direct terminal makes the implicit finish a clean no-op", async () => {
   scriptedHost({
     tools_dispatch: [

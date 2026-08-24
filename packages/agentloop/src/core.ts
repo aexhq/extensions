@@ -301,6 +301,18 @@ export function defineAgentloop<Config = unknown>(handlers: AgentloopHandlers<Co
         }
         return { payloadJson: completed };
       } catch (error) {
+        if (error instanceof AgentloopOpError && error.code === "aborted") {
+          return JSON.stringify({
+            activation_id: activationId,
+            outcome: "aborted",
+            error: {
+              code: error.code,
+              message: error.message,
+              retryable: error.retryable,
+              ...(error.details === undefined ? {} : { details: error.details }),
+            },
+          });
+        }
         const message = error instanceof Error ? error.message : String(error);
         if (!concluded()) {
           try {
