@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 
 const authority = "http://127.0.0.1:8080";
-const environmentContractDigest = "61dbf587fc4b908610744df6ca319c9bd3d5884ba6ad40bebba5a28672af9100";
+const ready = await fetch(`${authority}/aws/lambda-microvms/runtime/v1/ready`, {
+  method: "POST",
+}).then((response) => response.json());
+const environmentContractDigest = ready.contract_digest;
+assert.match(environmentContractDigest, /^[0-9a-f]{64}$/);
 const controlToken = `control-${"a".repeat(64)}`;
 
 const payload = {

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{RunEnvelope, RunPayload};
 use serde_json::{Value, json};
 
@@ -80,7 +81,13 @@ pub async fn ready(State(environment): State<Arc<Environment>>) -> (StatusCode, 
         }
     }
     if failures.is_empty() {
-        (StatusCode::OK, Json(json!({"ok": true})))
+        (
+            StatusCode::OK,
+            Json(json!({
+                "ok": true,
+                "contract_digest": ENVIRONMENT_CONTRACT_DIGEST.trim()
+            })),
+        )
     } else {
         (
             StatusCode::SERVICE_UNAVAILABLE,
