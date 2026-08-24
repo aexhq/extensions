@@ -668,6 +668,7 @@ mod tests {
         assert_eq!(serde_json::to_vec(&replay).unwrap(), first);
         assert_eq!(request.client_token, "stable-client-token");
         assert_eq!(request.max_idle_duration_seconds, MAX_IDLE_SECONDS);
+        assert_eq!(request.max_idle_duration_seconds, MAX_DURATION_SECONDS);
         assert_eq!(request.maximum_duration_seconds, MAX_DURATION_SECONDS);
         assert_eq!(request.suspended_duration_seconds, MAX_DURATION_SECONDS);
         assert!(request.auto_resume_enabled);
