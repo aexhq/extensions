@@ -551,12 +551,6 @@ fn connector_routed_special_use_ipv4_fixtures() -> Vec<&'static str> {
         .collect()
 }
 
-/// Wraps a canary shell script into the in-guest heredoc command. Network release proofs use only
-/// the image's base operating-system tools because language runtimes belong to tool setup.
-fn canary_shell_command(marker: &str, script: &str) -> String {
-    format!("bash <<'{marker}'\n{}\n{marker}", script.trim_end())
-}
-
 fn shell_words(values: impl IntoIterator<Item = impl AsRef<str>>) -> String {
     values
         .into_iter()
@@ -607,19 +601,16 @@ fn restricted_network_execution(
         ),
     };
 
-    let command = canary_shell_command(
-        "AEX_RESTRICTED_NETWORK_CANARY",
-        &include_str!("canary/restricted-network.sh")
-            .replace("__CLASS__", label)
-            .replace("__DENIED__", &shell_words(&denied))
-            .replace("__CONTROLS__", &shell_words(&controls))
-            .replace("__GATEWAY_HOST__", gateway.host())
-            .replace("__GATEWAY_PORT__", &gateway.port().get().to_string())
-            .replace(
-                "__REQUIRE_GATEWAY__",
-                if require_gateway { "1" } else { "0" },
-            ),
-    );
+    let command = include_str!("canary/restricted-network.sh")
+        .replace("__CLASS__", label)
+        .replace("__DENIED__", &shell_words(&denied))
+        .replace("__CONTROLS__", &shell_words(&controls))
+        .replace("__GATEWAY_HOST__", gateway.host())
+        .replace("__GATEWAY_PORT__", &gateway.port().get().to_string())
+        .replace(
+            "__REQUIRE_GATEWAY__",
+            if require_gateway { "1" } else { "0" },
+        );
     let mut request: SandboxExecutionRequest = serde_json::from_value(serde_json::json!({
         "execution_id": operation_id,
         "expected_generation": generation,
@@ -667,26 +658,23 @@ fn public_network_execution(
         serde_json::json!({"host": "api-dev.aex.dev", "path": "/v1/rates"}),
     ];
 
-    let command = canary_shell_command(
-        "AEX_NETWORK_CANARY",
-        &include_str!("canary/public-network.sh")
-            .replace("__DENIED__", &shell_words(&denied))
-            .replace("__CONTROLS__", &shell_words(&controls))
-            .replace(
-                "__HTTP_SURFACES__",
-                &shell_words(http_surfaces.iter().map(|surface| {
-                    format!(
-                        "{}|{}",
-                        surface["host"].as_str().expect("static host"),
-                        surface["path"].as_str().expect("static path")
-                    )
-                })),
-            )
-            .replace(
-                "__CUSTOMER_ENVIRONMENT_HOSTS__",
-                &shell_words(customer_environment_hosts),
-            ),
-    );
+    let command = include_str!("canary/public-network.sh")
+        .replace("__DENIED__", &shell_words(&denied))
+        .replace("__CONTROLS__", &shell_words(&controls))
+        .replace(
+            "__HTTP_SURFACES__",
+            &shell_words(http_surfaces.iter().map(|surface| {
+                format!(
+                    "{}|{}",
+                    surface["host"].as_str().expect("static host"),
+                    surface["path"].as_str().expect("static path")
+                )
+            })),
+        )
+        .replace(
+            "__CUSTOMER_ENVIRONMENT_HOSTS__",
+            &shell_words(customer_environment_hosts),
+        );
     let mut request: SandboxExecutionRequest = serde_json::from_value(serde_json::json!({
         "execution_id": operation_id,
         "expected_generation": generation,
@@ -989,6 +977,8 @@ mod tests {
             request.request_digest,
             sandbox_execution_request_digest(&request)
         );
+        assert!(request.input.command.starts_with("set -euo pipefail"));
+        assert!(!request.input.command.contains("bash <<"));
         let denied = connector_routed_special_use_ipv4_fixtures();
         for &(address, _) in brain_protocol::network::SPECIAL_USE_FIXTURES {
             if address.parse::<Ipv4Addr>().is_ok() {
@@ -1048,6 +1038,8 @@ mod tests {
                 request.request_digest,
                 sandbox_execution_request_digest(&request)
             );
+            assert!(request.input.command.starts_with("set -euo pipefail"));
+            assert!(!request.input.command.contains("bash <<"));
             assert!(request.input.command.contains("timeout 3 getent ahostsv4"));
             assert!(request.input.command.contains("--parallel-max 32"));
             assert!(!request.input.command.contains("mktemp"));
