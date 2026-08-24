@@ -439,8 +439,10 @@ async fn run_on_known_target(
     http: &reqwest::Client,
     target: &KnownTargetSeal,
 ) -> anyhow::Result<()> {
-    let (mut environment, mut socket) = connect_to_target(control, target).await?;
+    // AWS expires idle endpoint connections. Connect after this delay so the gate measures the
+    // MicroVM's run-hook stability rather than the lifetime of a silent WebSocket.
     tokio::time::sleep(RUN_HOOK_STABILITY_WINDOW).await;
+    let (mut environment, mut socket) = connect_to_target(control, target).await?;
     let request = canary_execution(
         &target.operation_id,
         &target.generation,
