@@ -108,6 +108,44 @@ impl DynamoTargetRegistry {
             .ok_or_else(|| corrupt("capacity row has no valid reserved_mib"))
     }
 
+    pub(crate) async fn expired_target(
+        &self,
+        now_ms: u64,
+    ) -> Result<Option<DurableTargetRecord>, MaterializationError> {
+        // Capacity pressure is rare and the MVP table has no expiry index. Keep ordinary
+        // reservations on their two-write transaction and pay for this scan only to recover a
+        // target whose accounting-safe provider deadline has already elapsed.
+        let mut start_key = None;
+        loop {
+            let output = self
+                .db
+                .scan()
+                .table_name(&self.table)
+                .filter_expression("begins_with(#target_key, :target_prefix)")
+                .expression_attribute_names("#target_key", TARGET_KEY)
+                .expression_attribute_values(":target_prefix", s(TARGET_KEY_PREFIX))
+                .consistent_read(true)
+                .limit(100)
+                .set_exclusive_start_key(start_key)
+                .send()
+                .await
+                .map_err(|error| storage_error("scan expired targets", &error))?;
+            for item in output.items() {
+                let record = parse_record(item)?;
+                if target_reap_deadline(&record).is_some_and(|deadline| deadline <= now_ms) {
+                    return Ok(Some(record));
+                }
+            }
+            start_key = output
+                .last_evaluated_key()
+                .filter(|key| !key.is_empty())
+                .cloned();
+            if start_key.is_none() {
+                return Ok(None);
+            }
+        }
+    }
+
     async fn live_additional_targets(&self, root_id: &str) -> Result<u64, MaterializationError> {
         let output = self
             .db
@@ -1050,6 +1088,17 @@ fn root_additional_capacity_error(live: u64, maximum: u64) -> Option<Materializa
     })
 }
 
+fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
+    match &record.state {
+        DurableTargetState::Installed { expires_at_ms, .. } => Some(*expires_at_ms),
+        DurableTargetState::Materializing {
+            lease_expires_at_ms,
+            ..
+        } => Some(*lease_expires_at_ms),
+        DurableTargetState::Closed { .. } => None,
+    }
+}
+
 fn additional_count_add_update(
     table: &str,
     root_id: &str,
@@ -1277,5 +1326,33 @@ mod tests {
         assert_eq!(scope, "root_additional_sandboxes");
         assert_eq!(retry_after_ms, 1_000);
         assert!(message.contains("maximum of 2"));
+    }
+
+    #[test]
+    fn reaping_waits_for_the_accounting_safe_deadline() {
+        let lease = lease();
+        let materializing = parse_record(&materializing_item(&lease, 10)).unwrap();
+        assert_eq!(
+            target_reap_deadline(&materializing),
+            Some(lease.lease_expires_at_ms)
+        );
+
+        let mut installed = materializing_item(&lease, 10);
+        installed.insert(STATE.into(), s(INSTALLED));
+        installed.remove("reservation_id");
+        installed.remove(LAUNCH_REQUEST);
+        installed.remove(ATTEMPT_ID);
+        installed.remove(ATTEMPT_EXPIRES_AT_MS);
+        installed.remove("lease_expires_at_ms");
+        installed.insert("target_ref".into(), s("mvm-1"));
+        installed.insert(
+            CONTROL_TOKEN.into(),
+            AttributeValue::B(Blob::new(format!("control-{}", "c".repeat(64)))),
+        );
+        installed.insert("installed_at_ms".into(), n(20));
+        assert_eq!(
+            target_reap_deadline(&parse_record(&installed).unwrap()),
+            Some(lease.target_expires_at_ms)
+        );
     }
 }
