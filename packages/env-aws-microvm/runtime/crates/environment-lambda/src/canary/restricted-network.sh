@@ -38,7 +38,7 @@ gateway_status() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
-if getent ahostsv4 example.com >/dev/null 2>&1; then
+if timeout 3 getent ahostsv4 example.com >/dev/null 2>&1; then
   echo 'restricted connector DNS was not fail-closed' >&2
   exit 1
 fi
