@@ -398,6 +398,7 @@ const managedEnvelope = (operationId, bindingRef, capability, input) => {
     input: { kind: "inline", value: input },
     network: { kind: "none" },
     operation_id: operationId,
+    phase: "execute",
     request_digest: "0".repeat(64),
     resources: { max_output_bytes: 65536, timeout_ms: 60_000 },
     root_id: "root-ci",
