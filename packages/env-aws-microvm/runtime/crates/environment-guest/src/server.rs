@@ -1,6 +1,8 @@
 //! Bounded WebSocket transport plus provider and immutable-install routes.
 
+use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::pin::pin;
 use std::sync::Arc;
 
 use axum::Router;
@@ -21,10 +23,16 @@ use environment_wire::{
     ResponseReply,
 };
 use futures_util::StreamExt;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
 use sha2::{Digest as _, Sha256};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio_util::io::ReaderStream;
+use tower::ServiceExt as _;
 
 use crate::environment::Environment;
 use crate::errors::{environment_error, invalid, status_for};
@@ -73,12 +81,52 @@ impl Server {
             .nest(hooks::HOOK_PREFIX, hooks)
             .layer(DefaultBodyLimit::max(MAX_INSTALL_BODY_BYTES))
             .with_state(self.environment);
-        use axum::serve::ListenerExt as _;
-        let listener = self.listener.tap_io(|io| {
-            let _ = io.set_nodelay(true);
-        });
-        axum::serve(listener, app).await?;
-        Ok(())
+        loop {
+            let (socket, _) = self.listener.accept().await?;
+            socket.set_nodelay(true)?;
+            tokio::spawn(serve_http_socket(socket, app.clone()));
+        }
+    }
+}
+
+async fn serve_http_socket(socket: tokio::net::TcpStream, app: Router) {
+    let (close_tx, mut close_rx) = watch::channel(false);
+    let service = service_fn(move |request: axum::http::Request<Incoming>| {
+        let close_after_response =
+            request.uri().path().strip_prefix(hooks::HOOK_PREFIX) == Some("/run");
+        let app = app.clone();
+        let close_tx = close_tx.clone();
+        async move {
+            let response = app
+                .oneshot(request.map(Body::new))
+                .await
+                .unwrap_or_else(|error| match error {});
+            if close_after_response {
+                let _ = close_tx.send(true);
+            }
+            Ok::<_, Infallible>(response)
+        }
+    });
+    let mut connection = pin!(
+        http1::Builder::new()
+            .serve_connection(TokioIo::new(socket), service)
+            .with_upgrades()
+    );
+    tokio::select! {
+        result = &mut connection => log_http_connection_result(result),
+        changed = close_rx.changed() => {
+            if changed.is_ok() {
+                // AWS keeps the run hook pending until its guest connection ends.
+                connection.as_mut().graceful_shutdown();
+                log_http_connection_result(connection.await);
+            }
+        }
+    }
+}
+
+fn log_http_connection_result(result: Result<(), hyper::Error>) {
+    if let Err(error) = result {
+        tracing::debug!(%error, "guest HTTP connection ended with an error");
     }
 }
 
@@ -630,5 +678,43 @@ fn reply<T: serde::Serialize>(
             status_for(error.code),
             Json(serde_json::json!({"error": error.message.as_str(), "code": error.code})),
         ),
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use std::time::Duration;
+
+    use axum::routing::get;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::serve_http_socket;
+
+    #[tokio::test]
+    async fn responses_end_even_when_the_client_requests_keep_alive() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let path = format!("{}/run", crate::hooks::HOOK_PREFIX);
+        let app = axum::Router::new().route(&path, get(|| async { axum::http::StatusCode::OK }));
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            serve_http_socket(socket, app).await;
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client
+            .write_all(
+                format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), client.read_to_end(&mut response))
+            .await
+            .expect("server kept the completed HTTP response open")
+            .unwrap();
+        assert!(response.starts_with(b"HTTP/1.1 200 OK\r\n"));
+        server.await.unwrap();
     }
 }
