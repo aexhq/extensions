@@ -7,7 +7,7 @@ use environment_lambda::canary::{
     NetworkBoundaryCanaryConfig, NoRespawnCanaryConfig, run_network_boundary_canary,
     run_no_respawn_canary,
 };
-use environment_lambda::control::Control;
+use environment_lambda::control::{Control, ControlError, is_terminated};
 use environment_lambda::image::{self, PublishConfig};
 
 #[derive(Parser)]
@@ -37,6 +37,12 @@ enum Command {
     },
     Terminate {
         id: String,
+    },
+    TerminateImage {
+        #[arg(long)]
+        image_arn: String,
+        #[arg(long, required = true, action = clap::ArgAction::SetTrue)]
+        confirm_terminate_image: bool,
     },
 }
 
@@ -136,7 +142,53 @@ async fn main() -> anyhow::Result<()> {
         Command::Suspend { id } => control.suspend(&id).await.map_err(Into::into),
         Command::Resume { id } => control.resume(&id).await.map_err(Into::into),
         Command::Terminate { id } => control.terminate(&id).await.map_err(Into::into),
+        Command::TerminateImage {
+            image_arn,
+            confirm_terminate_image,
+        } => {
+            debug_assert!(confirm_terminate_image, "clap enforces the flag");
+            terminate_image(&control, &image_arn).await
+        }
     }
+}
+
+async fn terminate_image(control: &Control, image_arn: &str) -> anyhow::Result<()> {
+    let targets = control
+        .list()
+        .await?
+        .into_iter()
+        .filter(|target| target.image_arn == image_arn)
+        .collect::<Vec<_>>();
+    for target in &targets {
+        if !is_terminated(&target.state) {
+            match control.terminate(&target.id).await {
+                Ok(()) | Err(ControlError::Gone(_) | ControlError::Unknown(_)) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        for attempt in 0..60 {
+            match control.get(&target.id).await {
+                Ok(current) if is_terminated(&current.state) => break,
+                Err(ControlError::Gone(_)) => break,
+                Ok(_) | Err(ControlError::Retryable(_) | ControlError::Throttled(_))
+                    if attempt < 59 =>
+                {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Ok(current) => anyhow::bail!(
+                    "MicroVM {} remained {:?} after termination",
+                    current.id,
+                    current.state
+                ),
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    println!(
+        "Terminated {} MicroVM(s) for image {image_arn}",
+        targets.len()
+    );
+    Ok(())
 }
 
 async fn image_command(

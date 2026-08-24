@@ -527,6 +527,8 @@ impl Control {
                 vms.push(MicrovmSummary {
                     id: item.microvm_id().to_owned(),
                     state: item.state().clone(),
+                    image_arn: item.image_arn().to_owned(),
+                    image_version: item.image_version().to_owned(),
                 });
             }
             next = out.next_token().map(str::to_owned);
@@ -551,6 +553,8 @@ impl Control {
 pub struct MicrovmSummary {
     pub id: String,
     pub state: MicrovmState,
+    pub image_arn: String,
+    pub image_version: String,
 }
 
 /// Whether a VM state means the environment can never come back.
