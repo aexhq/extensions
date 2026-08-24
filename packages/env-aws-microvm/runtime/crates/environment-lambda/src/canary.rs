@@ -395,7 +395,8 @@ async fn run_public_network_on_known_target(
     let stdout = require_completed_stdout(&terminal, "network")?;
     ensure!(
         stdout.starts_with("network_canary=ok "),
-        "network canary returned an unexpected result"
+        "network canary returned unexpected stdout: {stdout:?}; terminal detail: {}",
+        terminal_diagnostic(terminal.inline.as_ref())
     );
     Ok(())
 }
