@@ -1,0 +1,18 @@
+[package]
+name = "environment-wire"
+version = "0.1.0"
+description = "Private transport framing for the Aex production Environment"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brain.workspace = true
+brain-protocol.workspace = true
+environment-policy = { path = "../environment-policy" }
+serde.workspace = true

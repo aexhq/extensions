@@ -1,0 +1,43 @@
+[package]
+name = "environment-guest"
+version = "0.1.0"
+description = "AWS MicroVM environment guest implementing Brain's Environment ABI"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "environment-guest"
+path = "src/main.rs"
+
+[dependencies]
+brain-protocol.workspace = true
+brain.workspace = true
+environment-core = { path = "../environment-core" }
+environment-policy = { path = "../environment-policy" }
+environment-wire = { path = "../environment-wire" }
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+libc.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_jcs.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

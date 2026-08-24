@@ -8,8 +8,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: extensions-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RUNTIME: packages/env-aws-microvm/runtime
+  AEX_REVISION: 8fc0efc5f246163fa35ddc6df52ceec83308f49b
+
 jobs:
-  build:
+  packages:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -20,12 +28,20 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # Registry installs only: officials must build against the published SDKs,
-      # exactly like an external contributor.
-      - run: npm ci || npm install
+      # The public Environment package is staged from this immutable Aex revision before the
+      # extension packages switch to its published version for release.
+      - name: Build the pinned Aex SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/aexhq/aex.git ../aex
+          git -C ../aex checkout "$AEX_REVISION"
+          test "$(git -C ../aex rev-parse HEAD)" = "$AEX_REVISION"
+          npm ci --prefix ../aex
+          npm run build --prefix ../aex
+      - run: npm ci
       - run: npm run build
-      # Determinism gate: a second build must reproduce byte-identical identities.
-      - name: rebuild determinism
+      - name: Rebuild determinism
         run: |
           set -euo pipefail
           for p in packages/*/dist/identity.json; do cp "$p" "$p.first"; done
@@ -34,3 +50,169 @@ jobs:
             cmp "$p" "$p.first" || { echo "$p is not deterministic"; exit 1; }
           done
       - run: npm test
+
+  runtime-format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt
+      - run: cargo fmt --manifest-path "$RUNTIME/Cargo.toml" --all -- --check
+
+  runtime-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-ci-build
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo build --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
+
+  runtime-clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-ci-clippy
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo clippy --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets -- -D warnings
+
+  runtime-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-ci-test
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo test --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
+
+  node-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Exercise a prepared Tool in the environment runner
+        run: node "$RUNTIME/scripts/test-tool-runner.mjs"
+
+  linux-image-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-ci-linux-image
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - name: Build guest
+        run: cargo build --manifest-path "$RUNTIME/Cargo.toml" -p environment-guest --release --locked
+      - name: Build native image
+        working-directory: packages/env-aws-microvm/runtime
+        run: docker build -f image/Dockerfile --build-arg BIN=target/release/environment-guest -t environment:ci .
+      - name: Seal native image
+        run: |
+          mkdir environment-ci-image
+          docker save environment:ci | gzip -1 > environment-ci-image/environment-ci.tar.gz
+          sha256sum environment-ci-image/environment-ci.tar.gz > environment-ci-image/SHA256SUMS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  image-policy-security:
+    needs: linux-image-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image
+      - name: Verify and load native image
+        run: |
+          sha256sum --check environment-ci-image/SHA256SUMS
+          gzip -dc environment-ci-image/environment-ci.tar.gz | docker load
+      - name: Prove the image privilege allowlist
+        run: |
+          docker run --rm --entrypoint sh --user 0:0 environment:ci -ceu '
+            test -z "$(find / -xdev -type f -perm /6000 -print -quit)"
+            capabilities=$(getcap -r / 2>/dev/null || true)
+            test -z "$capabilities"
+            test "$(stat -c "%u:%g:%a" /var/environment)" = "1001:1000:710"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/control-listener)" = "0:1001:750"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/tool-boundary.so)" = "0:0:555"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/proc-secret-static)" = "0:0:555"
+            ! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP
+          '
+
+  guest-runtime-security:
+    needs: linux-image-build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-ci-image-${{ github.sha }}
+          path: environment-ci-image
+      - name: Verify and load native image
+        run: |
+          sha256sum --check environment-ci-image/SHA256SUMS
+          gzip -dc environment-ci-image/environment-ci.tar.gz | docker load
+      - name: Prove Tool identities cannot reach supervisor control
+        run: |
+          node_dir=$(dirname "$(command -v node)")
+          chmod 0555 "$RUNTIME/scripts/test-control-listener-fd.sh"
+          preserved=$(docker run --rm --entrypoint sh \
+            -v "$PWD/$RUNTIME/scripts/test-control-listener-fd.sh:/tmp/test-control-listener-fd.sh:ro" \
+            environment:ci -ceu 'exec 3>&1; exec /usr/local/lib/environment/control-listener /tmp/test-control-listener-fd.sh')
+          test "$preserved" = provider-fd-preserved
+          for uid in 1000:1000 65536:1000; do
+            docker run --rm --entrypoint node --user "$uid" \
+              --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
+              -v "$node_dir:/workspace/.environment/bin:ro" \
+              -v "$PWD/$RUNTIME/scripts/test-control-boundary.mjs:/tmp/test-control-boundary.mjs:ro" \
+              environment:ci /tmp/test-control-boundary.mjs --bind
+          done
+          CID=$(docker run -d --rm \
+            --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
+            -v "$node_dir:/workspace/.environment/bin:ro" \
+            -p 8080:8080 environment:ci)
+          trap 'docker logs "$CID"; docker stop "$CID" >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && { exec 3>&-; sleep 1; break; }; sleep 0.5; done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/)" = 401
+          test "$(curl --silent --output /tmp/environment-ready.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/ready)" = 200
+          jq --exit-status '.ok == true' /tmp/environment-ready.json >/dev/null
+          test "$(curl --silent --output /tmp/environment-validate.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/validate)" = 200
+          jq --exit-status '.ok == true' /tmp/environment-validate.json >/dev/null
+          docker cp "$RUNTIME/scripts/test-control-boundary.mjs" "$CID":/tmp/test-control-boundary.mjs
+          docker exec --user 1000:1000 "$CID" node /tmp/test-control-boundary.mjs
+          docker cp "$RUNTIME/scripts/test-guest-deadline.mjs" "$CID":/tmp/test-guest-deadline.mjs
+          docker exec --user 0:0 "$CID" sh -c 'chown 1001:1001 /tmp/test-guest-deadline.mjs && chmod 0400 /tmp/test-guest-deadline.mjs'
+          docker exec --user 1001:1000 "$CID" node /tmp/test-guest-deadline.mjs
+          docker stop "$CID" >/dev/null
+          trap - EXIT

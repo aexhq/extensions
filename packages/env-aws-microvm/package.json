@@ -1,0 +1,14 @@
+{
+  "name": "@aexhq/env-aws-microvm",
+  "version": "0.1.0",
+  "description": "AWS MicroVM environment extension for Aex",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/env-aws-microvm" },
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "publishConfig": { "access": "public", "provenance": true, "tag": "next" },
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
+  "files": ["index.mjs", "index.d.ts", "README.md"],
+  "scripts": { "test": "node --test index.test.mjs && cargo test --manifest-path runtime/Cargo.toml --workspace --all-targets" },
+  "dependencies": { "@aexhq/environment": "0.1.0" }
+}

@@ -1,0 +1,219 @@
+name: publish environment image
+
+on:
+  workflow_dispatch:
+    inputs:
+      plane:
+        description: Plane whose isolated image should be published
+        required: true
+        type: choice
+        options: [dev, prd]
+      expected_commit:
+        description: Full source SHA selected by release/sha-<sha>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: environment-image-${{ inputs.plane }}
+  cancel-in-progress: false
+
+env:
+  RUNTIME: packages/env-aws-microvm/runtime
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt
+      - run: cargo fmt --manifest-path "$RUNTIME/Cargo.toml" --all -- --check
+
+  clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-release-clippy
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo clippy --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-release-test
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - run: cargo test --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
+
+  node-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Exercise a prepared Tool in the environment runner
+        run: node "$RUNTIME/scripts/test-tool-runner.mjs"
+
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: environment-release-aarch64-build
+          workspaces: packages/env-aws-microvm/runtime -> target
+      - name: Build aarch64 guest and publisher
+        run: cargo build --manifest-path "$RUNTIME/Cargo.toml" -p environment-guest -p environment-lambda --release --locked
+      - name: Seal release binaries
+        run: |
+          mkdir environment-image-binaries
+          install -m 0755 "$RUNTIME/target/release/environment-guest" environment-image-binaries/environment-guest
+          install -m 0755 "$RUNTIME/target/release/environment-lambda" environment-image-binaries/environment-lambda
+          cd environment-image-binaries
+          sha256sum environment-guest environment-lambda > SHA256SUMS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: environment-image-binaries-${{ inputs.expected_commit }}
+          path: environment-image-binaries/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: [format, clippy, test, node-runtime, build]
+    runs-on: ubuntu-24.04-arm
+    environment: ${{ inputs.plane }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_arn: ${{ steps.publish.outputs.image_arn }}
+      image_version: ${{ steps.publish.outputs.image_version }}
+      source_sha: ${{ steps.publish.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify immutable release source
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-image-binaries-${{ inputs.expected_commit }}
+          path: environment-image-binaries
+      - name: Verify release binaries
+        run: |
+          cd environment-image-binaries
+          sha256sum --check SHA256SUMS
+          chmod 0755 environment-guest environment-lambda
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          # Retain deployed AWS identities while source ownership moves to extensions.
+          role-to-assume: arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-publisher
+          aws-region: us-east-1
+      - name: Publish isolated plane image
+        id: publish
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST }}
+          ENVIRONMENT_NETWORK_CONNECTOR_NONE: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_NONE }}
+          ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC }}
+        run: |
+          published="$(environment-image-binaries/environment-lambda --region us-east-1 image publish \
+            --source-sha "$EXPECTED_COMMIT" \
+            --binary environment-image-binaries/environment-guest \
+            --name aex-hands-${{ inputs.plane }}-1gb \
+            --bucket aex-hands-${{ inputs.plane }}-use1-artifacts-522921482290 \
+            --build-role arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-build \
+            --log-group /aex/${{ inputs.plane }}-use1/hands/image-build \
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE" \
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST" \
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC")"
+          read -r image_arn image_version <<<"$(printf '%s\n' "$published" | tail -n 1)"
+          test -n "$image_arn" && test -n "$image_version"
+          echo "image_arn=$image_arn" >> "$GITHUB_OUTPUT"
+          echo "image_version=$image_version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Published immutable image $image_arn version $image_version from source $EXPECTED_COMMIT"
+          printf 'Environment image: `%s` version `%s` from `%s`\n' "$image_arn" "$image_version" "$EXPECTED_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Prove dev image does not rearm after guest crash
+        if: inputs.plane == 'dev'
+        env:
+          ENVIRONMENT_NETWORK_CONNECTOR_NONE: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_NONE }}
+        run: |
+          environment-image-binaries/environment-lambda --region us-east-1 image canary \
+            --image-arn '${{ steps.publish.outputs.image_arn }}' \
+            --image-version '${{ steps.publish.outputs.image_version }}' \
+            --none-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE" \
+            --confirm-dev-image-canary
+      - name: Prove dev image connector boundaries
+        if: inputs.plane == 'dev'
+        env:
+          AEX_CUSTOMER_ENVIRONMENT_DEV_HOST: ${{ vars.AEX_CUSTOMER_ENVIRONMENT_DEV_HOST }}
+          AEX_CUSTOMER_ENVIRONMENT_PRD_HOST: ${{ vars.AEX_CUSTOMER_ENVIRONMENT_PRD_HOST }}
+          ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY: ${{ vars.ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY }}
+          ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST }}
+          ENVIRONMENT_NETWORK_CONNECTOR_NONE: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_NONE }}
+          ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC }}
+        run: |
+          test -n "$AEX_CUSTOMER_ENVIRONMENT_DEV_HOST" && test -n "$AEX_CUSTOMER_ENVIRONMENT_PRD_HOST" && test -n "$ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY"
+          environment-image-binaries/environment-lambda --region us-east-1 image network-canary \
+            --image-arn '${{ steps.publish.outputs.image_arn }}' \
+            --image-version '${{ steps.publish.outputs.image_version }}' \
+            --none-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE" \
+            --allowlist-connector "$ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST" \
+            --public-connector "$ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC" \
+            --gateway-authority "$ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY" \
+            --customer-environment-host "$AEX_CUSTOMER_ENVIRONMENT_DEV_HOST" "$AEX_CUSTOMER_ENVIRONMENT_PRD_HOST" \
+            --confirm-dev-network-canary

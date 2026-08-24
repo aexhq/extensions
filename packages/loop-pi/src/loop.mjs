@@ -6,6 +6,8 @@ import { runAgentLoop } from "@earendil-works/pi-agent-core";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { defineAgentloop } from "@aexhq/agentloop";
 
+const loopConfig = Object.freeze(JSON.parse("__AEX_LOOP_CONFIG_JSON__"));
+
 const piModel = (model) => ({
   id: model,
   name: model,
@@ -134,6 +136,8 @@ function streamFolded(ctx, llmContext) {
         input_schema: tool.parameters,
       }));
     }
+    if (loopConfig.temperature !== undefined) request.temperature = loopConfig.temperature;
+    if (loopConfig.reasoningEffort !== undefined) request.reasoning_effort = loopConfig.reasoningEffort;
     const view = await ctx.model.stream(request);
     const content = [];
     const base = () => ({
@@ -233,7 +237,7 @@ export const { activate } = defineAgentloop({
   },
   async onMessage(ctx, admitted) {
     const context = {
-      systemPrompt: "",
+      systemPrompt: loopConfig.instructions ?? "",
       messages: memory,
       tools: sealedTools(ctx),
     };

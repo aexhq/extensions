@@ -1,0 +1,28 @@
+[package]
+name = "environment-egress-gateway"
+version = "0.1.0"
+description = "Low-privilege allowlist gateway for Aex managed sandboxes"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brain-protocol.workspace = true
+base64.workspace = true
+hickory-resolver.workspace = true
+idna.workspace = true
+ipnet.workspace = true
+p256.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]

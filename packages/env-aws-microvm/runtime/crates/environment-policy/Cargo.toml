@@ -1,0 +1,19 @@
+[package]
+name = "environment-policy"
+version = "0.1.0"
+description = "Shared Environment vocabulary: identifier grammar, secret newtypes, connector classes, guest environment policy, and object bounds"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brain-protocol.workspace = true
+serde.workspace = true
+serde_jcs.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true

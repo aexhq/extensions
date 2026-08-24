@@ -4,6 +4,8 @@
 // conversation memory, and a summary mark per turn.
 import { defineAgentloop } from "@aexhq/agentloop";
 
+const loopConfig = Object.freeze(JSON.parse("__AEX_LOOP_CONFIG_JSON__"));
+
 const textOf = (content) =>
   content
     .filter((block) => block.type === "text")
@@ -35,7 +37,7 @@ function environmentPreamble(ctx) {
     ? ctx.session.metadata.tools.map((tool) => tool.name).join(", ")
     : "none";
   return [
-    "You are a precise engineering agent.",
+    loopConfig.instructions ?? "You are a precise engineering agent.",
     "<environment_context>",
     `session: ${ctx.session.session_id}`,
     `model: ${ctx.session.model}`,
@@ -87,6 +89,8 @@ export const { activate } = defineAgentloop({
       if (presented.length > 0) {
         request.tools = presented;
       }
+      if (loopConfig.temperature !== undefined) request.temperature = loopConfig.temperature;
+      if (loopConfig.reasoningEffort !== undefined) request.reasoning_effort = loopConfig.reasoningEffort;
       const round = await ctx.model.stream(request);
       memory.push({ role: "assistant", content: round.content });
       const calls = round.content.filter((block) => block.type === "tool_call");
