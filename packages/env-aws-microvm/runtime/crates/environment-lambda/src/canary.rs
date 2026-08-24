@@ -1009,7 +1009,7 @@ mod tests {
         }
         assert!(request.input.command.contains("reachable_special"));
         assert!(request.input.command.contains("reachable_controls"));
-        assert!(request.input.command.contains("${#pids[@]} == 8"));
+        assert!(request.input.command.contains("--parallel-max 32"));
         assert!(!request.input.command.contains("mktemp"));
         assert!(!request.input.command.contains("node --input-type"));
         assert!(request.input.command.contains("Aex HTTPS surface"));
@@ -1052,7 +1052,7 @@ mod tests {
                 sandbox_execution_request_digest(&request)
             );
             assert!(request.input.command.contains("getent ahostsv4"));
-            assert!(request.input.command.contains("${#pids[@]} == 8"));
+            assert!(request.input.command.contains("--parallel-max 32"));
             assert!(!request.input.command.contains("mktemp"));
             assert!(request.input.command.contains("10.42.0.10"));
             let denied = connector_routed_special_use_ipv4_fixtures();

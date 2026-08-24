@@ -8,31 +8,23 @@ gateway_host=__GATEWAY_HOST__
 gateway_port=__GATEWAY_PORT__
 require_gateway=__REQUIRE_GATEWAY__
 
-probe() {
-  timeout 1.5 bash -c "exec 3<>/dev/tcp/$1/$2" >/dev/null 2>&1
-}
-
 probe_hosts() {
-  local ports=$1 host port pid
-  local -a pids=()
+  local ports=$1 host port output url remote authority
+  local -a urls=()
   shift
   for host in "$@"; do
-    (
-      for port in $ports; do
-        if probe "$host" "$port"; then
-          printf '%s\n' "$host"
-          exit 0
-        fi
-      done
-      exit 0
-    ) &
-    pids+=("$!")
-    if (( ${#pids[@]} == 8 )); then
-      for pid in "${pids[@]}"; do wait "$pid" || true; done
-      pids=()
-    fi
+    for port in $ports; do urls+=("telnet://$host:$port"); done
   done
-  for pid in "${pids[@]}"; do wait "$pid" || true; done
+  output=$(curl --disable --ipv4 --noproxy '*' --silent --output /dev/null \
+    --parallel --parallel-immediate --parallel-max 32 \
+    --connect-timeout 1.5 --max-time 1.5 \
+    --write-out $'%{url_effective}\t%{remote_ip}\n' "${urls[@]}" 2>/dev/null || true)
+  while IFS=$'\t' read -r url remote; do
+    if [[ -n $remote ]]; then
+      authority=${url#telnet://}
+      printf '%s\n' "${authority%:*}"
+    fi
+  done <<<"$output" | sort -u
 }
 
 gateway_status() {
