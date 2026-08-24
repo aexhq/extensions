@@ -266,9 +266,8 @@ async fn execute_bundle_inner(request: &BundleExecution) -> Result<ExecutionResu
     let result_fd = result_writer.as_raw_fd();
 
     let mut command = Command::new(&request.node_path);
+    configure_node_invocation(&mut command, &request.runner, &request.bundle_path);
     command
-        .arg(&request.runner)
-        .arg(&request.bundle_path)
         .current_dir(&request.workspace)
         .env_clear()
         .envs(base_environment(&request.workspace))
@@ -368,6 +367,11 @@ async fn execute_bundle_inner(request: &BundleExecution) -> Result<ExecutionResu
         ),
         exit_code,
     })
+}
+
+#[cfg(unix)]
+fn configure_node_invocation(command: &mut Command, runner: &Path, bundle_path: &Path) {
+    command.arg("--use-env-proxy").arg(runner).arg(bundle_path);
 }
 
 #[cfg(not(unix))]
@@ -1001,6 +1005,31 @@ mod tests {
         ] {
             assert!(!environment.contains_key(inherited_secret));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_tools_use_the_supervisor_proxy() {
+        let mut command = Command::new("node");
+        configure_node_invocation(
+            &mut command,
+            Path::new("/opt/aex/tool-runner.mjs"),
+            Path::new("/workspace/tool.mjs"),
+        );
+
+        let arguments = command
+            .as_std()
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            [
+                "--use-env-proxy",
+                "/opt/aex/tool-runner.mjs",
+                "/workspace/tool.mjs"
+            ]
+        );
     }
 
     #[test]

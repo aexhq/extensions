@@ -12,6 +12,11 @@ on:
         description: Full source SHA selected by release/sha-<sha>
         required: true
         type: string
+      reset_dev_microvms:
+        description: Terminate every MicroVM from the hosted dev image before publication
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -34,6 +39,9 @@ jobs:
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
         run: bash "$RUNTIME/scripts/verify-release-source.sh" "$EXPECTED_COMMIT"
+      - name: Validate reset scope
+        if: inputs.reset_dev_microvms
+        run: test '${{ inputs.plane }}' = dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
@@ -162,6 +170,12 @@ jobs:
           # Retain deployed AWS identities while source ownership moves to extensions.
           role-to-assume: arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-publisher
           aws-region: us-east-1
+      - name: Reset pre-launch development MicroVMs
+        if: inputs.reset_dev_microvms
+        run: |
+          environment-image-binaries/environment-lambda --region us-east-1 terminate-image \
+            --image-arn arn:aws:lambda:us-east-1:522921482290:microvm-image:aex-hands-dev-1gb \
+            --confirm-terminate-image
       - name: Publish isolated plane image
         id: publish
         env:
