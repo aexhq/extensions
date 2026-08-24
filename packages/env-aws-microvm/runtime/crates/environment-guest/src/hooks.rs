@@ -7,9 +7,8 @@
 use std::sync::Arc;
 
 use axum::Json;
-use axum::body::Body;
 use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use environment_wire::{RunEnvelope, RunPayload};
 use serde_json::{Value, json};
@@ -46,21 +45,12 @@ pub async fn run(State(environment): State<Arc<Environment>>, body: String) -> R
         );
     };
     match environment.arm(target_ref, payload).await {
-        Ok(_) => completed_run_response(),
+        Ok(_) => StatusCode::OK.into_response(),
         Err(error) => run_response(
             StatusCode::CONFLICT,
             json!({"error": error.message.as_str(), "code": error.code}),
         ),
     }
-}
-
-fn completed_run_response() -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_LENGTH, "0")
-        .header(header::CONNECTION, "close")
-        .body(Body::empty())
-        .expect("static run-hook response is valid")
 }
 
 fn run_response(status: StatusCode, body: Value) -> Response {
@@ -139,18 +129,7 @@ pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCod
 
 #[cfg(test)]
 mod tests {
-    use axum::http::{StatusCode, header};
     use environment_wire::{RunEnvelope, RunPayload};
-
-    use super::completed_run_response;
-
-    #[test]
-    fn completed_run_hook_has_an_explicit_empty_terminal_response() {
-        let response = completed_run_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[header::CONTENT_LENGTH], "0");
-        assert_eq!(response.headers()[header::CONNECTION], "close");
-    }
 
     #[test]
     fn provider_envelope_carries_a_closed_cloud_credential_free_payload() {
