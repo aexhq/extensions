@@ -89,15 +89,13 @@ pub async fn ready(State(environment): State<Arc<Environment>>) -> (StatusCode, 
     }
 }
 
-/// Build-only curated toolchain probe. It does not validate customer bundles.
+/// Build-only base-image probe. Tool runtimes arrive in prepared artifacts.
 pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCode, Json<Value>) {
     if environment.armed().await {
         return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})));
     }
     let tools: &[(&str, &[&str])] = &[
         ("bash", &["--version"]),
-        ("python3", &["--version"]),
-        ("node", &["--version"]),
         ("git", &["--version"]),
         ("rg", &["--version"]),
     ];
