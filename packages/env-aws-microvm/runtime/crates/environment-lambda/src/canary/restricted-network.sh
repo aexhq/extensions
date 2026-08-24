@@ -27,15 +27,22 @@ probe_hosts() {
   done <<<"$output" | sort -u
 }
 
-gateway_status() {
-  timeout 3 bash -c '
-    exec 3<>"/dev/tcp/$1/$2" || exit 1
-    printf "%b" "$3" >&3
-    IFS= read -r line <&3 || exit 1
-    exec 3>&- 3<&-
-    [[ $line =~ ^HTTP/1\.1\ ([0-9]{3})\  ]] || exit 1
-    printf "%s\n" "${BASH_REMATCH[1]}"
-  ' gateway-status "$gateway_host" "$gateway_port" "$1"
+gateway_health_status() {
+  curl --disable --ipv4 --noproxy '*' --silent --output /dev/null \
+    --connect-timeout 1.5 --max-time 3 --write-out '%{http_code}' \
+    "http://$gateway_host:$gateway_port/healthz" 2>/dev/null || true
+}
+
+gateway_connect_status() {
+  local capability=${1-}
+  local -a auth=()
+  if [[ -n $capability ]]; then
+    auth=(--proxy-header "Proxy-Authorization: Bearer $capability")
+  fi
+  curl --disable --ipv4 --noproxy '' --silent --output /dev/null \
+    --connect-timeout 1.5 --max-time 3 \
+    --proxy "http://$gateway_host:$gateway_port" --proxytunnel \
+    "${auth[@]}" --write-out '%{http_connect}' https://example.com/ 2>/dev/null || true
 }
 
 if timeout 3 getent ahostsv4 example.com >/dev/null 2>&1; then
@@ -54,11 +61,11 @@ if [[ -n $reachable_direct ]]; then
 fi
 
 if (( require_gateway )); then
-  health=$(gateway_status "GET /healthz HTTP/1.1\r\nHost: $gateway_host\r\nConnection: close\r\n\r\n" || true)
+  health=$(gateway_health_status)
   [[ $health == 200 ]] || { echo "allowlist gateway health was not reachable: ${health:-unreachable}" >&2; exit 1; }
-  unauthenticated=$(gateway_status 'CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nConnection: close\r\n\r\n' || true)
+  unauthenticated=$(gateway_connect_status)
   [[ $unauthenticated == 407 ]] || { echo "allowlist gateway accepted or misclassified missing auth: ${unauthenticated:-unreachable}" >&2; exit 1; }
-  invalid=$(gateway_status 'CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Bearer invalid-release-canary-capability\r\nConnection: close\r\n\r\n' || true)
+  invalid=$(gateway_connect_status invalid-release-canary-capability)
   [[ $invalid == 403 ]] || { echo "allowlist gateway accepted or misclassified invalid auth: ${invalid:-unreachable}" >&2; exit 1; }
 fi
 

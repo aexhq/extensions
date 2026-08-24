@@ -1075,8 +1075,9 @@ mod tests {
                 RestrictedClass::Allowlist => {
                     assert!(matches!(request.network, NetworkCeiling::Allowlist(_)));
                     assert!(request.input.command.contains("require_gateway=1"));
-                    assert!(request.input.command.contains("CONNECT example.com"));
-                    assert!(request.input.command.contains("timeout 3 bash -c"));
+                    assert!(request.input.command.contains("--proxytunnel"));
+                    assert!(request.input.command.contains("%{http_connect}"));
+                    assert!(!request.input.command.contains("/dev/tcp"));
                     assert!(request.input.command.contains("$unauthenticated == 407"));
                     assert!(request.input.command.contains("$invalid == 403"));
                 }
