@@ -2,8 +2,7 @@
 //!
 //! The MicroVM service gives us Firecracker isolation as a product: one VM per session, a
 //! Lambda-managed AL2023 base image with our container layer inside it, an authenticated
-//! public HTTPS endpoint per VM (JWE in `X-aws-proxy-auth`), traffic-idle auto-suspend, and a
-//! hard 8-hour retention wall (running *plus* suspended).
+//! public HTTPS endpoint per VM (JWE in `X-aws-proxy-auth`) and a hard 8-hour retention wall.
 //!
 //! Three parts:
 //!
@@ -38,8 +37,9 @@ pub const SUPERVISOR_UID: u32 = 1001;
 pub const TOOL_UID: u32 = 1000;
 pub const TOOL_GID: u32 = 1000;
 
-/// Idle policy: AWS suspends the VM after this much endpoint-traffic silence.
-pub const MAX_IDLE_SECONDS: u64 = 180;
+/// Keep the VM runnable for its complete supported lifetime. Provider auto-suspend can interrupt
+/// a live Tool while its caller is waiting on model or child-session work rather than endpoint I/O.
+pub const MAX_IDLE_SECONDS: u64 = MAX_DURATION_SECONDS;
 
 /// The provider-hard retention wall: running plus suspended (quota L-B430C318).
 pub const MAX_DURATION_SECONDS: u64 = 28_800;

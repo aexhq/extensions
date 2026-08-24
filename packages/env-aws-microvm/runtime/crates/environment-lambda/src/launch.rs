@@ -6,10 +6,9 @@
 //! installation. The caller durably installs the MicroVM identity returned by
 //! `RunMicrovm` before readiness checks, endpoint discovery, JWE minting, or any guest request.
 //!
-//! Brain's bounded observe schedule supplies endpoint traffic while an operation is live. An idle
-//! target may auto-suspend; the next authenticated endpoint request auto-resumes the same physical
-//! generation. Environment deliberately has no independent keepalive loop and no unauthenticated guest
-//! resume hook.
+//! Environment deliberately has no independent keepalive loop and no unauthenticated guest resume
+//! hook. The provider idle bound equals the target lifetime so a model or child-session wait cannot
+//! suspend an otherwise live Tool.
 
 use std::time::Duration;
 
