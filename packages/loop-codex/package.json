@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/loop-codex",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "The codex-style agentloop for Brain sessions: a semantic port of codex's loop policies onto contracts/agentloop/v1, built with the public @aexhq/agentloop toolchain",
   "license": "Apache-2.0",
   "repository": {
@@ -40,6 +40,6 @@
     "prepack": "npm run build"
   },
   "devDependencies": {
-    "@aexhq/agentloop": "0.2.0"
+    "@aexhq/agentloop": "0.2.1"
   }
 }
