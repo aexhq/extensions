@@ -1051,7 +1051,7 @@ mod tests {
                 request.request_digest,
                 sandbox_execution_request_digest(&request)
             );
-            assert!(request.input.command.contains("getent ahostsv4"));
+            assert!(request.input.command.contains("timeout 3 getent ahostsv4"));
             assert!(request.input.command.contains("--parallel-max 32"));
             assert!(!request.input.command.contains("mktemp"));
             assert!(request.input.command.contains("10.42.0.10"));
