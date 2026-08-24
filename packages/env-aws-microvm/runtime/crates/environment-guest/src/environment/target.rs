@@ -150,7 +150,7 @@ impl Environment {
             })
     }
 
-    pub async fn should_exit_after_canary_receipt(&self, operation_id: &str) -> bool {
+    pub async fn should_exit_for_canary_operation(&self, operation_id: &str) -> bool {
         self.target
             .armed
             .read()

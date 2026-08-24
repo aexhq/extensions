@@ -13,7 +13,8 @@ use anyhow::{Context as _, bail, ensure};
 use aws_sdk_lambdamicrovms::types::MicrovmState;
 use brain_protocol::contract::{ENVIRONMENT_CONTRACT_DIGEST, sandbox_execution_request_digest};
 use brain_protocol::environment::{
-    NetworkCeiling, ObserveRequest, SandboxExecutionRequest, TerminalOutcome, TerminalResult,
+    AcknowledgeTerminalRequest, NetworkCeiling, ObserveRequest, OperationRef,
+    SandboxExecutionRequest, TerminalOutcome, TerminalResult,
 };
 use environment_core::connector::{
     ConnectorCatalog, ConnectorClass, ConnectorRef, GatewayAuthority,
@@ -225,7 +226,7 @@ async fn execute_and_observe(
     request_number: &mut u64,
     request: SandboxExecutionRequest,
     what: &str,
-) -> anyhow::Result<TerminalResult> {
+) -> anyhow::Result<(OperationRef, TerminalResult)> {
     let receipt = match call(socket, request_number, RequestCall::ExecuteSandbox(request)).await? {
         ResponseReply::ExecuteSandbox(receipt) => receipt,
         _ => bail!("{what} canary execute returned the wrong response variant"),
@@ -239,9 +240,10 @@ async fn execute_and_observe(
         ResponseReply::Observe(observation) => observation,
         _ => bail!("{what} canary observe returned the wrong response variant"),
     };
-    observation
+    let terminal = observation
         .terminal
-        .with_context(|| format!("{what} canary did not reach a terminal receipt"))
+        .with_context(|| format!("{what} canary did not reach a terminal receipt"))?;
+    Ok((observation.operation, terminal))
 }
 
 fn require_completed_stdout<'a>(
@@ -331,7 +333,8 @@ async fn run_restricted_network_on_known_target(
     )?;
     let mut request_number = 1u64;
     let what = format!("{} restricted network", class.label());
-    let terminal = execute_and_observe(&mut socket, &mut request_number, request, &what).await?;
+    let (_, terminal) =
+        execute_and_observe(&mut socket, &mut request_number, request, &what).await?;
     let stdout = require_completed_stdout(&terminal, &what)?;
     ensure!(
         stdout.starts_with(&format!(
@@ -391,7 +394,7 @@ async fn run_public_network_on_known_target(
         customer_environment_hosts,
     )?;
     let mut request_number = 1u64;
-    let terminal =
+    let (_, terminal) =
         execute_and_observe(&mut socket, &mut request_number, request, "network").await?;
     let stdout = require_completed_stdout(&terminal, "network")?;
     ensure!(
@@ -445,7 +448,7 @@ async fn run_on_known_target(
         &target.session_id,
     )?;
     let mut request_number = 1u64;
-    let terminal = execute_and_observe(
+    let (operation, terminal) = execute_and_observe(
         &mut socket,
         &mut request_number,
         request.clone(),
@@ -468,6 +471,15 @@ async fn run_on_known_target(
             == Some("marker_count=1\n"),
         "canary marker was not written exactly once before the crash"
     );
+    send(
+        &mut socket,
+        &mut request_number,
+        RequestCall::AcknowledgeTerminal(AcknowledgeTerminalRequest {
+            operation,
+            terminal_digest: terminal.terminal_digest,
+        }),
+    )
+    .await?;
     drop(socket);
 
     assert_persistent_502(control, http, &environment, "after deliberate crash").await?;
@@ -750,16 +762,7 @@ async fn call(
     request_number: &mut u64,
     call: RequestCall,
 ) -> anyhow::Result<ResponseReply> {
-    let request_id = format!("image-canary-request-{request_number}");
-    *request_number += 1;
-    let frame = RequestFrame {
-        request_id: request_id.clone(),
-        contract_digest: ENVIRONMENT_CONTRACT_DIGEST.trim().into(),
-        call,
-    };
-    socket
-        .send(Message::Text(serde_json::to_string(&frame)?.into()))
-        .await?;
+    let request_id = send(socket, request_number, call).await?;
     while let Some(message) = socket.next().await {
         let text = match message? {
             Message::Text(text) => text.to_string(),
@@ -784,6 +787,24 @@ async fn call(
         });
     }
     bail!("canary guest connection ended before its receipt")
+}
+
+async fn send(
+    socket: &mut launch::GuestSocket,
+    request_number: &mut u64,
+    call: RequestCall,
+) -> anyhow::Result<String> {
+    let request_id = format!("image-canary-request-{request_number}");
+    *request_number += 1;
+    let frame = RequestFrame {
+        request_id: request_id.clone(),
+        contract_digest: ENVIRONMENT_CONTRACT_DIGEST.trim().into(),
+        call,
+    };
+    socket
+        .send(Message::Text(serde_json::to_string(&frame)?.into()))
+        .await?;
+    Ok(request_id)
 }
 
 async fn launch_canary_target(
