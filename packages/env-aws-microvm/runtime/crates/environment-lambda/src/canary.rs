@@ -32,7 +32,7 @@ use crate::launch::{self, GuestConnectError, LaunchedEnvironment};
 const CANARY_LIFETIME_MS: u64 = 10 * 60 * 1_000;
 const STATE_TIMEOUT: Duration = Duration::from_secs(120);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
-const RUN_HOOK_STABILITY_WINDOW: Duration = Duration::from_secs(65);
+const RUN_HOOK_STABILITY_WINDOW: Duration = Duration::from_secs(120);
 const REQUIRED_CONSECUTIVE_502: usize = 3;
 
 pub struct NoRespawnCanaryConfig {
