@@ -108,7 +108,7 @@ pub async fn authorize(
     }
 
     let host = normalize_host(authority)?;
-    if deny.denies_host(&host) {
+    if deny.denies_host(&host) && !is_control_api_host(&host) {
         return Err(PolicyError::PermanentDeny);
     }
     let host_rule = capability.policy.destinations.iter().any(|destination| {
@@ -168,6 +168,10 @@ fn checked_ipv4_answers(
 
 fn normalize_dns_name(value: &str) -> Result<String, PolicyError> {
     normalize_host(value.trim_end_matches('.'))
+}
+
+fn is_control_api_host(host: &str) -> bool {
+    matches!(host, "api.aex.dev" | "api-dev.aex.dev")
 }
 
 fn check_ip(deny: &DenyPolicy, address: Ipv4Addr) -> Result<(), PolicyError> {
@@ -255,6 +259,15 @@ mod tests {
         assert!(!host_matches("*.example.com", "example.com"));
         assert!(!host_matches("*.example.com", "notexample.com"));
         assert!(normalize_host_pattern("*.com").is_err());
+    }
+
+    #[test]
+    fn only_exact_control_api_hosts_can_cross_the_builtin_domain_deny() {
+        assert!(is_control_api_host("api.aex.dev"));
+        assert!(is_control_api_host("api-dev.aex.dev"));
+        assert!(!is_control_api_host("aex.dev"));
+        assert!(!is_control_api_host("other.aex.dev"));
+        assert!(!is_control_api_host("api.aex.dev.example.com"));
     }
 
     #[test]
