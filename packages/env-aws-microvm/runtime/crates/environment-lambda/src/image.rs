@@ -971,6 +971,9 @@ mod tests {
         assert!(launcher.contains(&format!("SUPERVISOR_UID = {SUPERVISOR_UID},")));
         assert!(launcher.contains(&format!("SUPERVISOR_GID = {SUPERVISOR_UID},")));
         assert!(!launcher.contains("CAP_NET_BIND_SERVICE"));
+        // Boot execs all the way through, so the supervisor is the sandbox's PID 1 and its
+        // deliberate abort ends the sandbox rather than freeing the provider port for a Tool.
+        assert!(launcher.contains("execv(argv[1], child_argv);"));
         assert!(launcher.contains("PR_SET_KEEPCAPS"));
         assert!(launcher.contains("PR_CAP_AMBIENT_RAISE"));
         assert!(launcher.contains("SYS_capset"));
