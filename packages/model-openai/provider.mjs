@@ -22,7 +22,11 @@ export function buildRequest(request) {
   }
   if (generation.tool_choice_none === true || generation.toolChoiceNone === true) body.tool_choice = "none";
   copy(body, "temperature", generation.temperature);
-  copy(body, generation.output_token_parameter === "max_completion_tokens" ? "max_completion_tokens" : "max_tokens", generation.max_tokens ?? generation.maxTokens);
+  const outputTokenParameter = options.outputTokenParameter ?? options.output_token_parameter;
+  if (outputTokenParameter !== "max_tokens" && outputTokenParameter !== "max_completion_tokens") {
+    throw new Error("providerOptions.outputTokenParameter is invalid");
+  }
+  copy(body, outputTokenParameter, generation.max_tokens ?? generation.maxTokens);
   copy(body, "reasoning_effort", generation.reasoning_effort ?? generation.reasoningEffort);
   const stops = generation.stop_sequences ?? generation.stopSequences;
   if (Array.isArray(stops) && stops.length > 0) body.stop = stops;
