@@ -11,7 +11,10 @@ use environment_lambda::control::{Control, ControlError, is_terminated};
 use environment_lambda::image::{self, PublishConfig};
 
 #[derive(Parser)]
-#[command(name = "environment-lambda", about = "Aex Environment Lambda MicroVM operator")]
+#[command(
+    name = "environment-lambda",
+    about = "Aex Environment Lambda MicroVM operator"
+)]
 struct Cli {
     #[arg(long, default_value = REGION)]
     region: String,
@@ -215,7 +218,9 @@ async fn image_command(
                 NoRespawnCanaryConfig {
                     image_arn,
                     image_version,
-                    none_connector: environment_core::connector::ConnectorRef::parse(none_connector)?,
+                    none_connector: environment_core::connector::ConnectorRef::parse(
+                        none_connector,
+                    )?,
                 },
             )
             .await

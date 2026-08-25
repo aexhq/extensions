@@ -10,20 +10,25 @@ use environment_core::operation::OperationError;
 pub fn status_for(code: EnvironmentErrorCode) -> StatusCode {
     match code {
         EnvironmentErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
-        EnvironmentErrorCode::FileNotFound | EnvironmentErrorCode::OperationUnknown => StatusCode::NOT_FOUND,
+        EnvironmentErrorCode::FileNotFound | EnvironmentErrorCode::OperationUnknown => {
+            StatusCode::NOT_FOUND
+        }
         EnvironmentErrorCode::BindingConflict
         | EnvironmentErrorCode::OperationConflict
         | EnvironmentErrorCode::GenerationConflict
         | EnvironmentErrorCode::SandboxNotMaterialized => StatusCode::CONFLICT,
         EnvironmentErrorCode::SandboxGone => StatusCode::GONE,
         EnvironmentErrorCode::ResourceExhausted => StatusCode::PAYLOAD_TOO_LARGE,
-        EnvironmentErrorCode::CapabilityUnavailable | EnvironmentErrorCode::TemporarilyUnavailable => {
-            StatusCode::SERVICE_UNAVAILABLE
-        }
+        EnvironmentErrorCode::CapabilityUnavailable
+        | EnvironmentErrorCode::TemporarilyUnavailable => StatusCode::SERVICE_UNAVAILABLE,
     }
 }
 
-pub fn environment_error(code: EnvironmentErrorCode, retryable: bool, message: impl Into<String>) -> EnvironmentError {
+pub fn environment_error(
+    code: EnvironmentErrorCode,
+    retryable: bool,
+    message: impl Into<String>,
+) -> EnvironmentError {
     let mut message = message.into();
     if message.is_empty() {
         message = "Environment request failed".into();
@@ -32,9 +37,11 @@ pub fn environment_error(code: EnvironmentErrorCode, retryable: bool, message: i
     EnvironmentError {
         code,
         details: serde_json::Map::new(),
-        message: message
-            .parse()
-            .unwrap_or_else(|_| "Environment request failed".parse().expect("bounded message")),
+        message: message.parse().unwrap_or_else(|_| {
+            "Environment request failed"
+                .parse()
+                .expect("bounded message")
+        }),
         retryable,
     }
 }

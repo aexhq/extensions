@@ -137,25 +137,6 @@ impl DynamoTargetRegistry {
         }
     }
 
-    async fn live_additional_targets(&self, root_id: &str) -> Result<u64, MaterializationError> {
-        let output = self
-            .db
-            .get_item()
-            .table_name(&self.table)
-            .set_key(Some(additional_counter_key(root_id)))
-            .consistent_read(true)
-            .send()
-            .await
-            .map_err(|error| storage_error("get additional sandbox capacity", &error))?;
-        let Some(item) = output.item() else {
-            return Ok(0);
-        };
-        item.get(LIVE_ADDITIONAL_TARGETS)
-            .and_then(|value| value.as_n().ok())
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| corrupt("additional sandbox capacity row has no valid live count"))
-    }
-
     async fn replace_expired_materialization(
         &self,
         current: &DurableTargetRecord,
@@ -995,14 +976,6 @@ fn plane_capacity_error(
     })
 }
 
-fn root_additional_capacity_error(live: u64, maximum: u64) -> Option<MaterializationError> {
-    (live >= maximum).then(|| MaterializationError::Capacity {
-        scope: "root_additional_sandboxes".into(),
-        retry_after_ms: 1_000,
-        message: format!("root already has the maximum of {maximum} live additional sandboxes"),
-    })
-}
-
 fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
     match &record.state {
         DurableTargetState::Installed { expires_at_ms, .. } => Some(*expires_at_ms),
@@ -1012,53 +985,6 @@ fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
         } => Some(*lease_expires_at_ms),
         DurableTargetState::Closed { .. } => None,
     }
-}
-
-fn additional_count_add_update(
-    table: &str,
-    root_id: &str,
-    maximum: u64,
-    now_ms: u64,
-) -> Result<Update, MaterializationError> {
-    Update::builder()
-        .table_name(table)
-        .set_key(Some(additional_counter_key(root_id)))
-        .condition_expression(
-            "attribute_not_exists(live_additional_targets) OR live_additional_targets < :maximum",
-        )
-        .update_expression(
-            "SET live_additional_targets = if_not_exists(live_additional_targets, :zero) + :one, updated_at_ms = :now",
-        )
-        .expression_attribute_values(":maximum", n(maximum))
-        .expression_attribute_values(":zero", n(0))
-        .expression_attribute_values(":one", n(1))
-        .expression_attribute_values(":now", n(now_ms))
-        .build()
-        .map_err(|error| {
-            MaterializationError::Storage(format!("additional sandbox capacity add build: {error}"))
-        })
-}
-
-fn additional_count_subtract_update(
-    table: &str,
-    root_id: &str,
-    now_ms: u64,
-) -> Result<Update, MaterializationError> {
-    Update::builder()
-        .table_name(table)
-        .set_key(Some(additional_counter_key(root_id)))
-        .condition_expression("live_additional_targets >= :one")
-        .update_expression(
-            "SET live_additional_targets = live_additional_targets - :one, updated_at_ms = :now",
-        )
-        .expression_attribute_values(":one", n(1))
-        .expression_attribute_values(":now", n(now_ms))
-        .build()
-        .map_err(|error| {
-            MaterializationError::Storage(format!(
-                "additional sandbox capacity subtract build: {error}"
-            ))
-        })
 }
 
 fn capacity_add_update(
@@ -1225,22 +1151,6 @@ mod tests {
         assert_eq!(scope, "plane_materialized_memory_mib");
         assert_eq!(retry_after_ms, 1_000);
         assert!(message.contains("remaining plane allocation of 0 MiB"));
-    }
-
-    #[test]
-    fn root_additional_capacity_classification_is_independent_of_plane_memory() {
-        assert!(root_additional_capacity_error(1, 2).is_none());
-        let MaterializationError::Capacity {
-            scope,
-            retry_after_ms,
-            message,
-        } = root_additional_capacity_error(2, 2).unwrap()
-        else {
-            panic!("full root must return typed capacity");
-        };
-        assert_eq!(scope, "root_additional_sandboxes");
-        assert_eq!(retry_after_ms, 1_000);
-        assert!(message.contains("maximum of 2"));
     }
 
     #[test]

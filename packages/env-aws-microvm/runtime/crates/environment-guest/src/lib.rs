@@ -7,9 +7,9 @@
 
 mod acks;
 pub mod config;
+pub mod environment;
 pub mod errors;
 mod file_effects;
-pub mod environment;
 pub mod hooks;
 pub mod process;
 pub mod server;

@@ -14,7 +14,6 @@ concurrency:
 
 env:
   RUNTIME: packages/env-aws-microvm/runtime
-  AEX_REVISION: 8f34ab6310aec391304e6ee1fdc5aa73bc033475
 
 jobs:
   packages:
@@ -28,17 +27,6 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # The public Environment package is staged from this immutable Aex revision before the
-      # extension packages switch to its published version for release.
-      - name: Build the pinned Aex SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/aexhq/aex.git ../aex
-          git -C ../aex checkout "$AEX_REVISION"
-          test "$(git -C ../aex rev-parse HEAD)" = "$AEX_REVISION"
-          npm ci --prefix ../aex
-          npm run build --prefix ../aex
       - run: npm ci
       - run: npm run build
       - name: Rebuild determinism

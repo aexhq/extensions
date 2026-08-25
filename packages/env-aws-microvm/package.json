@@ -1,8 +1,14 @@
 {
   "name": "@aexhq/env-aws-microvm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AWS MicroVM Environment component and external driver runtime for Brain",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aexhq/extensions.git",
+    "directory": "packages/env-aws-microvm"
+  },
+  "publishConfig": { "access": "public", "tag": "next" },
   "type": "module",
   "engines": { "node": ">=22.0.0" },
   "exports": { ".": "./index.mjs", "./package.json": "./package.json" },

@@ -1,8 +1,14 @@
 {
   "name": "@aexhq/env-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Customer application Environment component for Brain sessions",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aexhq/extensions.git",
+    "directory": "packages/env-app"
+  },
+  "publishConfig": { "access": "public", "tag": "next" },
   "type": "module",
   "engines": { "node": ">=22.0.0" },
   "types": "./index.d.ts",

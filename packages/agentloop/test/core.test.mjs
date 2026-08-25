@@ -145,7 +145,7 @@ test("an aborted ctx op aborts the activation without failing the turn", async (
     },
   });
 
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
   assert.deepEqual(returned, {
     activation_id: "act-1",
     outcome: "aborted",

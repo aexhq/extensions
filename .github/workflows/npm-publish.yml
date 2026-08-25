@@ -1,0 +1,235 @@
+name: publish npm packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Bootstrap release ownership, stage versions under next, or promote them to latest
+        type: choice
+        required: true
+        default: stage
+        options: [bootstrap, stage, promote]
+      expected_commit:
+        description: Exact 40-character extensions commit selected by the workflow ref
+        type: string
+        required: true
+      stage_run_id:
+        description: Successful stage workflow run containing the immutable archives (promote only)
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: extensions-npm-publish
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the immutable source identity
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          OPERATION: ${{ inputs.operation }}
+          SELECTED_COMMIT: ${{ github.sha }}
+          SELECTED_REF: ${{ github.ref }}
+          STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$SELECTED_COMMIT" = "$EXPECTED_COMMIT"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$SELECTED_REF" = "refs/tags/release/sha-$EXPECTED_COMMIT"
+          test "$(git cat-file -t "$GITHUB_REF")" = tag
+          git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main
+          if [[ "$OPERATION" == promote ]]; then
+            [[ "$STAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+            stage_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGE_RUN_ID")
+            test "$(jq -r .head_sha <<<"$stage_run")" = "$EXPECTED_COMMIT"
+            test "$(jq -r .event <<<"$stage_run")" = workflow_dispatch
+            test "$(jq -r .status <<<"$stage_run")" = completed
+            test "$(jq -r .conclusion <<<"$stage_run")" = success
+            [[ "$(jq -r .path <<<"$stage_run")" == .github/workflows/npm-publish.yml* ]]
+          else
+            test -z "$STAGE_RUN_ID"
+          fi
+
+  stage-tests:
+    if: inputs.operation != 'promote'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - run: npm test
+
+  stage-package-smoke:
+    if: inputs.operation != 'promote'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package-smoke
+
+  prepare:
+    if: inputs.operation != 'promote'
+    needs: [validate, stage-tests, stage-package-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      versions: ${{ steps.pack.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - run: npm run build
+      - name: Pack the exact release archives
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/extensions-npm-release"
+          node tools/npm-release.mjs pack "$release_dir"
+          versions=$(node tools/npm-release.mjs versions "$release_dir/manifest.json")
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          node tools/npm-release.mjs markdown "$release_dir/manifest.json" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+          if-no-files-found: error
+          retention-days: 30
+
+  stage:
+    if: inputs.operation == 'stage'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" next
+      - name: Publish once with provenance under next
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" stage
+      - name: Record staged versions
+        env:
+          VERSIONS: ${{ needs.prepare.outputs.versions }}
+        run: echo "Staged exact versions under npm dist-tag \`next\` — \`$VERSIONS\`" >> "$GITHUB_STEP_SUMMARY"
+
+  bootstrap:
+    if: inputs.operation == 'bootstrap'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" next
+      - name: Publish only exact versions awaiting release ownership
+        env:
+          # A package cannot trust this repository before its name exists, and packages moving from
+          # Hands still trust their former owner. This protected token establishes this release;
+          # ordinary releases use the stage operation.
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" bootstrap
+
+  promote:
+    if: inputs.operation == 'promote'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.stage_run_id }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" latest
+      - name: Promote the staged archives without republishing
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" promote
