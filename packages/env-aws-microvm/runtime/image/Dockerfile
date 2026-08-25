@@ -51,7 +51,7 @@ RUN deluser --remove-home ubuntu 2>/dev/null || true; \
     && test "$(stat -c '%a' /var/environment/file-staging)" = 2700
 
 # Curated Tool code needs no package-owned privilege transition. Strip the entire distro/toolchain
-# setuid, setgid and file-capability surface. The root-owned listener launcher transfers the exact
+# setuid, setgid and file-capability surface. The root-owned supervisor launcher transfers the exact
 # three process capabilities needed by the supervisor; CI scans the completed image so a package
 # update cannot silently reopen the filesystem privilege surface.
 RUN find / -xdev -type f -perm /6000 -exec chmod a-s {} + \
@@ -63,7 +63,7 @@ COPY ${BIN} /usr/local/bin/environment-guest
 COPY image/tool-runner.mjs /usr/local/lib/environment/tool-runner.mjs
 COPY image/tool-boundary.c /tmp/tool-boundary.c
 COPY image/proc-secret-static.c /tmp/proc-secret-static.c
-COPY image/control-listener.c /tmp/control-listener.c
+COPY image/supervisor-launcher.c /tmp/supervisor-launcher.c
 COPY image/environment-boot.sh /usr/local/bin/environment-boot.sh
 RUN chown root:environment /usr/local/bin/environment-guest \
     && chmod 0750 /usr/local/bin/environment-guest \
@@ -73,16 +73,16 @@ RUN chown root:environment /usr/local/bin/environment-guest \
     && cc -static -O2 -Wl,-z,relro,-z,now \
          -o /usr/local/lib/environment/proc-secret-static /tmp/proc-secret-static.c \
     && cc -O2 -Wl,-z,relro,-z,now \
-         -o /usr/local/lib/environment/control-listener /tmp/control-listener.c \
-    && rm /tmp/tool-boundary.c /tmp/proc-secret-static.c /tmp/control-listener.c \
+         -o /usr/local/lib/environment/supervisor-launcher /tmp/supervisor-launcher.c \
+    && rm /tmp/tool-boundary.c /tmp/proc-secret-static.c /tmp/supervisor-launcher.c \
     && chown root:root /usr/local/lib/environment/tool-boundary.so /usr/local/lib/environment/proc-secret-static \
-    && chown root:environment /usr/local/lib/environment/control-listener \
+    && chown root:environment /usr/local/lib/environment/supervisor-launcher \
     && chmod 0555 /usr/local/lib/environment/tool-boundary.so /usr/local/lib/environment/proc-secret-static \
-    && chmod 0750 /usr/local/lib/environment/control-listener \
+    && chmod 0750 /usr/local/lib/environment/supervisor-launcher \
     && test "$(stat -c '%u:%g:%a' /usr/local/lib/environment/tool-boundary.so)" = "0:0:555" \
     && test "$(stat -c '%u:%g:%a' /usr/local/lib/environment/proc-secret-static)" = "0:0:555" \
     && ! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP \
-    && test "$(stat -c '%u:%g:%a' /usr/local/lib/environment/control-listener)" = "0:1001:750" \
+    && test "$(stat -c '%u:%g:%a' /usr/local/lib/environment/supervisor-launcher)" = "0:1001:750" \
     && test -z "$(find / -xdev -type f -perm /6000 -print -quit)" \
     && test -z "$(getcap -r / 2>/dev/null)"
 

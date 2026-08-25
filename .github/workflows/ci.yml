@@ -159,7 +159,7 @@ jobs:
             capabilities=$(getcap -r / 2>/dev/null || true)
             test -z "$capabilities"
             test "$(stat -c "%u:%g:%a" /var/environment)" = "1001:1000:710"
-            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/control-listener)" = "0:1001:750"
+            test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/supervisor-launcher)" = "0:1001:750"
             test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/tool-boundary.so)" = "0:0:555"
             test "$(stat -c "%u:%g:%a" /usr/local/lib/environment/proc-secret-static)" = "0:0:555"
             ! readelf -l /usr/local/lib/environment/proc-secret-static | grep -q INTERP
@@ -184,11 +184,11 @@ jobs:
       - name: Prove Tool identities cannot reach supervisor control
         run: |
           node_dir=$(dirname "$(command -v node)")
-          chmod 0555 "$RUNTIME/scripts/test-control-listener-fd.sh"
-          preserved=$(docker run --rm --entrypoint sh \
-            -v "$PWD/$RUNTIME/scripts/test-control-listener-fd.sh:/tmp/test-control-listener-fd.sh:ro" \
-            environment:ci -ceu 'exec 3>&1; exec /usr/local/lib/environment/control-listener /tmp/test-control-listener-fd.sh')
-          test "$preserved" = provider-fd-preserved
+          chmod 0555 "$RUNTIME/scripts/test-supervisor-launcher.sh"
+          launched=$(docker run --rm --entrypoint sh \
+            -v "$PWD/$RUNTIME/scripts/test-supervisor-launcher.sh:/tmp/test-supervisor-launcher.sh:ro" \
+            environment:ci -ceu 'exec /usr/local/lib/environment/supervisor-launcher /tmp/test-supervisor-launcher.sh')
+          test "$launched" = supervisor-launched
           for uid in 1000:1000 65536:1000; do
             docker run --rm --entrypoint node --user "$uid" \
               --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
