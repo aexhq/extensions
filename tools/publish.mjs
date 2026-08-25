@@ -10,7 +10,8 @@ const npmCli = [
 ].find((candidate) => candidate !== undefined && existsSync(candidate));
 if (npmCli === undefined) throw new Error("could not locate npm-cli.js for the active Node runtime");
 const directory = import.meta.dirname;
-const manifest = JSON.parse(readFileSync(path.join(directory, "manifest.json"), "utf8"));
+const manifestPath = process.env.RELEASE_MANIFEST ?? path.join(directory, "manifest.json");
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (!/^[0-9a-f]{40}$/u.test(process.env.EXPECTED_COMMIT ?? "") ||
     manifest.source !== process.env.EXPECTED_COMMIT) {
   throw new Error("the release archive source does not match EXPECTED_COMMIT");

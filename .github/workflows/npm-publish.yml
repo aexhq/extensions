@@ -14,7 +14,7 @@ on:
         type: string
         required: true
       stage_run_id:
-        description: Successful stage workflow run containing the immutable archives (promote only)
+        description: Successful stage or bootstrap run containing the immutable archives (hold or promote)
         type: string
         required: false
         default: ''
@@ -30,12 +30,15 @@ jobs:
     permissions:
       actions: read
       contents: read
+    outputs:
+      release_sha: ${{ steps.identity.outputs.release_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Validate the immutable source identity
+        id: identity
         shell: bash
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
@@ -52,20 +55,26 @@ jobs:
           test "$SELECTED_REF" = "refs/tags/release/sha-$EXPECTED_COMMIT"
           test "$(git cat-file -t "$GITHUB_REF")" = tag
           git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main
-          if [[ "$OPERATION" == promote ]]; then
+          release_sha="$EXPECTED_COMMIT"
+          if [[ "$OPERATION" == promote || "$OPERATION" == hold ]]; then
             [[ "$STAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
             stage_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGE_RUN_ID")
-            test "$(jq -r .head_sha <<<"$stage_run")" = "$EXPECTED_COMMIT"
             test "$(jq -r .event <<<"$stage_run")" = workflow_dispatch
             test "$(jq -r .status <<<"$stage_run")" = completed
             test "$(jq -r .conclusion <<<"$stage_run")" = success
             [[ "$(jq -r .path <<<"$stage_run")" == .github/workflows/npm-publish.yml* ]]
+            release_sha=$(jq -r .head_sha <<<"$stage_run")
+            [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
+            if [[ "$OPERATION" == promote ]]; then
+              test "$release_sha" = "$EXPECTED_COMMIT"
+            fi
           else
             test -z "$STAGE_RUN_ID"
           fi
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
 
   stage-tests:
-    if: inputs.operation != 'promote'
+    if: inputs.operation == 'bootstrap' || inputs.operation == 'stage'
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -88,7 +97,7 @@ jobs:
       - run: npm test
 
   stage-package-smoke:
-    if: inputs.operation != 'promote'
+    if: inputs.operation == 'bootstrap' || inputs.operation == 'stage'
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -109,7 +118,7 @@ jobs:
       - run: npm run package-smoke
 
   prepare:
-    if: inputs.operation != 'promote'
+    if: inputs.operation == 'bootstrap' || inputs.operation == 'stage'
     needs: [validate, stage-tests, stage-package-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -207,17 +216,23 @@ jobs:
 
   hold:
     if: inputs.operation == 'hold'
-    needs: prepare
+    needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: npm-production
     permissions:
+      actions: read
       contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
-          name: extensions-npm-release-${{ github.sha }}
+          name: extensions-npm-release-${{ needs.validate.outputs.release_sha }}
           path: ${{ runner.temp }}/extensions-npm-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.stage_run_id }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -226,9 +241,10 @@ jobs:
       - run: npm install --global npm@11.19.0
       - name: Keep this exact release staged without latest
         env:
-          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
-        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" hold
+          RELEASE_MANIFEST: ${{ runner.temp }}/extensions-npm-release/manifest.json
+        run: node tools/publish.mjs hold
 
   promote:
     if: inputs.operation == 'promote'
