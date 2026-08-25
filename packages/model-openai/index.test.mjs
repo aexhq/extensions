@@ -27,3 +27,26 @@ test("request and stream codec preserve tool, usage, and stop semantics", () => 
   assert.equal(events.at(-1).payload.outputTokens, undefined);
   assert.equal(events.at(-1).stopReason, "tool_use");
 });
+
+test("an unset sampling field stays absent and the sealed instructions lead the request", () => {
+  const body = JSON.parse(new TextDecoder().decode(buildRequest({
+    ...request,
+    generationJson: JSON.stringify({
+      system_prompt: "Answer with one word.",
+      max_tokens: null,
+      temperature: null,
+      reasoning_effort: null,
+      stop_sequences: null,
+      tool_choice_none: false,
+    }),
+  }).body));
+
+  // The sealed prefix serializes every unset field as null; forwarding one is a 400.
+  assert.equal("temperature" in body, false);
+  assert.equal("max_completion_tokens" in body, false);
+  assert.equal("reasoning_effort" in body, false);
+  assert.equal("stop" in body, false);
+  assert.equal("tool_choice" in body, false);
+  assert.deepEqual(body.messages[0], { role: "system", content: "Answer with one word." });
+  assert.deepEqual(body.messages[1], { role: "user", content: "hi" });
+});

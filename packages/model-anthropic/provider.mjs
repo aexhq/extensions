@@ -109,4 +109,6 @@ function event(kind, payload) { return { kind, payload }; }
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function number(value) { return Number.isSafeInteger(value) && value >= 0 ? value : undefined; }
 function requireString(value, field) { if (typeof value !== "string" || value === "") throw new Error(`${field} must be a non-empty string`); return value; }
-function copy(target, key, value) { if (value !== undefined) target[key] = value; }
+// The sealed prefix serializes an unset sampling field as JSON null. Absent stays absent: a
+// forwarded null is a value, and providers reject it (`expected number, received null`).
+function copy(target, key, value) { if (value !== undefined && value !== null) target[key] = value; }

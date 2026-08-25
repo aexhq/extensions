@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/model-anthropic",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Anthropic Messages Model component for Brain",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/model-anthropic" },

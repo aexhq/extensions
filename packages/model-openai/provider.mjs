@@ -8,11 +8,19 @@ export function buildRequest(request) {
   if (!Array.isArray(messages) || !Array.isArray(tools) || !isObject(generation) || !isObject(options)) {
     throw new Error("model request JSON fields have invalid root types");
   }
+  // The session's sealed instructions arrive on the generation prefix, not in the history, and
+  // this dialect carries them as the leading system message.
+  const systemPrompt = generation.system_prompt ?? generation.systemPrompt;
   const body = {
     model: request.model,
     stream: true,
     stream_options: { include_usage: true },
-    messages: messages.flatMap(renderMessage),
+    messages: [
+      ...(typeof systemPrompt === "string" && systemPrompt !== ""
+        ? [{ role: "system", content: systemPrompt }]
+        : []),
+      ...messages.flatMap(renderMessage),
+    ],
   };
   if (tools.length > 0) {
     body.tools = tools.map((tool) => ({
@@ -126,4 +134,6 @@ function event(kind, payload) { return { kind, payload }; }
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function number(value) { return Number.isSafeInteger(value) && value >= 0 ? value : undefined; }
 function requireString(value, field) { if (typeof value !== "string" || value === "") throw new Error(`${field} must be a non-empty string`); return value; }
-function copy(target, key, value) { if (value !== undefined) target[key] = value; }
+// The sealed prefix serializes an unset sampling field as JSON null. Absent stays absent: a
+// forwarded null is a value, and providers reject it (`expected number, received null`).
+function copy(target, key, value) { if (value !== undefined && value !== null) target[key] = value; }
