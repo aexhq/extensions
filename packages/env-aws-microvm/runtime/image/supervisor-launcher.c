@@ -31,12 +31,10 @@ static void require(int condition, const char *message) {
 }
 
 static void set_supervisor_capabilities(void) {
-    _Static_assert(CAP_KILL < 32 && CAP_NET_BIND_SERVICE < 32 && CAP_SETGID < 32 &&
-                       CAP_SETUID < 32,
+    _Static_assert(CAP_KILL < 32 && CAP_SETGID < 32 && CAP_SETUID < 32,
                    "supervisor capabilities must fit in the first capability word");
     const uint32_t supervisor_mask =
-        (1U << CAP_KILL) | (1U << CAP_NET_BIND_SERVICE) | (1U << CAP_SETGID) |
-        (1U << CAP_SETUID);
+        (1U << CAP_KILL) | (1U << CAP_SETGID) | (1U << CAP_SETUID);
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,
         .pid = 0,
@@ -51,8 +49,7 @@ static void set_supervisor_capabilities(void) {
 }
 
 static void raise_supervisor_ambient_capabilities(void) {
-    const int supervisor_capabilities[] = {
-        CAP_KILL, CAP_NET_BIND_SERVICE, CAP_SETGID, CAP_SETUID};
+    const int supervisor_capabilities[] = {CAP_KILL, CAP_SETGID, CAP_SETUID};
     if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) < 0) {
         fail("prctl(PR_CAP_AMBIENT_CLEAR_ALL)");
     }

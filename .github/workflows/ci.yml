@@ -189,15 +189,7 @@ jobs:
             -v "$PWD/$RUNTIME/scripts/test-supervisor-launcher.sh:/tmp/test-supervisor-launcher.sh:ro" \
             environment:ci -ceu 'exec /usr/local/lib/environment/supervisor-launcher /tmp/test-supervisor-launcher.sh')
           test "$launched" = supervisor-launched
-          for uid in 1000:1000 65536:1000; do
-            docker run --rm --entrypoint node --user "$uid" \
-              --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
-              -v "$node_dir:/workspace/.environment/bin:ro" \
-              -v "$PWD/$RUNTIME/scripts/test-control-boundary.mjs:/tmp/test-control-boundary.mjs:ro" \
-              environment:ci /tmp/test-control-boundary.mjs --bind
-          done
           CID=$(docker run -d --rm \
-            --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
             -v "$node_dir:/workspace/.environment/bin:ro" \
             -p 8080:8080 environment:ci)
           trap 'docker logs "$CID"; docker stop "$CID" >/dev/null 2>&1 || true' EXIT
@@ -211,8 +203,15 @@ jobs:
           jq --exit-status '.ok == true' /tmp/environment-validate.json >/dev/null
           docker cp "$RUNTIME/scripts/test-control-boundary.mjs" "$CID":/tmp/test-control-boundary.mjs
           docker exec --user 1000:1000 "$CID" node /tmp/test-control-boundary.mjs
+          for uid in 1000:1000 65536:1000; do
+            docker exec --user "$uid" "$CID" node /tmp/test-control-boundary.mjs --bind
+          done
           docker cp "$RUNTIME/scripts/test-guest-deadline.mjs" "$CID":/tmp/test-guest-deadline.mjs
           docker exec --user 0:0 "$CID" sh -c 'chown 1001:1001 /tmp/test-guest-deadline.mjs && chmod 0400 /tmp/test-guest-deadline.mjs'
           docker exec --user 1001:1000 "$CID" node /tmp/test-guest-deadline.mjs
-          docker stop "$CID" >/dev/null
+          # The supervisor is PID 1: its death ends the sandbox instead of leaving the provider port
+          # free for a Tool to rebind. This replaces the unprivileged-port-floor sysctl, which AWS
+          # answers by terminating the MicroVM mid-session.
+          docker exec --user 0:0 "$CID" sh -ceu 'kill -ABRT 1'
+          timeout 60 docker wait "$CID" >/dev/null
           trap - EXIT

@@ -12,8 +12,7 @@ cargo build -p environment-guest --release --target aarch64-unknown-linux-gnu
 docker build -f image/Dockerfile \
   --build-arg BIN=target/aarch64-unknown-linux-gnu/release/environment-guest \
   -t aex-environment:dev .
-docker run --rm --sysctl net.ipv4.ip_unprivileged_port_start=8081 \
-  -p 8080:8080 aex-environment:dev
+docker run --rm -p 8080:8080 aex-environment:dev
 ```
 
 The hosted MVP has one physical shape: 0.5 baseline vCPU and exactly 1,024 MiB of provider
@@ -32,15 +31,15 @@ or WebSocket request requires a random generation bearer delivered only in the s
 payload and retained with the durable target route; it is never projected through Brain, logs,
 argv, or Tool environments. Both UID 1000 additional shells and dynamically allocated managed
 binding UIDs may share the guest network namespace, but receive only `401` from the live control
-endpoint without that bearer. Root boot also raises `ip_unprivileged_port_start` to 8081. A tiny
-root-owned, group-restricted launcher gives the supervisor only `CAP_NET_BIND_SERVICE` before it
-binds port 8080; Tool children lose every capability, so a background Tool cannot bind or
-impersonate the port after a supervisor crash. CI proves both Tool identity classes cannot
-authenticate to a live supervisor or bind the released control port.
+endpoint without that bearer. Boot leaves `ip_unprivileged_port_start` at its default: AWS
+terminates a MicroVM whose guest raises it, and the supervisor is the container's PID 1, so a
+supervisor crash ends the MicroVM instead of freeing port 8080 for a Tool to rebind. Tool children
+lose every capability. CI proves both Tool identity classes cannot authenticate to a live
+supervisor or bind the released control port.
 
 The build removes every package-owned setuid/setgid bit and inherited file capability. The
-root-owned supervisor launcher carries only `CAP_KILL`, `CAP_NET_BIND_SERVICE`, `CAP_SETGID`, and
-`CAP_SETUID` across its drop to the supervisor identity and into `environment-guest`; this does not
+root-owned supervisor launcher carries only `CAP_KILL`, `CAP_SETGID`, and `CAP_SETUID` across its
+drop to the supervisor identity and into `environment-guest`; this does not
 depend on the provider honoring filesystem capabilities. The supervisor needs the UID/GID pair to spawn Tool children and
 `CAP_KILL` to enforce their deadlines after the UID split; Linux does not give parents an implicit
 cross-UID signal right. Children clear every capability set and set
