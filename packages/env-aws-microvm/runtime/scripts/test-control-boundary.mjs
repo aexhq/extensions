@@ -8,6 +8,8 @@ assert.notEqual(process.geteuid?.(), 0);
 assert.notEqual(process.geteuid?.(), 1001);
 assert.throws(() => process.setuid(1001));
 
+// The live supervisor owns the provider port for the whole life of the guest, and it is the
+// container's PID 1, so its death ends the sandbox rather than freeing the port for a Tool.
 if (process.argv.includes("--bind")) {
   for (const host of ["0.0.0.0", "::"]) {
     const result = await new Promise((resolve) => {
@@ -19,7 +21,7 @@ if (process.argv.includes("--bind")) {
       });
     });
     if (host === "::" && result.code === "EAFNOSUPPORT") continue;
-    assert.equal(result.code, "EACCES");
+    assert.equal(result.code, "EADDRINUSE");
   }
   process.exit(0);
 }
