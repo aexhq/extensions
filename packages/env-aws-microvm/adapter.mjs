@@ -11,6 +11,8 @@ export function resolve(request) {
       authority: JSON.parse(request.authorityJson),
       tenant_id: request.tenantId,
       session_id: request.sessionId,
+      root_id: request.rootId,
+      parent_id: request.parentId,
       environment_id: request.environmentId,
     }),
   };
