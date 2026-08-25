@@ -2,9 +2,8 @@
 # Root boot boundary for the trusted Environment supervisor and every Tool uid.
 set -eu
 
-# Reserve the provider's fixed listener port. The root-owned launcher binds it before dropping to
-# the supervisor; a background Tool cannot bind it after a crash. Tool access to a live listener
-# is independently rejected by its generation-scoped bearer.
+# Keep the provider endpoint privileged. The supervisor receives CAP_NET_BIND_SERVICE; Tool
+# children receive no capabilities and therefore cannot impersonate the endpoint after a crash.
 unprivileged_port_start=$(( 8080 + 1 ))
 if [ "$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start)" != "$unprivileged_port_start" ]; then
   printf '%s\n' "$unprivileged_port_start" > /proc/sys/net/ipv4/ip_unprivileged_port_start
@@ -29,4 +28,4 @@ ulimit -c 0
 # through the shared workspace GID. Explicit Tool-created 0600 files remain binding-private.
 umask 0002
 
-exec /usr/local/lib/environment/control-listener /usr/local/bin/environment-guest
+exec /usr/local/lib/environment/supervisor-launcher /usr/local/bin/environment-guest
