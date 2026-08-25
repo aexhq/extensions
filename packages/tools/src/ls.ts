@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -21,6 +21,6 @@ const ls = tool(lsInput, async function ls({ path, limit }, context) {
   .named("ls")
   .describe("List entries in an Environment workspace directory.")
   .returns(lsOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default ls;

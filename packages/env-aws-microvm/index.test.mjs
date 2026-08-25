@@ -1,40 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspectEnvironment } from "@aexhq/environment";
+import { prepareComponent } from "@aexhq/brain";
 import { awsMicrovm } from "./index.mjs";
 
-test("awsMicrovm declares the computer profile without a language runtime", () => {
-  assert.deepEqual(inspectEnvironment(awsMicrovm()).serialized, {
-    extension: "@aexhq/env-aws-microvm",
-    protocol: "environment/v1",
-    profile: { kind: "computer", platform: "linux-arm64", network: "allowlist", recovery: "retained" },
-    configuration: {},
+test("awsMicrovm declares only its external driver configuration", async () => {
+  const value = awsMicrovm({ region: "eu-west-2", idleSeconds: 30, maximumSeconds: 600 });
+  assert.equal(value.extension, "environment");
+  assert.deepEqual(value.config, {
+    driver: "aws-microvm",
+    configuration: { region: "eu-west-2", idle_seconds: 30, maximum_seconds: 600 },
   });
+  assert.ok((await prepareComponent(value)).bytes > 0);
 });
 
-test("awsMicrovm handle scopes lifecycle and files to its logical environment", async () => {
-  const calls = [];
-  const reference = awsMicrovm();
-  const handle = inspectEnvironment(reference).createHandle({
-    sessionId: "ses_1",
-    environment: "workspace",
-    async request(method, path, body) {
-      calls.push({ method, path, body });
-      if (method === "GET") return { state: "running", generation: "gen_1" };
-      if (path.endsWith("/files/read-inline")) return { content_base64: "aGk=" };
-      return { path: body?.path };
-    },
-  });
-  await handle.files.upload("input.txt", "hi");
-  assert.deepEqual(await handle.files.read("input.txt"), new TextEncoder().encode("hi"));
-  assert.deepEqual(calls[1], {
-    method: "POST",
-    path: "/v1/sessions/ses_1/environments/workspace/files/write-inline",
-    body: {
-      path: "/workspace/input.txt",
-      generation: "gen_1",
-      content_base64: "aGk=",
-    },
-  });
-  assert.equal(calls.every(({ path }) => path.includes("/environments/workspace")), true);
+test("awsMicrovm rejects invalid configuration", () => {
+  assert.throws(() => awsMicrovm({ region: "" }), /non-empty/u);
+  assert.throws(() => awsMicrovm([]), /options must be an object/u);
+  assert.throws(() => awsMicrovm({ idleSeconds: 0 }), /positive safe integer/u);
+  assert.throws(
+    () => awsMicrovm({ idleSeconds: 61, maximumSeconds: 60 }),
+    /cannot exceed/u,
+  );
+  assert.throws(() => awsMicrovm({ typo: true }), /unknown/u);
 });

@@ -21,7 +21,6 @@ Startup is fail-closed for the production identity and region inputs below.
 | `ENVIRONMENT_IMAGE_VERSION` | Required immutable plane-local image version |
 | `ENVIRONMENT_REGISTRY_TABLE` | Required plane-local DynamoDB target/definition registry |
 | `ENVIRONMENT_MAX_MATERIALIZED_MIB` | Required positive multiple of 1,024; plane allocations must be coordinated so their account-region sum stays within the provider memory quota |
-| `ENVIRONMENT_MAX_ADDITIONAL_SANDBOXES_PER_ROOT` | Required integer from 1 through 32; transactional per-root live-target ceiling owned by this extension |
 | `ENVIRONMENT_NETWORK_CONNECTOR_NONE` | Required restricted connector ARN |
 | `ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST` | Required allowlist-gateway connector ARN |
 | `ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC` | Required direct-public connector ARN |

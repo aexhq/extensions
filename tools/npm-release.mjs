@@ -5,7 +5,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-const workspaces = ["agentloop", "env-app", "env-aws-microvm", "loop-codex", "loop-pi", "tools"];
+const workspaces = [
+  "agentloop",
+  "env-app",
+  "env-aws-microvm",
+  "loop-codex",
+  "loop-pi",
+  "model",
+  "model-anthropic",
+  "model-openai",
+  "tools",
+];
 const root = path.resolve(import.meta.dirname, "..");
 const npmCli = [
   process.env.npm_execpath,
@@ -48,6 +58,9 @@ async function pack(directory) {
   const packages = [];
   for (const workspace of workspaces) {
     const packageDocument = await document(workspace);
+    if (packageDocument.publishConfig?.access !== "public" || packageDocument.publishConfig?.tag !== "next") {
+      throw new Error(`${packageDocument.name} must publish publicly under the next dist-tag`);
+    }
     const result = packResult(run([
       "pack", "--silent", "--json", "--workspace", packageDocument.name,
       "--pack-destination", directory,

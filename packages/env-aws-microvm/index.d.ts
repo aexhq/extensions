@@ -1,18 +1,21 @@
-import type { ComputerProfile, EnvironmentRef } from "@aexhq/environment";
+import type { ComponentExtension } from "@aexhq/brain";
 
-export interface AwsMicrovmOptions { readonly region?: string }
-export interface AwsMicrovmStatus {
-  readonly state: string;
-  readonly generation?: string;
+export interface AwsMicrovmOptions {
+  readonly region?: string;
+  readonly idleSeconds?: number;
+  readonly maximumSeconds?: number;
 }
-export interface AwsMicrovmHandle {
-  status(): Promise<AwsMicrovmStatus>;
-  readonly files: {
-    list(path?: string): Promise<unknown>;
-    read(path: string): Promise<Uint8Array>;
-    upload(path: string, content: string | Uint8Array, options?: { readonly overwrite?: boolean }): Promise<unknown>;
-  };
-}
-export declare const awsMicrovm: (
-  options?: AwsMicrovmOptions,
-) => EnvironmentRef<"@aexhq/env-aws-microvm", ComputerProfile, AwsMicrovmHandle>;
+
+export type AwsMicrovmEnvironment = ComponentExtension<
+  "environment",
+  {
+    readonly driver: "aws-microvm";
+    readonly configuration: {
+      readonly region?: string;
+      readonly idle_seconds?: number;
+      readonly maximum_seconds?: number;
+    };
+  }
+>;
+
+export declare function awsMicrovm(options?: AwsMicrovmOptions): AwsMicrovmEnvironment;

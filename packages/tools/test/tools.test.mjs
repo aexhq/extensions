@@ -1,94 +1,41 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { computer, defineEnvironment, linux } from "@aexhq/environment";
-import { Aex } from "@aexhq/sdk";
-import { bash, edit, glob, grep, ls, read, subagents, todo, write } from "../index.mjs";
+import { prepareComponent } from "@aexhq/brain";
+import { bash, edit, glob, grep, ls, read, subagents, task, todo, write } from "../index.mjs";
 
-const runtime = defineEnvironment({
-  identity: "test.computer",
-  protocol: "environment/v1",
-  profile: computer({ platform: linux.arm64, network: "allowlist", recovery: "retained" }),
-  serialize: () => ({}),
-  handle: () => ({}),
-});
-
-test("subagents is a prepared environment Tool with deployment-selectable API egress", () => {
-  const value = subagents({ apiHost: "api-dev.aex.dev" });
-  assert.equal(value.kind, "aex.tool");
-  assert.equal(value.name, "subagents");
-  assert.deepEqual(value.requirements.network, [{ host: "api-dev.aex.dev", port: 443 }]);
-  assert.match(value.artifact.digest, /^[0-9a-f]{64}$/);
-  assert.equal(value.artifact.target, "linux-arm64");
-});
-
-test("subagents requests only extension-owned environment variables", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../dist/subagents.artifact.json", import.meta.url), "utf8"));
-  const code = manifest.blobs.find((blob) => blob.file.endsWith(".mjs"));
-  const runtimeModule = (await import(new URL(`../dist/${code.file}`, import.meta.url))).default;
-  assert.deepEqual(runtimeModule.requiredEnv, ["SUBAGENTS_API_URL", "SUBAGENTS_TOKEN"]);
-});
-const loop = Object.freeze({ source: "export const activate=()=>{}", sha256: "a".repeat(64), toolchain: "test-loop" });
-
-test("official tools are prepared computer extensions with explicit requirements", () => {
+test("official tools are immutable Environment-routed components", async () => {
   const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write()];
-  assert.deepEqual(values.map((value) => value.name), ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"]);
+  assert.deepEqual(
+    values.map((value) => value.config.definition.name),
+    ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"],
+  );
   for (const value of values) {
-    assert.equal(value.kind, "aex.tool");
-    assert.equal(value.requirements.workspace, true);
-    assert.equal(value.requirements.recovery, "retained");
-    assert.match(value.artifact.digest, /^[0-9a-f]{64}$/);
-    assert.equal(value.artifact.target, "linux-arm64");
+    assert.equal(value.extension, "tool");
+    assert.deepEqual(value.grants, ["environment"]);
+    assert.match(value.config.definition.contract_digest, /^[0-9a-f]{64}$/u);
+    assert.match(value.config.descriptor.bundle_digest, /^[0-9a-f]{64}$/u);
+    assert.equal(value.config.descriptor.runtime, "node22");
+    assert.ok(value.config.bundleBase64.length > 0);
+    assert.equal(Object.isFrozen(value.config), true);
   }
-  assert.equal(bash().requirements.processes, true);
-  assert.equal(grep().requirements.processes, true);
+  const prepared = await prepareComponent(values[0]);
+  assert.ok(prepared.bytes > 0);
+  assert.equal(prepared.component_digest.length, 64);
 });
 
-test("the prepared runtime uses an immutable absolute entrypoint", async () => {
-  const manifest = JSON.parse(await readFile(new URL("../dist/bash.artifact.json", import.meta.url), "utf8"));
-  assert.equal(manifest.execute, "/tool/runtime.mjs");
-  const code = manifest.blobs.find((blob) => blob.file.endsWith(".mjs"));
-  const runtimeModule = (await import(new URL(`../dist/${code.file}`, import.meta.url))).default;
-  assert.equal(runtimeModule.kind, "tool-runtime/v1");
-  assert.equal(runtimeModule.name, "bash");
-  assert.equal(typeof runtimeModule.execute, "function");
+test("subagents is an ordinary Tool component with child-session authority", async () => {
+  const value = subagents();
+  assert.equal(value.config.definition.name, "subagents");
+  assert.deepEqual(value.grants, ["children"]);
+  assert.deepEqual(task(), value);
+  const prepared = await prepareComponent(value);
+  assert.ok(prepared.bytes > 0);
+  assert.equal(prepared.component_digest.length, 64);
 });
 
-test("SDK creation binds every official tool to the one compatible environment", async () => {
-  let body;
-  const aex = new Aex({
-    apiKey: "aex_sk_test",
-    fetch: async (_input, init) => {
-      if (init.method === "HEAD") return new Response(null, { status: 404 });
-      if (init.method === "PUT") return new Response(null, { status: 201 });
-      body = JSON.parse(init.body);
-      return Response.json({
-        id: "ses_01",
-        root_id: "ses_01",
-        depth: 0,
-        object: "session",
-        state: "open",
-        turn_state: "idle",
-        model: { provider: "openai", name: "test", context_window_tokens: 32_768 },
-        storage: { session_storage_bytes: 0, upload_reserved_bytes: 0 },
-        created_at: "2026-08-23T10:00:00.000Z",
-        updated_at: "2026-08-23T10:00:00.000Z",
-        turns: 0,
-        last_seq: 0,
-        metadata: {},
-      });
-    },
-  });
-  const workspace = runtime();
-  await aex.sessions.create({
-    model: { provider: "openai", name: "test", apiKey: "sk-test" },
-    loop,
-    environments: { workspace },
-    tools: [bash(), read(), write(), edit()],
-  });
-
-  assert.deepEqual(body.tools.items.map((item) => item.executor.environment), ["workspace", "workspace", "workspace", "workspace"]);
-  assert.ok(body.tools.items.every((item) => item.executor.kind === "environment"));
-  assert.equal(body.tool_bundles.length, 4);
+test("each factory reuses one executable component and seals distinct configuration", () => {
+  assert.deepEqual(bash().asset, read().asset);
+  assert.notEqual(bash().config.definition.contract_digest, read().config.definition.contract_digest);
+  assert.deepEqual(bash(), bash());
 });

@@ -1,16 +1,16 @@
 # @aexhq/loop-codex
 
-The official codex-style agentloop for Brain sessions: a semantic port of codex's loop
-policies (environment preamble, strictly sequential tool execution, loop-owned conversation
-memory, a summary mark per turn) onto `contracts/agentloop/v1`. See
-`aex-research docs/codex-loop-semantics.md` for the port's decision record.
+The official codex-style Agentloop for Brain sessions: a semantic port of codex loop policy
+including the environment preamble, sequential tool execution, resident conversation cache,
+and one summary mark per turn.
 
-This package is built exactly like any external loop: `build.mjs` calls the public
-`buildLoopBundle` from `@aexhq/agentloop` and emits
+```js
+import { codex } from "@aexhq/loop-codex";
 
-- `dist/loop.bundle.mjs` — the deterministic source bundle (what uploads or seeds), and
-- `dist/identity.json` — the sealed identity `{ name, version, toolchain,
-  source_bundle_sha256, bytes }`.
+const agentloop = codex({ instructions: "Prefer small, verified changes." });
+```
 
-Compositions seed it through the same admission path customer uploads take; there is no
-private build or load path.
+`codex(options)` returns an immutable Brain component declaration. The npm package contains
+`dist/loop.component.wasm`, compiled before publication through the public
+`@aexhq/agentloop/build` API. Options cross the session boundary as immutable configuration
+data; Brain does not compile or rewrite source.

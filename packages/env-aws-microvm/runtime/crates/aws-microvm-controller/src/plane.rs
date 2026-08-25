@@ -30,7 +30,6 @@ impl AwsEnvironmentPlane {
                 db.clone(),
                 &cfg.registry_table,
                 cfg.max_materialized_mib,
-                cfg.max_additional_sandboxes_per_root,
             ),
             definitions: DynamoDefinitionRegistry::new(db, &cfg.registry_table),
             guest: GuestClient::new(control.clone(), http),

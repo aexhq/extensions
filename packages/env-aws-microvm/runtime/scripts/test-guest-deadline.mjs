@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, readFile, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 const authority = "http://127.0.0.1:8080";
-const ready = await fetch(`${authority}/aws/lambda-microvms/runtime/v1/ready`, {
-  method: "POST",
-}).then((response) => response.json());
-const environmentContractDigest = ready.contract_digest;
-assert.match(environmentContractDigest, /^[0-9a-f]{64}$/);
+const environmentContractDigest = "7aea6ad07f67b322300c752017bf2c5cda692e0e4fc6579fe6af5a7f7ab606dc";
 const controlToken = `control-${"a".repeat(64)}`;
 
 const payload = {
@@ -215,7 +211,7 @@ const bundle = Buffer.from(`
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 export default {
-  kind: "tool-runtime/v1",
+  kind: "brain.tool-runtime",
   name: "proc_secret_fixture",
   description: "Per-binding procfs isolation fixture.",
   contractDigest: ${JSON.stringify(contractDigest)},
@@ -243,39 +239,29 @@ export default {
 // Installs one fixture bundle plus its sealed binding; both installs derive from one descriptor.
 async function installFixtureBinding(bundleBytes, options) {
   const digest = createHash("sha256").update(bundleBytes).digest("hex");
-  const nodeBytes = Buffer.from("#!/bin/sh\nexec /workspace/.environment/bin/node \"$@\"\n");
-  const nodeDigest = createHash("sha256").update(nodeBytes).digest("hex");
   const descriptor = {
     bundle_digest: digest,
-    bytes: bundleBytes.length + nodeBytes.length,
+    bytes: bundleBytes.length,
     contract_digest: contractDigest,
     description: options.description,
     environment_name: "workspace",
     execute_path: "/tool/runtime.mjs",
     layers: [{
-      digest: nodeDigest,
-      bytes: nodeBytes.length,
-      media_type: "application/javascript+esm",
-      mount_path: "/runtime/bin/node",
-      unpack: "file",
-      object: { bytes: nodeBytes.length, object_id: "node-ci", sha256: nodeDigest },
-    }, {
       digest,
       bytes: bundleBytes.length,
       media_type: "application/javascript+esm",
       mount_path: "/tool/runtime.mjs",
       unpack: "file",
-      object: { bytes: bundleBytes.length, object_id: options.objectId, sha256: digest },
+      object: {
+        bytes: bundleBytes.length,
+        object_id: options.objectId,
+        sha256: digest,
+      },
     }],
     required_env: options.requiredEnv,
     target: "linux-arm64",
     tool_name: options.toolName,
   };
-  await postInstall(
-    `/internal/bundles/${nodeDigest}`,
-    Buffer.concat([Buffer.from(`${JSON.stringify({ descriptor, layer_digest: nodeDigest })}\n`), nodeBytes]),
-    "application/octet-stream",
-  );
   await postInstall(
     `/internal/bundles/${digest}`,
     Buffer.concat([Buffer.from(`${JSON.stringify({ descriptor, layer_digest: digest })}\n`), bundleBytes]),
@@ -296,7 +282,7 @@ async function installFixtureBinding(bundleBytes, options) {
       profile: {
         kind: "computer",
         platform: "linux-arm64",
-        network: "none",
+        network: "allowlist",
         recovery: "retained",
       },
       protocol: "environment/v1",
@@ -305,7 +291,6 @@ async function installFixtureBinding(bundleBytes, options) {
       session_id: "session-ci",
     },
   });
-  await chmod(`/var/environment/tools/artifacts/${digest}/runtime/bin/node`, 0o750);
   return descriptor;
 }
 
@@ -349,7 +334,7 @@ async function probeLegacyIpc(operationId, index) {
   return result;
 }
 export default {
-  kind: "tool-runtime/v1",
+  kind: "brain.tool-runtime",
   name: "proc_attacker_fixture",
   description: "Different-binding procfs attacker fixture.",
   contractDigest: ${JSON.stringify(contractDigest)},

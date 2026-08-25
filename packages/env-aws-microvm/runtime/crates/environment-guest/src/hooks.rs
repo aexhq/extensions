@@ -10,7 +10,6 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
-use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{RunEnvelope, RunPayload};
 use serde_json::{Value, json};
 
@@ -83,13 +82,7 @@ pub async fn ready(State(environment): State<Arc<Environment>>) -> (StatusCode, 
         }
     }
     if failures.is_empty() {
-        (
-            StatusCode::OK,
-            Json(json!({
-                "ok": true,
-                "contract_digest": ENVIRONMENT_CONTRACT_DIGEST.trim()
-            })),
-        )
+        (StatusCode::OK, Json(json!({"ok": true})))
     } else {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -98,7 +91,7 @@ pub async fn ready(State(environment): State<Arc<Environment>>) -> (StatusCode, 
     }
 }
 
-/// Build-only base-image probe. Tool runtimes arrive in prepared artifacts.
+/// Build-only curated toolchain probe. It does not validate customer bundles.
 pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCode, Json<Value>) {
     if environment.armed().await {
         return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})));

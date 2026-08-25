@@ -834,6 +834,7 @@ async fn launch_canary_target(
         run_hook_payload,
         client_token,
         connector,
+        crate::TargetLifetime::default(),
     );
     let deadline = tokio::time::Instant::now() + STATE_TIMEOUT;
     loop {

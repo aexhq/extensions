@@ -90,7 +90,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential pkg-config \
       ripgrep jq unzip zip zstd xz-utils file less \
       procps coreutils bash libcap2-bin util-linux iproute2 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && case "$(dpkg --print-architecture)" in \
+         arm64) node_arch=arm64; node_sha=fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8 ;; \
+         amd64) node_arch=x64; node_sha=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307 ;; \
+         *) echo "unsupported Node architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+       esac \
+    && curl --fail --location --retry 5 \
+         --output /tmp/node.tar.xz \
+         "https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-${{node_arch}}.tar.xz" \
+    && echo "${{node_sha}}  /tmp/node.tar.xz" | sha256sum --check --strict \
+    && mkdir /tmp/node \
+    && tar --extract --file /tmp/node.tar.xz --directory /tmp/node --strip-components=1 \
+    && install -m 0755 /tmp/node/bin/node /usr/local/bin/node \
+    && rm -rf /tmp/node /tmp/node.tar.xz \
+    && test "$(node --version)" = v22.23.2 \
+    && test ! -e /usr/local/bin/npm \
+    && test ! -e /usr/local/bin/npx \
+    && test ! -e /usr/local/bin/corepack \
+    && test ! -e /usr/local/lib/node_modules
 
 # ubuntu:24.04 ships a uid-1000 "ubuntu" user; remove it, then create "agent" as uid 1000.
 RUN deluser --remove-home ubuntu 2>/dev/null || true; \
@@ -914,10 +932,16 @@ mod tests {
     #[test]
     fn the_dev_dockerfile_carries_the_production_pins() {
         let dev = include_str!("../../../image/Dockerfile");
-        assert!(!dev.contains("nodejs.org"));
         assert!(!dev.contains("python3"));
-        assert!(!dockerfile().contains("nodejs.org"));
         assert!(!dockerfile().contains("python3"));
+        for node_pin in [
+            "node-v22.23.2-linux-${node_arch}.tar.xz",
+            "fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8",
+            "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
+            "test ! -e /usr/local/lib/node_modules",
+        ] {
+            assert!(dev.contains(node_pin) && dockerfile().contains(node_pin));
+        }
         for shared in [
             &format!("ENVIRONMENT_SUPERVISOR_UID={SUPERVISOR_UID}"),
             &format!("ENVIRONMENT_TOOL_UID={TOOL_UID}"),
@@ -938,8 +962,9 @@ mod tests {
         let df = dockerfile();
         assert!(df.contains("@sha256:"), "base must be digest-pinned");
         assert!(df.contains(&format!("EXPOSE {AGENT_PORT}")));
-        assert!(!df.contains("nodejs.org"));
         assert!(!df.contains("python3"));
+        assert!(df.contains("node-v22.23.2-linux-${node_arch}.tar.xz"));
+        assert!(df.contains("test ! -e /usr/local/lib/node_modules"));
         assert!(
             !df.contains("\nUSER "),
             "the boot script drops privileges; the Dockerfile must not"

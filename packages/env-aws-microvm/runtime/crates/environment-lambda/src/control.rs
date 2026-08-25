@@ -15,7 +15,7 @@ use aws_sdk_lambdamicrovms::types::{IdlePolicy, MicrovmState, PortSpecification}
 use environment_core::connector::ConnectorRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{AGENT_PORT, MAX_DURATION_SECONDS, MAX_IDLE_SECONDS, TOKEN_TTL_SECONDS};
+use crate::{AGENT_PORT, MAX_DURATION_SECONDS, TOKEN_TTL_SECONDS};
 
 const CONTROL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -324,16 +324,17 @@ impl Control {
         run_hook_payload: &str,
         client_token: &str,
         egress_connector: &ConnectorRef,
+        lifetime: crate::TargetLifetime,
     ) -> ExactRunMicrovmRequest {
         ExactRunMicrovmRequest {
             image_identifier: image_arn.to_owned(),
             image_version: image_version.to_owned(),
             ingress_network_connector: self.connector_arn(ALL_INGRESS),
             egress_network_connector: self.connector_arn(egress_connector.as_str()),
-            max_idle_duration_seconds: MAX_IDLE_SECONDS,
-            suspended_duration_seconds: MAX_DURATION_SECONDS,
+            max_idle_duration_seconds: lifetime.idle_seconds,
+            suspended_duration_seconds: lifetime.maximum_seconds,
             auto_resume_enabled: true,
-            maximum_duration_seconds: MAX_DURATION_SECONDS,
+            maximum_duration_seconds: lifetime.maximum_seconds,
             run_hook_payload: run_hook_payload.to_owned(),
             client_token: client_token.to_owned(),
         }
@@ -354,6 +355,7 @@ impl Control {
             || request.client_token.is_empty()
             || request.client_token.len() > 128
             || request.max_idle_duration_seconds == 0
+            || request.max_idle_duration_seconds > crate::MAX_IDLE_SECONDS
             || request.max_idle_duration_seconds > request.maximum_duration_seconds
             || request.suspended_duration_seconds == 0
             || request.suspended_duration_seconds > MAX_DURATION_SECONDS
@@ -662,19 +664,32 @@ mod tests {
             "sealed-run-hook-payload",
             "stable-client-token",
             &connector,
+            crate::TargetLifetime::default(),
         );
         let first = serde_json::to_vec(&request).unwrap();
         let replay: ExactRunMicrovmRequest = serde_json::from_slice(&first).unwrap();
         assert_eq!(serde_json::to_vec(&replay).unwrap(), first);
         assert_eq!(request.client_token, "stable-client-token");
-        assert_eq!(request.max_idle_duration_seconds, MAX_IDLE_SECONDS);
-        assert_eq!(request.max_idle_duration_seconds, MAX_DURATION_SECONDS);
+        assert_eq!(request.max_idle_duration_seconds, crate::MAX_IDLE_SECONDS);
         assert_eq!(request.maximum_duration_seconds, MAX_DURATION_SECONDS);
         assert_eq!(request.suspended_duration_seconds, MAX_DURATION_SECONDS);
         assert!(request.auto_resume_enabled);
         assert!(request.ingress_network_connector.ends_with(ALL_INGRESS));
         assert_eq!(request.egress_network_connector, connector.as_str());
         control.validate_exact_run_request(&request).unwrap();
+
+        let shorter = control.exact_run_request(
+            &request.image_identifier,
+            &request.image_version,
+            &request.run_hook_payload,
+            "shorter-client-token",
+            &connector,
+            crate::TargetLifetime::new(30, 600).unwrap(),
+        );
+        assert_eq!(shorter.max_idle_duration_seconds, 30);
+        assert_eq!(shorter.maximum_duration_seconds, 600);
+        assert_eq!(shorter.suspended_duration_seconds, 600);
+        control.validate_exact_run_request(&shorter).unwrap();
 
         // Recovery validates the closed request itself, not a mutable deployment connector
         // catalog. An old-but-still-live connector ARN remains replayable after rollout.
@@ -697,6 +712,7 @@ mod tests {
             &request.run_hook_payload,
             "different-client-token",
             &connector,
+            crate::TargetLifetime::default(),
         );
         assert_ne!(
             serde_json::to_vec(&request).unwrap(),

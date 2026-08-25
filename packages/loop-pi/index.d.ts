@@ -4,10 +4,8 @@ export interface PiOptions {
   readonly reasoningEffort?: "low" | "medium" | "high";
 }
 
-export interface PiExtension {
-  readonly source: string;
-  readonly sha256: string;
-  readonly toolchain: string;
-}
+import type { ComponentExtension } from "@aexhq/brain";
+
+export type PiExtension = ComponentExtension<"agentloop", PiOptions>;
 
 export declare function pi(options?: PiOptions): PiExtension;

@@ -1,6 +1,6 @@
 export {
   AgentloopOpError,
-  __bindHostCall,
+  __bindHost,
   defineAgentloop,
   type AgentloopCtx,
   type AgentloopHandlers,

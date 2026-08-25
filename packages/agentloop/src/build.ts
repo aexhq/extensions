@@ -1,35 +1,43 @@
 /**
- * The deterministic source-bundle builder (node-only; import from `@aexhq/agentloop/build`).
- *
- * A custom loop's sealed identity is (source-bundle sha256, toolchain): componentization is
- * non-deterministic, so the deterministic esbuild bundle produced here is what uploads, and
- * the composition componentizes it server-side, cached by that pair. The SDK itself is
- * bundled in from its TypeScript source — the one canonical input — so the same entry always
- * digests the same.
+ * The Agentloop component builder (node-only; import from `@aexhq/agentloop/build`). The SDK
+ * is bundled from its canonical TypeScript source, then an explicitly supplied compiler emits
+ * the publishable Wasm component. Brain never compiles extension source.
  */
 
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, type Plugin } from "esbuild";
 
 /**
- * The loop toolchain compositions run: the pinned guest engine plus componentizer. The other
- * half of a bundle's sealed identity — pass it as the upload's `toolchain`; a composition
- * running a different toolchain refuses the bundle rather than guessing.
+ * Build provenance for the official compiler. Runtime identity is the component SHA-256 plus
+ * the canonical Agentloop WIT digest, independent of the compiler that produced the bytes.
  */
-export const LOOP_TOOLCHAIN = "starlingmonkey-componentize-js-0.22.0";
+export const LOOP_TOOLCHAIN = "componentize-js-0.22.0";
 
-/** The upload bound for a source bundle (contracts/agentloop/v1 `bundle_base64` limit). */
+/** The authoring bundle bound before component compilation. */
 export const MAX_LOOP_BUNDLE_BYTES = 8 * 1024 * 1024;
 
 export interface LoopBundle {
   /** The complete ESM source bundle, the exact bytes to upload. */
   source: string;
-  /** SHA-256 of the UTF-8 source bytes: half of the sealed identity. */
+  /** SHA-256 of the UTF-8 source bytes for reproducible build provenance. */
   sha256: string;
   bytes: number;
 }
+
+export interface AgentloopComponent extends LoopBundle {
+  component: Uint8Array;
+  componentSha256: string;
+  componentBytes: number;
+}
+
+export type AgentloopCompiler = (
+  source: string,
+  wit: string,
+  options: { worldName: "agentloop"; disableFeatures: readonly ["http", "fetch-event"] },
+) => Promise<{ component: Uint8Array }>;
 
 export interface BuildLoopBundleOptions {
   /** The loop entry module exporting `activate` (typically via `defineAgentloop`). */
@@ -56,11 +64,11 @@ const SDK_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 export async function buildLoopBundle(options: BuildLoopBundleOptions): Promise<LoopBundle> {
   const entryPath = resolve(options.entry);
   // The virtual entry binds the real host import around the author's module, so authored
-  // loops never import "loophost:abi/host" themselves and stay unit-testable in node.
+  // loops never import the WIT host interface themselves and stay unit-testable in node.
   const virtualEntry = [
-    'import { call } from "loophost:abi/host";',
-    'import { __bindHostCall } from "@aexhq/agentloop";',
-    "__bindHostCall(call);",
+    'import { call, cancelled } from "aex:agentloop/context@1.0.0";',
+    'import { __bindHost } from "@aexhq/agentloop";',
+    "__bindHost(call, cancelled);",
     `export { activate } from ${JSON.stringify(entryPath.replaceAll("\\", "/"))};`,
     "",
   ].join("\n");
@@ -74,7 +82,7 @@ export async function buildLoopBundle(options: BuildLoopBundleOptions): Promise<
     bundle: true,
     format: "esm",
     platform: "neutral",
-    external: ["loophost:abi/host"],
+    external: ["aex:agentloop/context@1.0.0"],
     alias: { "@aexhq/agentloop": SDK_ENTRY },
     plugins: options.plugins ?? [],
     inject: options.inject ?? [],
@@ -93,6 +101,31 @@ export async function buildLoopBundle(options: BuildLoopBundleOptions): Promise<
   }
   const sha256 = createHash("sha256").update(source, "utf8").digest("hex");
   return { source, sha256, bytes };
+}
+
+export async function buildAgentloopComponent(
+  options: BuildLoopBundleOptions,
+  compiler: AgentloopCompiler,
+): Promise<AgentloopComponent> {
+  if (typeof compiler !== "function") {
+    throw new TypeError("buildAgentloopComponent requires an explicit component compiler");
+  }
+  const bundle = await buildLoopBundle(options);
+  const wit = await readFile(
+    new URL(import.meta.resolve("@aexhq/brain/contracts/agentloop")),
+    "utf8",
+  );
+  const output = await compiler(bundle.source, wit, {
+    worldName: "agentloop",
+    disableFeatures: ["http", "fetch-event"],
+  });
+  const component = new Uint8Array(output.component);
+  return {
+    ...bundle,
+    component,
+    componentSha256: createHash("sha256").update(component).digest("hex"),
+    componentBytes: component.byteLength,
+  };
 }
 
 /**

@@ -66,6 +66,117 @@ pub struct AwsMicrovmEnvironment {
 }
 
 impl AwsMicrovmEnvironment {
+    pub async fn submit_component(
+        &self,
+        binding: SealedBinding,
+        envelope: brain_protocol::environment::OperationEnvelope,
+        bundle: Vec<u8>,
+        wait_up_to_ms: u64,
+        lifetime: TargetLifetime,
+    ) -> EnvironmentResult<SubmitReceipt> {
+        validate_managed_binding(&binding)?;
+        validate_inline_input(&envelope.input)?;
+        if binding.root_id != envelope.root_id
+            || binding.session_id != envelope.session_id
+            || binding.capability.as_str() != envelope.capability.as_str()
+        {
+            return Err(binding_error(
+                "component operation does not match its immutable binding",
+            ));
+        }
+        let binding_digest =
+            canonical_digest(&binding).map_err(|_| invalid("binding cannot be canonicalized"))?;
+        let binding_ref = format!("binding:{}", binding_digest.as_str());
+        if envelope.binding_ref.as_str() != binding_ref {
+            return Err(binding_error("component binding_ref is not canonical"));
+        }
+        if operation_request_digest(&envelope) != envelope.request_digest {
+            return Err(invalid("operation request_digest is not canonical"));
+        }
+        let descriptor = binding.bundle.as_ref().ok_or_else(|| {
+            error(
+                EnvironmentErrorCode::CapabilityUnavailable,
+                false,
+                "component operation has no immutable Tool bundle",
+            )
+        })?;
+        if descriptor.layers.len() != 1
+            || descriptor.layers[0].bytes.get() != bundle.len() as u64
+            || descriptor.layers[0].digest.as_str() != hex::encode(Sha256::digest(&bundle))
+        {
+            return Err(invalid(
+                "component Tool bundle does not match its descriptor",
+            ));
+        }
+        let environment_ref = brain_protocol::contract::environment_binding_ref(
+            envelope.root_id.as_str(),
+            binding.environment_name.as_str(),
+        );
+        let route = self
+            .materialize(
+                TargetKey::for_environment(envelope.root_id.as_str(), environment_ref.as_str())
+                    .map_err(materialization_error)?,
+                envelope.session_id.as_str(),
+                &envelope.resources,
+                &envelope.network,
+                RESOURCE_CLASS,
+                MaterializationMode::LazyEnvironment(lifetime),
+            )
+            .await?;
+        let install_key = InstalledArtifact::Bundle {
+            binding_ref: binding_ref.clone(),
+            digest: descriptor.bundle_digest.to_string(),
+        };
+        if !self
+            .already_installed(&route.target_ref, &install_key)
+            .await
+        {
+            let _permit = self
+                .bundle_install_permits
+                .acquire()
+                .await
+                .map_err(|_| temporary("bundle installation admission is unavailable"))?;
+            let layer = &descriptor.layers[0];
+            self.plane
+                .guest
+                .post_blob(
+                    &route,
+                    &format!("/internal/bundles/{}", layer.digest.as_str()),
+                    &InstallBundleMetadata {
+                        descriptor: descriptor.clone(),
+                        layer_digest: layer.digest.to_string(),
+                    },
+                    &bundle,
+                )
+                .await?;
+            self.plane
+                .guest
+                .post_json(
+                    &route,
+                    "/internal/bindings",
+                    &InstallBindingRequest {
+                        binding_ref,
+                        binding,
+                    },
+                )
+                .await?;
+            self.prepared_targets
+                .write()
+                .await
+                .entry(route.target_ref.clone())
+                .or_default()
+                .insert(install_key);
+        }
+        let request = SubmitRequest {
+            envelope,
+            wait_up_to_ms,
+        };
+        match self.guest_submit_rpc(&route, request).await? {
+            ResponseReply::Submit(receipt) => Ok(receipt),
+            _ => Err(wrong_reply("submit")),
+        }
+    }
+
     pub async fn from_env() -> anyhow::Result<Arc<Self>> {
         let cfg = AwsEnvironmentConfig::from_env()?;
         Ok(Self::with_plane(Arc::new(
@@ -278,7 +389,7 @@ impl AwsMicrovmEnvironment {
                     &prep.request.resources,
                     &prep.request.network,
                     RESOURCE_CLASS,
-                    MaterializationMode::LazyEnvironment,
+                    MaterializationMode::LazyEnvironment(TargetLifetime::default()),
                 )
                 .await
             }
@@ -319,6 +430,7 @@ impl AwsMicrovmEnvironment {
             ));
         }
         let spec = target_spec(&self.plane.cfg, resources, network, resource_class)?;
+        let lifetime = mode.lifetime();
         let now = now_ms();
         let reservation_id = random_identifier("reservation");
         let generation = mode
@@ -340,8 +452,11 @@ impl AwsMicrovmEnvironment {
             attempt_duration_ms: TARGET_ATTEMPT_MS,
             generation_is_fenced: mode.generation_intent().is_some(),
             now_ms: now,
-            lease_duration_ms: TARGET_LEASE_MS,
-            target_lifetime_ms: TARGET_LIFETIME_MS,
+            lease_duration_ms: lifetime
+                .maximum_seconds
+                .saturating_mul(1_000)
+                .saturating_add(5 * 60 * 1_000),
+            target_lifetime_ms: lifetime.maximum_seconds.saturating_mul(1_000),
             replace_after_loss: mode.replace_after_loss(),
         };
         let launcher = GenerationLauncher {
@@ -351,6 +466,7 @@ impl AwsMicrovmEnvironment {
             resources: resources.clone(),
             network: network.clone(),
             resource_class: resource_class.into(),
+            lifetime,
         };
         let preview = request.lease().map_err(materialization_error)?;
         request.launch_request = launcher.seal_launch(&preview).await?;

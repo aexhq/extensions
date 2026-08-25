@@ -26,37 +26,39 @@ try {
   await mkdir(artifacts);
   await mkdir(consumer);
   const packages = [
-    pack(path.join(root, "../aex/packages/contracts")),
-    pack(path.join(root, "../aex/packages/environment")),
-    pack(path.join(root, "../aex/packages/session-protocol")),
-    pack(path.join(root, "../aex/packages/sdk")),
-    ...["agentloop", "env-app", "env-aws-microvm", "loop-codex", "loop-pi", "tools"]
-      .map((name) => pack(path.join(root, "packages", name))),
-  ];
+    "agentloop",
+    "env-app",
+    "env-aws-microvm",
+    "loop-codex",
+    "loop-pi",
+    "model",
+    "model-anthropic",
+    "model-openai",
+    "tools",
+  ].map((name) => pack(path.join(root, "packages", name)));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
     name: "extensions-clean-consumer", private: true, type: "module",
   }, null, 2)}\n`);
   runNpm(["install", "--no-package-lock", "--no-audit", "--no-fund", ...packages], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
-import { inspectEnvironment } from "@aexhq/environment";
+import { prepareComponent } from "@aexhq/brain";
 import { app } from "@aexhq/env-app";
 import { awsMicrovm } from "@aexhq/env-aws-microvm";
 import { codex } from "@aexhq/loop-codex";
 import { pi } from "@aexhq/loop-pi";
+import { anthropic } from "@aexhq/model-anthropic";
+import { openai } from "@aexhq/model-openai";
 import { bash, subagents } from "@aexhq/tools";
 
-const application = app({ id: "smoke" });
-const environment = awsMicrovm();
-assert.equal(inspectEnvironment(application).serialized.profile.kind, "callbacks");
-assert.equal(inspectEnvironment(environment).serialized.profile.kind, "computer");
-assert.match(pi().sha256, /^[0-9a-f]{64}$/u);
-assert.match(codex().sha256, /^[0-9a-f]{64}$/u);
-assert.equal(bash().kind, "aex.tool");
-assert.equal(subagents().kind, "aex.tool");
-console.log("packed extension packages compose through public Aex contracts");
+const values = [app({ id: "smoke" }), awsMicrovm(), pi(), codex(), anthropic(), openai(), bash(), subagents()];
+assert.deepEqual(values.map((value) => value.extension), [
+  "environment", "environment", "agentloop", "agentloop", "model", "model", "tool", "tool",
+]);
+for (const value of values) assert.ok((await prepareComponent(value)).bytes > 0);
+console.log("packed extension packages compose through the public Brain SDK");
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
-  assert.match(output, /compose through public Aex contracts/u);
+  assert.match(output, /public Brain SDK/u);
   process.stdout.write(`${output}\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });

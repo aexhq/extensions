@@ -120,11 +120,6 @@ impl SessionPreparationPort for AwsMicrovmEnvironment {
                 "sandbox tree cleanup is incomplete; bounded purge will retry",
             ));
         }
-        self.plane
-            .registry
-            .purge_additional_counter(root_id)
-            .await
-            .map_err(materialization_error)?;
         let definitions_purged = self
             .plane
             .definitions

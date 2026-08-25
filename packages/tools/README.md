@@ -1,33 +1,20 @@
-# `@aexhq/tools`
+# @aexhq/tools
 
-Explicit execution-capability selections for Aex sessions. Nothing effectful is granted by default;
-the SDK's reserved structured-output protocol is inert unless one `send({ output })` request arms it.
+Official Tool components for Brain. Nothing is granted by default; applications select only the
+tools a session needs.
 
-```ts
-import { Aex } from "@aexhq/sdk";
-import { bash, edit, read, subagents, write } from "@aexhq/tools";
-import { awsMicrovm } from "@aexhq/env-aws-microvm";
-import { pi } from "@aexhq/loop-pi";
+```js
+import { bash, edit, read, task, write } from "@aexhq/tools";
 
-const aex = new Aex({ apiKey: process.env.AEX_API_KEY! });
-const workspace = awsMicrovm();
-const session = await aex.sessions.create({
-  model: {
-    provider: "openai",
-    name: "gpt-5.4",
-    apiKey: process.env.OPENAI_API_KEY!,
-  },
-  loop: pi(),
-  environments: { workspace },
-  tools: [bash(), read(), write(), edit(), subagents()],
-});
+const tools = [read(), edit(), write(), bash(), task()];
 ```
 
-`glob()`, `grep()`, `ls()`, and `todo()` are separate opt-ins. Durable storage remains available to
-the application through `session.storage`; environment lifecycle is available through the typed
-handle returned by `session.environment(workspace)`.
+Every factory returns an immutable Tool component declaration. The eight tools share one
+precompiled dispatcher component, but each carries its own JSON Schema contract and opaque Node 22
+implementation bundle. The dispatcher has only the Environment context grant and passes the bundle
+to the Environment selected by the session. Brain neither evaluates the tool module nor requires
+the Environment to be a particular operating system, provider or isolation product.
 
-`subagents()` operates durable direct child sessions with explicit spawn, message, follow-up, wait,
-list, interrupt and end actions. It is a prepared Tool bound to the same environment rules as every
-other Tool. Hosted Aex injects a tenant-fixed session API credential; it cannot authenticate as a
-different tenant. Self-hosted deployments provide the equivalent integration.
+`task()` (also exported as `subagents()`) is a separate ordinary Tool component. Its only grant is
+the bounded child-session interface, so it can create, message, inspect, wait for, list, interrupt,
+or end durable direct child sessions without an Environment binding.

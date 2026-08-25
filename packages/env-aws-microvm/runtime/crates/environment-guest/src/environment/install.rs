@@ -209,8 +209,6 @@ impl Environment {
         descriptor: &BundleDescriptor,
         layers: &HashMap<String, PathBuf>,
     ) -> Result<PathBuf, EnvironmentError> {
-        const NODE_RUNTIME_DIGEST: &str =
-            "fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8";
         let root = self
             .cfg
             .tool_dir
@@ -240,32 +238,9 @@ impl Environment {
                         .map_err(|_| unavailable("could not materialize an artifact file"))?;
                 }
                 brain_protocol::environment::ArtifactLayerDescriptorUnpack::TarXz => {
-                    if layer.digest.as_str() != NODE_RUNTIME_DIGEST
-                        || layer.mount_path.as_str() != "/runtime"
-                    {
-                        return Err(invalid(
-                            "the AWS environment accepts only the pinned Node runtime layer",
-                        ));
-                    }
-                    tokio::fs::create_dir_all(&destination)
-                        .await
-                        .map_err(|_| unavailable("could not create the runtime directory"))?;
-                    let status = tokio::process::Command::new("/usr/bin/tar")
-                        .args(["-xJf"])
-                        .arg(source)
-                        .args([
-                            "--strip-components=1",
-                            "--no-same-owner",
-                            "--no-same-permissions",
-                            "-C",
-                        ])
-                        .arg(&destination)
-                        .status()
-                        .await
-                        .map_err(|_| unavailable("could not start artifact extraction"))?;
-                    if !status.success() {
-                        return Err(invalid("the pinned runtime layer could not be extracted"));
-                    }
+                    return Err(invalid(
+                        "the AWS Environment MVP accepts only immutable file layers",
+                    ));
                 }
             }
         }
@@ -356,13 +331,9 @@ impl Environment {
         }
         let execute_digest = execute_layer.digest.to_string();
         let bundle_path = artifact_path(&bundle_root, descriptor.execute_path.as_str())?;
-        let node_path = bundle_root.join("runtime/bin/node");
-        if !tokio::fs::try_exists(&bundle_path).await.unwrap_or(false)
-            || !tokio::fs::try_exists(&node_path).await.unwrap_or(false)
-        {
-            return Err(invalid(
-                "materialized artifact entrypoint or runtime is absent",
-            ));
+        let node_path = PathBuf::from("node");
+        if !tokio::fs::try_exists(&bundle_path).await.unwrap_or(false) {
+            return Err(invalid("materialized artifact entrypoint is absent"));
         }
         let requires_undeclared_secret = self
             .artifacts

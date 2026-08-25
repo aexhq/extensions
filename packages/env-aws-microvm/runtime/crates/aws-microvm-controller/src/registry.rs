@@ -37,8 +37,6 @@ const ATTEMPT_ID: &str = "attempt_id";
 const ATTEMPT_EXPIRES_AT_MS: &str = "attempt_expires_at_ms";
 const CAPACITY_ROOT_ID: &str = "plane";
 const CAPACITY_TARGET_KEY: &str = "capacity:materialized_mib";
-const ADDITIONAL_COUNTER_TARGET_KEY: &str = "inventory:additional";
-const LIVE_ADDITIONAL_TARGETS: &str = "live_additional_targets";
 
 /// Strongly consistent target registry. Clone shares the AWS SDK connection pool.
 #[derive(Clone)]
@@ -46,7 +44,6 @@ pub struct DynamoTargetRegistry {
     db: aws_sdk_dynamodb::Client,
     table: String,
     max_materialized_mib: u64,
-    max_additional_sandboxes_per_root: u64,
 }
 
 impl DynamoTargetRegistry {
@@ -54,21 +51,15 @@ impl DynamoTargetRegistry {
         db: aws_sdk_dynamodb::Client,
         table: impl Into<String>,
         max_materialized_mib: u64,
-        max_additional_sandboxes_per_root: u64,
     ) -> Self {
         assert!(
             max_materialized_mib > 0,
             "materialization capacity must be positive"
         );
-        assert!(
-            max_additional_sandboxes_per_root > 0,
-            "additional sandbox capacity must be positive"
-        );
         Self {
             db,
             table: table.into(),
             max_materialized_mib,
-            max_additional_sandboxes_per_root,
         }
     }
 
@@ -144,25 +135,6 @@ impl DynamoTargetRegistry {
                 return Ok(None);
             }
         }
-    }
-
-    async fn live_additional_targets(&self, root_id: &str) -> Result<u64, MaterializationError> {
-        let output = self
-            .db
-            .get_item()
-            .table_name(&self.table)
-            .set_key(Some(additional_counter_key(root_id)))
-            .consistent_read(true)
-            .send()
-            .await
-            .map_err(|error| storage_error("get additional sandbox capacity", &error))?;
-        let Some(item) = output.item() else {
-            return Ok(0);
-        };
-        item.get(LIVE_ADDITIONAL_TARGETS)
-            .and_then(|value| value.as_n().ok())
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| corrupt("additional sandbox capacity row has no valid live count"))
     }
 
     async fn replace_expired_materialization(
@@ -339,22 +311,13 @@ impl DynamoTargetRegistry {
             self.max_materialized_mib,
             request.now_ms,
         )?;
-        let mut transaction = self
+        let result = self
             .db
             .transact_write_items()
             .transact_items(TransactWriteItem::builder().update(update).build())
-            .transact_items(TransactWriteItem::builder().update(capacity).build());
-        if !request.key.is_environment() {
-            let additional = additional_count_add_update(
-                &self.table,
-                &request.key.root_id,
-                self.max_additional_sandboxes_per_root,
-                request.now_ms,
-            )?;
-            transaction =
-                transaction.transact_items(TransactWriteItem::builder().update(additional).build());
-        }
-        let result = transaction.send().await;
+            .transact_items(TransactWriteItem::builder().update(capacity).build())
+            .send()
+            .await;
         transaction_result("replace gone environment", result)
     }
 
@@ -387,30 +350,6 @@ impl DynamoTargetRegistry {
             Err(error) => Err(storage_error("purge terminal target", &error)),
         }
     }
-
-    pub async fn purge_additional_counter(
-        &self,
-        root_id: &str,
-    ) -> Result<(), MaterializationError> {
-        let result = self
-            .db
-            .delete_item()
-            .table_name(&self.table)
-            .set_key(Some(additional_counter_key(root_id)))
-            .condition_expression(
-                "attribute_not_exists(live_additional_targets) OR live_additional_targets = :zero",
-            )
-            .expression_attribute_values(":zero", n(0))
-            .send()
-            .await;
-        match result {
-            Ok(_) => Ok(()),
-            Err(error) if conditional_failure(&error) => Err(MaterializationError::Storage(
-                "cannot purge a root with live additional sandboxes".into(),
-            )),
-            Err(error) => Err(storage_error("purge additional sandbox counter", &error)),
-        }
-    }
 }
 
 #[async_trait]
@@ -434,22 +373,13 @@ impl TargetReservations for DynamoTargetRegistry {
             self.max_materialized_mib,
             request.now_ms,
         )?;
-        let mut transaction = self
+        let result = self
             .db
             .transact_write_items()
             .transact_items(TransactWriteItem::builder().put(put).build())
-            .transact_items(TransactWriteItem::builder().update(capacity).build());
-        if !request.key.is_environment() {
-            let additional = additional_count_add_update(
-                &self.table,
-                &request.key.root_id,
-                self.max_additional_sandboxes_per_root,
-                request.now_ms,
-            )?;
-            transaction =
-                transaction.transact_items(TransactWriteItem::builder().update(additional).build());
-        }
-        let result = transaction.send().await;
+            .transact_items(TransactWriteItem::builder().update(capacity).build())
+            .send()
+            .await;
         match result {
             Ok(_) => return Ok(AcquireOutcome::Acquired(lease)),
             Err(error) if !transaction_cancelled(&error) => {
@@ -468,14 +398,6 @@ impl TargetReservations for DynamoTargetRegistry {
                     lease.spec.materialized_mib,
                     self.max_materialized_mib,
                 ) {
-                    return Err(error);
-                }
-                if !request.key.is_environment()
-                    && let Some(error) = root_additional_capacity_error(
-                        self.live_additional_targets(&request.key.root_id).await?,
-                        self.max_additional_sandboxes_per_root,
-                    )
-                {
                     return Err(error);
                 }
                 // TransactionCanceled also covers transaction conflicts and other non-capacity
@@ -581,14 +503,6 @@ impl TargetReservations for DynamoTargetRegistry {
                             lease.spec.materialized_mib,
                             self.max_materialized_mib,
                         ) {
-                            return Err(error);
-                        }
-                        if !request.key.is_environment()
-                            && let Some(error) = root_additional_capacity_error(
-                                self.live_additional_targets(&request.key.root_id).await?,
-                                self.max_additional_sandboxes_per_root,
-                            )
-                        {
                             return Err(error);
                         }
                     }
@@ -707,18 +621,13 @@ impl TargetReservations for DynamoTargetRegistry {
                 MaterializationError::Storage(format!("release lease build: {error}"))
             })?;
         let capacity = capacity_subtract_update(&self.table, lease.spec.materialized_mib, now_ms)?;
-        let mut transaction = self
+        let result = self
             .db
             .transact_write_items()
             .transact_items(TransactWriteItem::builder().delete(delete).build())
-            .transact_items(TransactWriteItem::builder().update(capacity).build());
-        if !lease.key.is_environment() {
-            let additional =
-                additional_count_subtract_update(&self.table, &lease.key.root_id, now_ms)?;
-            transaction =
-                transaction.transact_items(TransactWriteItem::builder().update(additional).build());
-        }
-        let result = transaction.send().await;
+            .transact_items(TransactWriteItem::builder().update(capacity).build())
+            .send()
+            .await;
         match result {
             Ok(_) => Ok(()),
             Err(error) if transaction_cancelled(&error) => {
@@ -853,17 +762,11 @@ async fn transition_closed(
         MaterializationError::Storage(format!("transition target build: {error}"))
     })?;
     let capacity = capacity_subtract_update(&registry.table, target.spec.materialized_mib, now_ms)?;
-    let mut transaction = registry
+    let transaction = registry
         .db
         .transact_write_items()
         .transact_items(TransactWriteItem::builder().update(update).build())
         .transact_items(TransactWriteItem::builder().update(capacity).build());
-    if !target.key.is_environment() {
-        let additional =
-            additional_count_subtract_update(&registry.table, &target.key.root_id, now_ms)?;
-        transaction =
-            transaction.transact_items(TransactWriteItem::builder().update(additional).build());
-    }
     match transaction.send().await {
         Ok(_) => Ok(()),
         Err(error) if transaction_cancelled(&error) => {
@@ -1058,13 +961,6 @@ fn capacity_key() -> HashMap<String, AttributeValue> {
     ])
 }
 
-fn additional_counter_key(root_id: &str) -> HashMap<String, AttributeValue> {
-    HashMap::from([
-        (ROOT_ID.into(), s(root_id)),
-        (TARGET_KEY.into(), s(ADDITIONAL_COUNTER_TARGET_KEY)),
-    ])
-}
-
 fn plane_capacity_error(
     reserved_mib: u64,
     requested_mib: u64,
@@ -1080,14 +976,6 @@ fn plane_capacity_error(
     })
 }
 
-fn root_additional_capacity_error(live: u64, maximum: u64) -> Option<MaterializationError> {
-    (live >= maximum).then(|| MaterializationError::Capacity {
-        scope: "root_additional_sandboxes".into(),
-        retry_after_ms: 1_000,
-        message: format!("root already has the maximum of {maximum} live additional sandboxes"),
-    })
-}
-
 fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
     match &record.state {
         DurableTargetState::Installed { expires_at_ms, .. } => Some(*expires_at_ms),
@@ -1097,53 +985,6 @@ fn target_reap_deadline(record: &DurableTargetRecord) -> Option<u64> {
         } => Some(*lease_expires_at_ms),
         DurableTargetState::Closed { .. } => None,
     }
-}
-
-fn additional_count_add_update(
-    table: &str,
-    root_id: &str,
-    maximum: u64,
-    now_ms: u64,
-) -> Result<Update, MaterializationError> {
-    Update::builder()
-        .table_name(table)
-        .set_key(Some(additional_counter_key(root_id)))
-        .condition_expression(
-            "attribute_not_exists(live_additional_targets) OR live_additional_targets < :maximum",
-        )
-        .update_expression(
-            "SET live_additional_targets = if_not_exists(live_additional_targets, :zero) + :one, updated_at_ms = :now",
-        )
-        .expression_attribute_values(":maximum", n(maximum))
-        .expression_attribute_values(":zero", n(0))
-        .expression_attribute_values(":one", n(1))
-        .expression_attribute_values(":now", n(now_ms))
-        .build()
-        .map_err(|error| {
-            MaterializationError::Storage(format!("additional sandbox capacity add build: {error}"))
-        })
-}
-
-fn additional_count_subtract_update(
-    table: &str,
-    root_id: &str,
-    now_ms: u64,
-) -> Result<Update, MaterializationError> {
-    Update::builder()
-        .table_name(table)
-        .set_key(Some(additional_counter_key(root_id)))
-        .condition_expression("live_additional_targets >= :one")
-        .update_expression(
-            "SET live_additional_targets = live_additional_targets - :one, updated_at_ms = :now",
-        )
-        .expression_attribute_values(":one", n(1))
-        .expression_attribute_values(":now", n(now_ms))
-        .build()
-        .map_err(|error| {
-            MaterializationError::Storage(format!(
-                "additional sandbox capacity subtract build: {error}"
-            ))
-        })
 }
 
 fn capacity_add_update(
@@ -1310,22 +1151,6 @@ mod tests {
         assert_eq!(scope, "plane_materialized_memory_mib");
         assert_eq!(retry_after_ms, 1_000);
         assert!(message.contains("remaining plane allocation of 0 MiB"));
-    }
-
-    #[test]
-    fn root_additional_capacity_classification_is_independent_of_plane_memory() {
-        assert!(root_additional_capacity_error(1, 2).is_none());
-        let MaterializationError::Capacity {
-            scope,
-            retry_after_ms,
-            message,
-        } = root_additional_capacity_error(2, 2).unwrap()
-        else {
-            panic!("full root must return typed capacity");
-        };
-        assert_eq!(scope, "root_additional_sandboxes");
-        assert_eq!(retry_after_ms, 1_000);
-        assert!(message.contains("maximum of 2"));
     }
 
     #[test]

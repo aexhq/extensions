@@ -4,10 +4,8 @@ export interface CodexOptions {
   readonly reasoningEffort?: "low" | "medium" | "high";
 }
 
-export interface CodexExtension {
-  readonly source: string;
-  readonly sha256: string;
-  readonly toolchain: string;
-}
+import type { ComponentExtension } from "@aexhq/brain";
+
+export type CodexExtension = ComponentExtension<"agentloop", CodexOptions>;
 
 export declare function codex(options?: CodexOptions): CodexExtension;

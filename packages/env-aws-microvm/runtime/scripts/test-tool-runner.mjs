@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildToolModule } from "@aexhq/brain";
 
 const environmentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runner = join(environmentRoot, "image", "tool-runner.mjs");
@@ -13,14 +13,21 @@ const contractDigest = "0123456789abcdef".repeat(4);
 const secretValue = "runner-secret-value-that-must-not-leak";
 
 async function fixture(directory) {
-  const bytes = Buffer.from(`
+  const source = join(directory, "source.mjs");
+  await writeFile(
+    source,
+    `
 import { writeFile } from "node:fs/promises";
 export default {
-  kind: "tool-runtime/v1",
+  kind: "brain.tool",
   name: "runner_fixture",
   description: "Environments runner fixture.",
-  contractDigest: ${JSON.stringify(contractDigest)},
+  input: {},
+  output: {},
   requiredEnv: ["RUNNER_SECRET"],
+  execution: "aex_managed",
+  executor: { kind: "aex_managed" },
+  contract: { contractDigest: ${JSON.stringify(contractDigest)} },
   execute: async (input, context) => {
     await writeFile(process.env.INVOCATION_MARKER, "invoked");
     return {
@@ -33,8 +40,9 @@ export default {
     };
   },
 };
-`);
-  return { bytes, checksum: createHash("sha256").update(bytes).digest("hex") };
+`,
+  );
+  return buildToolModule(pathToFileURL(source).href);
 }
 
 function request(executeDigest, digest = contractDigest, operationId = "operation-1", input = { value: "ok" }) {
@@ -92,7 +100,7 @@ async function execute(directory, prepared, body) {
   return { status, result, marker };
 }
 
-test("a prepared Node 22 Tool executes without secret leakage", async () => {
+test("Brain's real Node22 bundle executes through the Environments runner without secret leakage", async () => {
   const directory = await mkdtemp(join(tmpdir(), "environments-runner-"));
   try {
     const prepared = await fixture(directory);

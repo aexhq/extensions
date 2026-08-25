@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/agentloop",
-  "version": "0.2.1",
-  "description": "Author custom agentloops for Brain sessions: the typed ctx surface over contracts/agentloop/v1 plus the deterministic source-bundle builder",
+  "version": "0.3.0",
+  "description": "Author precompiled Agentloop components for Brain sessions against the canonical typed context",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -24,9 +24,11 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@aexhq/brain": "0.3.1",
     "esbuild": "0.25.9"
   },
   "devDependencies": {
+    "@bytecodealliance/componentize-js": "0.22.0",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"
   }

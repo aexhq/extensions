@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentloopOpError, __bindHostCall, defineAgentloop } from "../dist/index.js";
+import { AgentloopOpError, __bindHost, defineAgentloop } from "../dist/index.js";
 
 /** A scripted host: records every envelope and answers from a queue keyed by op name. */
 function scriptedHost(answers) {
   const requests = [];
-  __bindHostCall((payload) => {
+  __bindHost((_operationId, payload) => {
     const request = JSON.parse(payload);
     requests.push(request);
     const op = request.op.op;
@@ -14,7 +14,7 @@ function scriptedHost(answers) {
       throw new Error(`unscripted ctx op ${op}`);
     }
     return JSON.stringify(next);
-  });
+  }, () => false);
   return requests;
 }
 
@@ -31,6 +31,17 @@ function messagePayload() {
     session,
     message: { seq: 4, at: "2026-08-21T00:00:00Z", content: [{ type: "text", text: "go" }] },
   });
+}
+
+function activation(kind, payload, config = {}) {
+  return {
+    operationId: "op-activation",
+    sessionId: session.session_id,
+    kind,
+    payloadJson: payload,
+    configJson: JSON.stringify(config),
+    deadlineAtMs: 1000n,
+  };
 }
 
 test("a handler drives typed ops and returning cleanly finishes the turn", async () => {
@@ -66,7 +77,7 @@ test("a handler drives typed ops and returning cleanly finishes the turn", async
       // No explicit finish: returning is finishing.
     },
   });
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload(), { flavor: "test" }))).payloadJson);
   assert.equal(returned.outcome, "completed");
   assert.deepEqual(seen, { messageText: "go", model: "claude-test", answer: "answer" });
   const ops = requests.map((request) => request.op.op);
@@ -86,7 +97,7 @@ test("a thrown handler error fails the turn with the message", async () => {
       throw new Error("policy exploded");
     },
   });
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
   assert.equal(returned.outcome, "failed");
   assert.equal(returned.error.message, "policy exploded");
   assert.equal(requests[0].op.op, "turn_fail");
@@ -113,7 +124,7 @@ test("typed op errors surface with their code and can be handled", async () => {
       }
     },
   });
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
   assert.equal(returned.outcome, "completed");
   assert.ok(caught instanceof AgentloopOpError);
   assert.equal(caught.code, "unsealed_tool");
@@ -134,7 +145,7 @@ test("an aborted ctx op aborts the activation without failing the turn", async (
     },
   });
 
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
   assert.deepEqual(returned, {
     activation_id: "act-1",
     outcome: "aborted",
@@ -173,7 +184,7 @@ test("a return_direct terminal makes the implicit finish a clean no-op", async (
       await ctx.tools.dispatch([{ tool_call_id: "c1", name: "emit", input: {} }]);
     },
   });
-  const returned = JSON.parse(await activate("message", messagePayload()));
+  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
   assert.equal(returned.outcome, "completed");
 });
 
@@ -197,9 +208,9 @@ test("session_start hydration reaches the handler and later message ctx", async 
     kv: { n: 7 },
     tail: [],
   });
-  const startReturn = JSON.parse(await activate("session_start", startPayload));
+  const startReturn = JSON.parse((await activate(activation("session_start", startPayload))).payloadJson);
   assert.equal(startReturn.outcome, "completed");
   assert.equal(started.resumed, true);
-  await activate("message", messagePayload());
+  await activate(activation("message", messagePayload()));
   assert.equal(ctxStart.kv.n, 7);
 });

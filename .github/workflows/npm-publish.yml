@@ -23,9 +23,6 @@ concurrency:
   group: extensions-npm-publish
   cancel-in-progress: false
 
-env:
-  AEX_REVISION: 8f34ab6310aec391304e6ee1fdc5aa73bc033475
-
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -86,15 +83,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.97.1"
-      - name: Check out the pinned public Aex contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/aexhq/aex.git ../aex
-          git -C ../aex checkout "$AEX_REVISION"
-          test "$(git -C ../aex rev-parse HEAD)" = "$AEX_REVISION"
-          npm ci --prefix ../aex
-          npm run build --prefix ../aex
       - run: npm install --global npm@11.19.0
       - run: npm ci
       - run: npm test
@@ -115,15 +103,6 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Check out the pinned public Aex contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/aexhq/aex.git ../aex
-          git -C ../aex checkout "$AEX_REVISION"
-          test "$(git -C ../aex rev-parse HEAD)" = "$AEX_REVISION"
-          npm ci --prefix ../aex
-          npm run build --prefix ../aex
       - run: npm install --global npm@11.19.0
       - run: npm ci
       - run: npm run build
@@ -147,15 +126,6 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Check out the pinned public Aex contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/aexhq/aex.git ../aex
-          git -C ../aex checkout "$AEX_REVISION"
-          test "$(git -C ../aex rev-parse HEAD)" = "$AEX_REVISION"
-          npm ci --prefix ../aex
-          npm run build --prefix ../aex
       - run: npm install --global npm@11.19.0
       - run: npm ci
       - run: npm run build
@@ -225,6 +195,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" next
       - name: Publish only exact versions awaiting release ownership
         env:
           # A package cannot trust this repository before its name exists, and packages moving from

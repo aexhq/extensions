@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const grepInput = z.object({ pattern: z.string().min(1), path: z.string().default("."), limit: z.number().int().positive().max(10_000).default(1_000) });
@@ -30,6 +30,6 @@ const grep = tool(grepInput, async function grep({ pattern, path, limit }, conte
   .named("grep")
   .describe("Search text files in the Environment workspace with ripgrep.")
   .returns(grepOutput)
-  .needs({ workspace: true, processes: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default grep;
