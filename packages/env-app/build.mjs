@@ -13,3 +13,11 @@ const output = await componentize(source, wit, {
 });
 await mkdir(new URL("./dist", here), { recursive: true });
 await writeFile(new URL("./dist/environment.component.wasm", here), output.component);
+
+const toolSource = await readFile(new URL("./tool.mjs", here), "utf8");
+const toolWit = await readFile(new URL(import.meta.resolve("@aexhq/brain/contracts/tool")), "utf8");
+const toolOutput = await componentize(toolSource, toolWit, {
+  worldName: "tool",
+  disableFeatures: ["http", "fetch-event"],
+});
+await writeFile(new URL("./dist/tool.component.wasm", here), toolOutput.component);

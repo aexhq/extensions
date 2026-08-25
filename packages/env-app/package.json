@@ -5,7 +5,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "engines": { "node": ">=22.0.0" },
-  "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "import": "./index.mjs" },
+    "./package.json": "./package.json"
+  },
   "files": ["dist", "index.mjs", "index.d.ts", "README.md"],
   "scripts": { "build": "node build.mjs", "test": "npm run build && node --test", "prepack": "npm run build" },
   "dependencies": { "@aexhq/brain": "0.3.1" },
