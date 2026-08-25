@@ -14,6 +14,10 @@ use serde_json::Value;
 use std::net::IpAddr;
 use std::time::Duration;
 
+mod aws;
+
+pub use aws::AwsDriver;
+
 pub const MAX_DISPATCH_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -209,7 +213,7 @@ async fn dispatch(State(state): State<DriverState>, headers: HeaderMap, body: By
         Err(_) => return failure(StatusCode::BAD_REQUEST, "invalid dispatch request"),
     };
     if request.operation_id.is_empty()
-        || request.operation_id.len() > 256
+        || request.operation_id.len() > 4096
         || request.action.is_empty()
         || request.action.len() > 64
         || request.deadline_at_ms.parse::<u64>().is_err()

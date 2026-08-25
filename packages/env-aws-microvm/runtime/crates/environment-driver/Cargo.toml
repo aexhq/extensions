@@ -14,11 +14,17 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+aws-microvm-controller = { path = "../aws-microvm-controller" }
 axum.workspace = true
+base64.workspace = true
+brain.workspace = true
+brain-protocol.workspace = true
 futures-util.workspace = true
+hex.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

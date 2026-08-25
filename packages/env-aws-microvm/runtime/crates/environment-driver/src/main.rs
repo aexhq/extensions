@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use environment_driver::{Driver, HttpRelayDriver};
+use environment_driver::{AwsDriver, Driver, HttpRelayDriver};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,6 +24,12 @@ async fn main() -> anyhow::Result<()> {
         "Environment driver must bind loopback"
     );
     let mut drivers = Vec::<(String, Arc<dyn Driver>)>::new();
+    if std::env::var("ENVIRONMENT_AWS_DRIVER_ENABLED").as_deref() == Ok("true") {
+        drivers.push((
+            "aws-microvm".into(),
+            Arc::new(AwsDriver::from_env().await?) as Arc<dyn Driver>,
+        ));
+    }
     if let Ok(url) = std::env::var("ENVIRONMENT_CUSTOMER_DRIVER_URL") {
         let token = std::env::var("ENVIRONMENT_CUSTOMER_DRIVER_TOKEN")
             .ok()
