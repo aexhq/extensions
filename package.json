@@ -11,6 +11,7 @@
     "test": "npm test --workspaces --if-present"
   },
   "devDependencies": {
+    "@aexhq/brain": "file:../brain/packages/brain",
     "@aexhq/cli": "file:../aex/packages/cli",
     "@aexhq/sdk": "file:../aex/packages/sdk"
   }

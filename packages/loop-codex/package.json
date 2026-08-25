@@ -23,7 +23,7 @@
   },
   "exports": {
     ".": { "types": "./index.d.ts", "import": "./index.mjs" },
-    "./bundle": "./dist/loop.bundle.mjs",
+    "./component": "./dist/loop.component.wasm",
     "./identity": "./dist/identity.json",
     "./package.json": "./package.json"
   },
@@ -39,7 +39,11 @@
     "test": "npm run build && node --test",
     "prepack": "npm run build"
   },
+  "dependencies": {
+    "@aexhq/brain": "0.3.1"
+  },
   "devDependencies": {
-    "@aexhq/agentloop": "0.1.0"
+    "@aexhq/agentloop": "0.1.0",
+    "@bytecodealliance/componentize-js": "0.22.0"
   }
 }

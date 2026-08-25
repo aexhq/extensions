@@ -1,16 +1,20 @@
 # @aexhq/loop-pi
 
-The official pi agentloop for Brain sessions: the pinned `@earendil-works/pi-agent-core`
-driving turns, adapted onto `contracts/agentloop/v1`. The kernel owns provider execution,
-custody and journaling; pi owns the policy.
+The official pi Agentloop for Brain sessions, adapted from pinned
+`@earendil-works/pi-agent-core` onto the canonical Agentloop world. Brain owns provider
+execution, credentials and journaling; pi owns loop policy.
 
-This package is built exactly like any external loop: `build.mjs` calls the public
-`buildLoopBundle` from `@aexhq/agentloop` and emits
+```js
+import { pi } from "@aexhq/loop-pi";
 
-- `dist/loop.bundle.mjs` — the deterministic source bundle (what uploads or seeds), and
-- `dist/identity.json` — the sealed identity `{ name, version, toolchain,
-  source_bundle_sha256, bytes }`.
+const agentloop = pi({
+  instructions: "Work carefully and verify changes.",
+  reasoningEffort: "high",
+});
+```
 
-Compositions seed it through the same admission path customer uploads take; there is no
-private build or load path. The StarlingMonkey compatibility rewrites for pi's dependency
-tree live in `src/compat.mjs` and ride the public `plugins` hook.
+`pi(options)` returns an immutable Brain component declaration. The npm package contains
+`dist/loop.component.wasm`, compiled before publication through the public
+`@aexhq/agentloop/build` API. Options remain configuration data and do not alter executable
+bytes. The StarlingMonkey compatibility transforms live in `src/compat.mjs` and affect build
+provenance only.

@@ -1,22 +1,12 @@
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-
-const identity = JSON.parse(
-  await readFile(new URL("./dist/identity.json", import.meta.url), "utf8"),
-);
-
-const baseSource = await readFile(new URL("./dist/loop.bundle.mjs", import.meta.url), "utf8");
-const marker = '"__AEX_LOOP_CONFIG_JSON__"';
+import { component } from "@aexhq/brain";
 
 export function codex(options = {}) {
-  const config = normalizeOptions(options, "codex");
-  const source = baseSource.replace(marker, JSON.stringify(JSON.stringify(config)));
-  if (source === baseSource) throw new Error("codex bundle is missing its configuration marker");
-  return Object.freeze({
-    source,
-    sha256: createHash("sha256").update(source, "utf8").digest("hex"),
-    toolchain: identity.toolchain,
-  });
+  return component(
+    "agentloop",
+    new URL("./dist/loop.component.wasm", import.meta.url),
+    normalizeOptions(options, "codex"),
+    { metadata: { name: "codex", source: "@aexhq/loop-codex" } },
+  );
 }
 
 function normalizeOptions(options, name) {
