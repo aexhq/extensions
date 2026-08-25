@@ -89,3 +89,25 @@ function parseFrame(bytes) {
   if (event === undefined && data.length === 0) return undefined;
   return { event, data: data.join("\n") };
 }
+
+// A Model export declares `result<_, extension-error>`, but componentize-js rethrows a plain
+// `Error` as an opaque wasm trap that reaches the kernel without a reason. Every export reports
+// through this guard so a provider or host failure keeps its message. A host import already
+// throws its own typed payload; that one is preserved exactly.
+export function typed(operation, call) {
+  try {
+    return call();
+  } catch (error) {
+    if (error !== null && typeof error === "object" &&
+        Object.prototype.hasOwnProperty.call(error, "payload")) {
+      throw error;
+    }
+    throw {
+      payload: {
+        code: `model_${operation}_failed`,
+        message: String(error?.message ?? error).slice(0, 4096),
+        retryable: false,
+      },
+    };
+  }
+}
