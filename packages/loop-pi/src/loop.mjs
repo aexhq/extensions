@@ -119,6 +119,25 @@ function contractMessagesFrom(piMessages) {
   return out;
 }
 
+/**
+ * pi resolves an assistant stream's final result from the terminal event, taking `error` — not
+ * `message` — for a failed round. That result must therefore be the assistant message itself, so
+ * pi stops on its `stopReason` instead of reading blocks off a bare string.
+ */
+export function erroredAssistantMessage(model, error) {
+  return {
+    role: "assistant",
+    content: [],
+    api: "aex-loophost",
+    provider: "aex-sealed",
+    model,
+    usage: usageFromView(undefined),
+    stopReason: "error",
+    errorMessage: String(error?.message ?? error),
+    timestamp: 0,
+  };
+}
+
 /** One folded kernel round, replayed as the streamed event protocol pi consumes. */
 function streamFolded(ctx, llmContext) {
   const stream = new AssistantMessageEventStream();
@@ -184,19 +203,9 @@ function streamFolded(ctx, llmContext) {
     stream.push({ type: "done", reason: stopReason, message });
     stream.end(message);
   })().catch((error) => {
-    const message = {
-      role: "assistant",
-      content: [],
-      api: "aex-loophost",
-      provider: "aex-sealed",
-      model: ctx.session.model,
-      usage: usageFromView(undefined),
-      stopReason: "error",
-      errorMessage: String(error?.message ?? error),
-      timestamp: 0,
-    };
-    stream.push({ type: "error", reason: "error", error: message.errorMessage, message });
-    stream.end(message);
+    const message = erroredAssistantMessage(ctx.session.model, error);
+    stream.push({ type: "error", reason: message.stopReason, error: message });
+    stream.end();
   });
   return stream;
 }

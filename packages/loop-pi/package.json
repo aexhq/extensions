@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/loop-pi",
-  "version": "0.86.0",
+  "version": "0.86.1",
   "description": "The pi agentloop for Brain sessions: pinned @earendil-works/pi-agent-core adapted onto contracts/agentloop/v1, built with the public @aexhq/agentloop toolchain",
   "license": "Apache-2.0",
   "repository": {
