@@ -182,7 +182,9 @@ jobs:
         id: publish
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST }}
           ENVIRONMENT_NETWORK_CONNECTOR_NONE: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_NONE }}
+          ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC }}
         run: |
           published="$(environment-image-binaries/environment-lambda --region us-east-1 image publish \
             --source-sha "$EXPECTED_COMMIT" \
@@ -191,7 +193,9 @@ jobs:
             --bucket aex-hands-${{ inputs.plane }}-use1-artifacts-522921482290 \
             --build-role arn:aws:iam::522921482290:role/aex-hands-${{ inputs.plane }}-use1-image-build \
             --log-group /aex/${{ inputs.plane }}-use1/hands/image-build \
-            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE")"
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_NONE" \
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST" \
+            --egress-connector "$ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC")"
           read -r image_arn image_version <<<"$(printf '%s\n' "$published" | tail -n 1)"
           test -n "$image_arn" && test -n "$image_version"
           echo "image_arn=$image_arn" >> "$GITHUB_OUTPUT"
