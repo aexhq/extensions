@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const workspaces = [
   "agentloop",
@@ -29,6 +30,36 @@ const run = (args) => execFileSync(process.execPath, [npmCli, ...args], {
   encoding: "utf8",
   stdio: ["ignore", "pipe", "pipe"],
 }).trim();
+
+const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+
+const releasedIntegrity = (spec) => {
+  try {
+    const output = run(["view", spec, "dist.integrity", "--json"]);
+    return output === "" ? undefined : JSON.parse(output);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A published version is immutable, so the commit that last changed a package must be the commit
+ * that set its current version. This is the deterministic form of "never mix an old artifact with
+ * a new source": componentize-js emits a different Wasm module for identical source, so comparing
+ * a rebuilt archive with the released one proves nothing.
+ */
+export const versionSetByLatestChange = (packageJsonPatch) =>
+  /^\+\s*"version":/mu.test(packageJsonPatch);
+
+const assertReleasedVersionIsCurrent = (workspace, spec) => {
+  const directory = `packages/${workspace}`;
+  const commit = git(["log", "-1", "--format=%H", "--", directory]);
+  if (commit === "") throw new Error(`${directory} has no history; cannot prove ${spec} is current`);
+  const patch = git(["show", "--format=", "--unified=0", commit, "--", `${directory}/package.json`]);
+  if (!versionSetByLatestChange(patch)) {
+    throw new Error(`${directory} changed after ${spec} was published; release it under a new version`);
+  }
+};
 
 const document = async (workspace) =>
   JSON.parse(await readFile(path.join(root, "packages", workspace, "package.json"), "utf8"));
@@ -77,12 +108,20 @@ async function pack(directory) {
     if (integrity !== item.integrity) {
       throw new Error(`npm reported the wrong integrity for ${packageDocument.name}`);
     }
+    // An exact version already on the registry is the released object. Keep it, prove the package
+    // has not changed since, and drop the unusable rebuild so nothing can publish it.
+    const spec = `${packageDocument.name}@${packageDocument.version}`;
+    const released = releasedIntegrity(spec);
+    if (released !== undefined) {
+      assertReleasedVersionIsCurrent(workspace, spec);
+      await rm(archive);
+    }
     packages.push({
       workspace,
       name: packageDocument.name,
       version: packageDocument.version,
       filename: item.filename,
-      integrity,
+      integrity: released ?? integrity,
       dependencies: packageDocument.dependencies ?? {},
       peerDependencies: packageDocument.peerDependencies ?? {},
     });
@@ -102,8 +141,12 @@ async function pack(directory) {
   }
 }
 
-const [command, argument] = process.argv.slice(2);
-if (command === "pack" && argument !== undefined) await pack(path.resolve(argument));
+const [command, argument] = process.argv[1] !== undefined &&
+    path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  ? process.argv.slice(2)
+  : ["import"];
+if (command === "import") { /* imported for its exported contracts */ }
+else if (command === "pack" && argument !== undefined) await pack(path.resolve(argument));
 else if (command === "versions" && argument !== undefined) {
   const value = await manifest(path.resolve(argument));
   process.stdout.write(value.packages.map(({ name, version }) => `${name}@${version}`).join(","));

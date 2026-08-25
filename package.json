@@ -8,7 +8,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm test --workspaces --if-present && node --test tools/verify-dependencies.test.mjs",
+    "test": "npm test --workspaces --if-present && node --test tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
