@@ -8,6 +8,7 @@ members = [
     "crates/environment-lambda",
     "crates/environment-wire",
     "crates/aws-microvm-controller",
+    "crates/environment-driver",
 ]
 
 [workspace.package]

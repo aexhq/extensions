@@ -8,7 +8,7 @@ export function resolve(request) {
     bindingJson: JSON.stringify({
       driver: config.driver,
       configuration: config.configuration,
-      authority: JSON.parse(request.authorityJson),
+      policy: JSON.parse(request.policyJson),
       tenant_id: request.tenantId,
       session_id: request.sessionId,
       root_id: request.rootId,
