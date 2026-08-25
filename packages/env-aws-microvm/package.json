@@ -1,12 +1,13 @@
 {
   "name": "@aexhq/env-aws-microvm",
   "version": "0.1.0",
-  "description": "AWS MicroVM environment extension for Aex",
+  "description": "AWS MicroVM Environment component and external driver runtime for Brain",
   "license": "Apache-2.0",
   "type": "module",
   "engines": { "node": ">=22.0.0" },
   "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
-  "files": ["index.mjs", "index.d.ts", "README.md", "runtime"],
-  "scripts": { "test": "node --test index.test.mjs && cargo test --manifest-path runtime/Cargo.toml --workspace --all-targets" },
-  "dependencies": { "@aexhq/environment": "file:../../../aex/packages/environment" }
+  "files": ["dist", "index.mjs", "index.d.ts", "README.md", "runtime"],
+  "scripts": { "build": "node build.mjs", "test": "npm run build && node --test index.test.mjs && cargo test --manifest-path runtime/Cargo.toml --workspace --all-targets", "prepack": "npm run build" },
+  "dependencies": { "@aexhq/brain": "0.3.1" },
+  "devDependencies": { "@bytecodealliance/componentize-js": "0.22.0" }
 }

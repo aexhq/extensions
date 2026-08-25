@@ -1,14 +1,15 @@
-import type { ComputerProfile, EnvironmentRef } from "@aexhq/environment";
+import type { ComponentExtension } from "@aexhq/brain";
 
-export interface AwsMicrovmOptions { readonly region?: string }
-export interface AwsMicrovmHandle {
-  status(): Promise<unknown>;
-  readonly files: {
-    list(path?: string): Promise<unknown>;
-    read(path: string): Promise<unknown>;
-    write(path: string, contentBase64: string): Promise<unknown>;
-  };
+export interface AwsMicrovmOptions {
+  readonly region?: string;
 }
-export declare const awsMicrovm: (
-  options?: AwsMicrovmOptions,
-) => EnvironmentRef<"@aexhq/env-aws-microvm", ComputerProfile, AwsMicrovmHandle>;
+
+export type AwsMicrovmEnvironment = ComponentExtension<
+  "environment",
+  {
+    readonly driver: "aws-microvm";
+    readonly configuration: { readonly region?: string };
+  }
+>;
+
+export declare function awsMicrovm(options?: AwsMicrovmOptions): AwsMicrovmEnvironment;
