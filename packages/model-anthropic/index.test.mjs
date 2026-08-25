@@ -25,3 +25,13 @@ test("request and stream codec preserve tools and absent usage", () => {
   assert.equal(done[0].stopReason, "tool_use");
   assert.deepEqual(done[0].payload, { outputTokens: 7 });
 });
+
+test("an unset sampling field stays absent", () => {
+  // The sealed prefix serializes every unset field as null; forwarding one is a 400.
+  const body = JSON.parse(new TextDecoder().decode(buildRequest({
+    ...request,
+    generationJson: JSON.stringify({ max_tokens: 100, system_prompt: "system", temperature: null, stop_sequences: null }),
+  }).body));
+  assert.equal("temperature" in body, false);
+  assert.equal("stop_sequences" in body, false);
+});
