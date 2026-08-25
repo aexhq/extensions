@@ -1,7 +1,9 @@
 # The environment image
 
 `Dockerfile` builds the sandbox the agent's tools run inside: the `environment-guest` binary plus a
-curated toolchain (git, Python, Node, ripgrep, build-essential, common archivers). ARM64.
+curated base toolchain (git, ripgrep, build-essential, and common archivers). ARM64. Managed Tools
+bring the pinned Node executable as a verified runtime artifact; Python is not ambient in the base
+image and a Tool that needs it must declare and install it during setup.
 
 The binary uses the aarch64 GNU target to match the Ubuntu base. The resulting image is a thin
 runtime layer that rebuilds quickly when only code changes:

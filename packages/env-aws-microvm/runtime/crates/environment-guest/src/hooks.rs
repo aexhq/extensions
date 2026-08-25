@@ -98,8 +98,6 @@ pub async fn validate(State(environment): State<Arc<Environment>>) -> (StatusCod
     }
     let tools: &[(&str, &[&str])] = &[
         ("bash", &["--version"]),
-        ("python3", &["--version"]),
-        ("node", &["--version"]),
         ("git", &["--version"]),
         ("rg", &["--version"]),
     ];
