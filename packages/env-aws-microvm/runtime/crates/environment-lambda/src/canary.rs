@@ -921,7 +921,14 @@ async fn transition_and_wait_or_confirm_gone(
     match effect {
         Ok(()) | Err(ControlError::Unknown(_)) => {}
         Err(ControlError::Gone(_)) => return Ok(false),
-        Err(error) => return Err(error.into()),
+        // The deliberate crash kills the guest, which is the sandbox's PID 1, so the provider can
+        // terminate the target between the probe above and this transition. It reports that as a
+        // validation failure rather than a not-found, so its own state is the authority.
+        Err(error) => match control.get(target_id).await {
+            Ok(vm) if is_gone(&vm.state) => return Ok(false),
+            Err(ControlError::Gone(_)) => return Ok(false),
+            Ok(_) | Err(_) => return Err(error.into()),
+        },
     }
     match launch::wait_for_state(control, target_id, &wanted, STATE_TIMEOUT).await {
         Ok(_) => Ok(true),
