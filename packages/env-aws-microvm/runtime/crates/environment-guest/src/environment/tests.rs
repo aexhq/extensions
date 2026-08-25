@@ -289,20 +289,11 @@ async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String)
         .unwrap();
     let bytes = br#"export default {kind:'brain.tool-runtime',name:'fixture',execute: async () => ({ok:true})};"#;
     let digest = hex::encode(Sha256::digest(bytes));
-    let node = b"#!/bin/sh\nexit 0\n";
-    let node_digest = hex::encode(Sha256::digest(node));
     let descriptor: BundleDescriptor = serde_json::from_value(serde_json::json!({
-        "bundle_digest": "b".repeat(64),
-        "bytes": bytes.len() + node.len(),
+        "bundle_digest": digest,
+        "bytes": bytes.len(),
         "contract_digest": "a".repeat(64),
         "layers": [{
-            "digest": node_digest,
-            "bytes": node.len(),
-            "media_type": "application/javascript+esm",
-            "mount_path": "/runtime/bin/node",
-            "unpack": "file",
-            "object": {"bytes": node.len(), "object_id": "object-node", "sha256": node_digest}
-        }, {
             "digest": digest,
             "bytes": bytes.len(),
             "media_type": "application/javascript+esm",
@@ -317,16 +308,6 @@ async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String)
         "tool_name": "fixture"
     }))
     .unwrap();
-    environment
-        .install_bundle(
-            InstallBundleMetadata {
-                descriptor: descriptor.clone(),
-                layer_digest: node_digest,
-            },
-            node,
-        )
-        .await
-        .unwrap();
     environment
         .install_bundle(
             InstallBundleMetadata {
