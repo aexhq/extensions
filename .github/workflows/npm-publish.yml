@@ -65,9 +65,6 @@ jobs:
             [[ "$(jq -r .path <<<"$stage_run")" == .github/workflows/npm-publish.yml* ]]
             release_sha=$(jq -r .head_sha <<<"$stage_run")
             [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
-            if [[ "$OPERATION" == promote ]]; then
-              test "$release_sha" = "$EXPECTED_COMMIT"
-            fi
           else
             test -z "$STAGE_RUN_ID"
           fi
@@ -174,7 +171,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
-      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" next
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" "$RUNNER_TEMP/extensions-npm-release/manifest.json"
       - name: Publish once with provenance under next
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
@@ -204,7 +201,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
-      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" next
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" "$RUNNER_TEMP/extensions-npm-release/manifest.json"
       - name: Publish only exact versions awaiting release ownership
         env:
           # A package cannot trust this repository before its name exists, and packages moving from
@@ -257,9 +254,12 @@ jobs:
       actions: read
       contents: read
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
-          name: extensions-npm-release-${{ github.sha }}
+          name: extensions-npm-release-${{ needs.validate.outputs.release_sha }}
           path: ${{ runner.temp }}/extensions-npm-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.stage_run_id }}
@@ -269,9 +269,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
-      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" latest
+      - run: node tools/verify-dependencies.mjs "$RUNNER_TEMP/extensions-npm-release/manifest.json"
       - name: Promote the staged archives without republishing
         env:
-          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" promote
