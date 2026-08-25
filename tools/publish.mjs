@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
@@ -41,6 +42,53 @@ const assertRegistryObject = (item) => {
       : `${spec} exists with integrity ${integrity}, not ${item.integrity}`);
   }
 };
+const publishHoldPlaceholder = async (item) => {
+  const placeholderVersion = "0.0.0";
+  const placeholderSpec = `${item.name}@${placeholderVersion}`;
+  if (registryValue(placeholderSpec, "version") !== undefined) {
+    throw new Error(`${placeholderSpec} already exists but is not latest; refusing to replace it`);
+  }
+  const placeholderDirectory = mkdtempSync(path.join(tmpdir(), "aex-npm-hold-"));
+  writeFileSync(path.join(placeholderDirectory, "package.json"), `${JSON.stringify({
+    name: item.name,
+    version: placeholderVersion,
+    description: "Reserved package name; no stable release is available.",
+    license: "Apache-2.0",
+    type: "module",
+    exports: "./index.js",
+    files: ["index.js"],
+    repository: {
+      type: "git",
+      url: "git+https://github.com/aexhq/extensions.git",
+    },
+    aexHoldPlaceholder: {
+      stagedVersion: item.version,
+      source: manifest.source,
+    },
+  }, null, 2)}\n`);
+  writeFileSync(
+    path.join(placeholderDirectory, "index.js"),
+    `throw new Error(${JSON.stringify(`${item.name} has no stable release; install ${item.name}@next or an exact version`)});\n`,
+  );
+  run([
+    "publish",
+    placeholderDirectory,
+    "--access",
+    "public",
+    "--tag",
+    "latest",
+    "--provenance",
+    "--force",
+  ], "inherit");
+  await waitFor(
+    () => registryValue(`${item.name}@latest`, "version"),
+    placeholderVersion,
+    `${item.name}@latest reservation`,
+  );
+  const integrity = registryValue(placeholderSpec, "dist.integrity");
+  if (integrity === undefined) throw new Error(`${placeholderSpec} has no registry integrity`);
+  process.stdout.write(`reserved ${item.name}@latest with ${placeholderSpec} (${integrity})\n`);
+};
 
 const operation = process.argv[2];
 if (operation === "bootstrap") {
@@ -62,6 +110,7 @@ if (operation === "bootstrap") {
   for (const item of missing) {
     const spec = `${item.name}@${item.version}`;
     const previousLatest = registryValue(`${item.name}@latest`, "version");
+    if (previousLatest === undefined) await publishHoldPlaceholder(item);
     run([
       "publish",
       path.join(directory, item.filename),
@@ -72,10 +121,6 @@ if (operation === "bootstrap") {
       "--provenance",
     ], "inherit");
     await waitFor(() => registryValue(`${item.name}@next`, "version"), item.version, `${item.name}@next`);
-    if (previousLatest === undefined && registryTags(item.name).latest === item.version) {
-      run(["dist-tag", "rm", item.name, "latest"], "inherit");
-      await waitFor(() => registryTags(item.name).latest, undefined, `${item.name}@latest removal`);
-    }
     process.stdout.write(`bootstrapped ${spec} (${item.integrity})\n`);
   }
 } else if (operation === "hold") {
@@ -89,9 +134,11 @@ if (operation === "bootstrap") {
   }
   for (const item of manifest.packages) {
     if (registryTags(item.name).latest === item.version) {
-      run(["dist-tag", "rm", item.name, "latest"], "inherit");
-      await waitFor(() => registryTags(item.name).latest, undefined, `${item.name}@latest removal`);
-      process.stdout.write(`removed automatic latest from ${item.name}@${item.version}\n`);
+      const versions = registryValue(item.name, "versions");
+      if (!Array.isArray(versions) || versions.some((version) => version !== item.version)) {
+        throw new Error(`${item.name}@${item.version} is latest but is not the package's first version; refusing hold`);
+      }
+      await publishHoldPlaceholder(item);
     }
   }
 } else if (operation === "stage") {
