@@ -11,9 +11,15 @@ export function anthropic(options = {}) {
   return component(
     "model",
     new URL("./dist/model.component.wasm", import.meta.url),
-    { provider: "anthropic", baseUrl: baseUrl.replace(/\/+$/u, "") },
+    { provider: "anthropic", baseUrl: trimTrailingSlashes(baseUrl) },
     { metadata: { name: "anthropic", source: "@aexhq/model-anthropic" } },
   );
+}
+
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
 }
 
 function isHttpsUrl(value, allowHttp) {

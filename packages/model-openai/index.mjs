@@ -18,11 +18,17 @@ export function openai(options = {}) {
     new URL("./dist/model.component.wasm", import.meta.url),
     {
       provider: "openai",
-      baseUrl: baseUrl.replace(/\/+$/u, ""),
+      baseUrl: trimTrailingSlashes(baseUrl),
       outputTokenParameter: options.outputTokenParameter ?? "max_completion_tokens",
     },
     { metadata: { name: "openai", source: "@aexhq/model-openai" } },
   );
+}
+
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
 }
 
 function isHttpsUrl(value, allowHttp) {
