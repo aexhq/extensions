@@ -1,30 +1,16 @@
-# `@aexhq/tools`
+# @aexhq/tools
 
-Explicit execution-capability selections for Aex sessions. Nothing effectful is granted by default;
-the SDK's reserved structured-output protocol is inert unless one `send({ output })` request arms it.
+Official Tool components for Brain. Nothing is granted by default; applications select only the
+tools a session needs.
 
-```ts
-import { Aex } from "@aexhq/sdk";
-import { bash, edit, read, sandbox, storage, subagents, write } from "@aexhq/tools";
+```js
+import { bash, edit, read, write } from "@aexhq/tools";
 
-const aex = new Aex({ apiKey: process.env.AEX_API_KEY! });
-const session = await aex.sessions.create({
-  model: {
-    provider: "openai",
-    name: "gpt-5.4",
-    apiKey: process.env.OPENAI_API_KEY!,
-  },
-  tools: [bash(), read(), write(), edit(), storage(), sandbox(), subagents()],
-});
+const tools = [read(), edit(), write(), bash()];
 ```
 
-`storage()` gives the model one action-discriminated Tool for explicit save/load/list operations;
-the application alone can delete through `session.storage`. `sandbox()` manages additional isolated
-sandboxes through the environment extension to which it is bound.
-
-`glob()`, `grep()`, `ls()`, `todo()`, `webSearch()`, and `webFetch()` are separate opt-ins. Duplicate
-selections fail before session creation.
-
-`subagents()` operates durable direct child sessions with explicit spawn, message, follow-up, wait,
-list, interrupt and end actions. Children have independent journals and context; their tools retain
-their immutable environment bindings.
+Every factory returns an immutable Tool component declaration. The eight tools share one
+precompiled dispatcher component, but each carries its own JSON Schema contract and opaque Node 22
+implementation bundle. The dispatcher has only the Environment context grant and passes the bundle
+to the Environment selected by the session. Brain neither evaluates the tool module nor requires
+the Environment to be a particular operating system, provider or isolation product.

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -22,6 +22,6 @@ const edit = tool(editInput, async function edit({ path, old_text, new_text }, c
   .named("edit")
   .describe("Replace one exact occurrence of text in an Environment workspace file.")
   .returns(editOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default edit;

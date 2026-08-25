@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -31,6 +31,6 @@ const todo = tool(todoInput, async function todo(input, context) {
   .named("todo")
   .describe("Read or replace the session's portable to-do list.")
   .returns(todoOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default todo;

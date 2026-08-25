@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -27,6 +27,6 @@ const read = tool(readInput, async function read({ path, offset, limit }, contex
   .named("read")
   .describe("Read UTF-8 text from a file in the Environment workspace.")
   .returns(readOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default read;

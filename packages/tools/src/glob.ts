@@ -1,7 +1,7 @@
 import { glob as fsGlob } from "node:fs/promises";
 import { relative } from "node:path";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf } from "./path.js";
@@ -22,6 +22,6 @@ const glob = tool(globInput, async function glob({ pattern, limit }, context) {
   .named("glob")
   .describe("List Environment workspace paths matching a glob pattern.")
   .returns(globOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default glob;

@@ -1,17 +1,35 @@
-import bashTool from "./dist/bash.js";
-import editTool from "./dist/edit.js";
-import globTool from "./dist/glob.js";
-import grepTool from "./dist/grep.js";
-import lsTool from "./dist/ls.js";
-import readTool from "./dist/read.js";
-import todoTool from "./dist/todo.js";
-import writeTool from "./dist/write.js";
+import { component } from "@aexhq/brain";
+import { readFile } from "node:fs/promises";
 
-export const bash = () => bashTool;
-export const edit = () => editTool;
-export const glob = () => globTool;
-export const grep = () => grepTool;
-export const ls = () => lsTool;
-export const read = () => readTool;
-export const todo = () => todoTool;
-export const write = () => writeTool;
+const asset = new URL("./dist/tool.component.wasm", import.meta.url);
+
+async function load(name) {
+  return JSON.parse(await readFile(new URL(`./dist/${name}.component.json`, import.meta.url), "utf8"));
+}
+
+const configs = Object.freeze({
+  bash: await load("bash"),
+  edit: await load("edit"),
+  glob: await load("glob"),
+  grep: await load("grep"),
+  ls: await load("ls"),
+  read: await load("read"),
+  todo: await load("todo"),
+  write: await load("write"),
+});
+
+function official(name) {
+  return component("tool", asset, configs[name], {
+    grants: ["environment"],
+    metadata: { name, source: "@aexhq/tools" },
+  });
+}
+
+export const bash = () => official("bash");
+export const edit = () => official("edit");
+export const glob = () => official("glob");
+export const grep = () => official("grep");
+export const ls = () => official("ls");
+export const read = () => official("read");
+export const todo = () => official("todo");
+export const write = () => official("write");

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const MAX_CAPTURE_BYTES = 1024 * 1024;
@@ -62,6 +62,6 @@ const bash = tool(bashInput, async function bash(input, context) {
   .named("bash")
   .describe("Run a Bash command in the session Environment workspace.")
   .returns(bashOutput)
-  .needs({ workspace: true, processes: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default bash;

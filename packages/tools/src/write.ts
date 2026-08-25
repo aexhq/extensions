@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { tool } from "@aexhq/sdk";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -18,6 +18,6 @@ const write = tool(writeInput, async function write({ path, content }, context) 
   .named("write")
   .describe("Write UTF-8 text to a file in the Environment workspace, creating parent directories.")
   .returns(writeOutput)
-  .needs({ workspace: true, recovery: "retained" });
+  .server(import.meta.url);
 
 export default write;

@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/tools",
   "version": "0.2.6",
-  "description": "Official tool selections for Aex sessions",
+  "description": "Official precompiled Tool components for Brain sessions",
   "license": "Apache-2.0",
   "homepage": "https://aex.dev",
   "repository": {
@@ -32,30 +32,16 @@
     "README.md"
   ],
   "scripts": {
-    "build": "aex tools build",
+    "build": "tsc -p tsconfig.json && node build.mjs",
     "test": "npm run build && node --test"
   },
   "dependencies": {
-    "@aexhq/sdk": "0.57.5",
-    "zod": "4.4.3"
+    "@aexhq/brain": "0.3.1"
   },
   "devDependencies": {
-    "@aexhq/cli": "0.28.5",
-    "typescript": "^5.9.2"
-  },
-  "aex": {
-    "tools": {
-      "entries": {
-        "./bash": "./src/bash.ts",
-        "./edit": "./src/edit.ts",
-        "./glob": "./src/glob.ts",
-        "./grep": "./src/grep.ts",
-        "./ls": "./src/ls.ts",
-        "./read": "./src/read.ts",
-        "./todo": "./src/todo.ts",
-        "./write": "./src/write.ts"
-      },
-      "outDir": "./dist"
-    }
+    "@bytecodealliance/componentize-js": "0.22.0",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2",
+    "zod": "4.4.3"
   }
 }
