@@ -1,13 +1,10 @@
-name: publish environment gateway image
+name: publish environment runtime images
 
 on:
   workflow_run:
     workflows: [ci]
     types: [completed]
     branches: [main]
-
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/environment-egress-gateway
 
 jobs:
   build:
@@ -18,9 +15,23 @@ jobs:
         include:
           - runner: ubuntu-24.04
             arch: amd64
+            image: environment-driver
+            dockerfile: driver/Dockerfile
           - runner: ubuntu-24.04-arm
             arch: arm64
+            image: environment-driver
+            dockerfile: driver/Dockerfile
+          - runner: ubuntu-24.04
+            arch: amd64
+            image: environment-egress-gateway
+            dockerfile: gateway/Dockerfile
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            image: environment-egress-gateway
+            dockerfile: gateway/Dockerfile
     runs-on: ${{ matrix.runner }}
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
     permissions:
       contents: read
       packages: write
@@ -41,7 +52,7 @@ jobs:
           fi
       - name: Build candidate
         working-directory: packages/env-aws-microvm/runtime
-        run: docker build -f gateway/Dockerfile -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" .
+        run: docker build -f "${{ matrix.dockerfile }}" -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" .
       - name: Scan candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -54,12 +65,16 @@ jobs:
 
   manifest:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [environment-driver, environment-egress-gateway]
     runs-on: ubuntu-24.04
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.publish.outputs.digest }}
     steps:
       - uses: docker/login-action@v4
         with:
@@ -111,32 +126,32 @@ jobs:
           verify_index "$release" "$amd" "$arm"
           digest=$(digest_of "$release")
 
-          package_api="/orgs/$PACKAGE_OWNER/packages/container/environment-egress-gateway"
+          package_api="/orgs/$PACKAGE_OWNER/packages/container/${{ matrix.image }}"
           visibility=$(gh api "$package_api" --jq .visibility 2>/dev/null || true)
           if [ "$visibility" != public ]; then
             if ! gh api --method PATCH "$package_api" -f visibility=public >/dev/null; then
               echo "GHCR package visibility could not be bootstrapped automatically." >&2
-              echo "An aexhq package administrator must set environment-egress-gateway to Public, then re-run this workflow." >&2
+              echo "An aexhq package administrator must set ${{ matrix.image }} to Public, then re-run this workflow." >&2
               exit 1
             fi
           fi
           visibility=$(gh api "$package_api" --jq .visibility 2>/dev/null || true)
           if [ "$visibility" != public ]; then
-            echo "GHCR reports environment-egress-gateway visibility '$visibility', expected public." >&2
+            echo "GHCR reports ${{ matrix.image }} visibility '$visibility', expected public." >&2
             echo "An aexhq package administrator must set the package to Public, then re-run this workflow." >&2
             exit 1
           fi
           docker logout ghcr.io >/dev/null
           if ! docker buildx imagetools inspect "$IMAGE@$digest" >/dev/null 2>&1; then
             echo "Anonymous pull verification failed for $IMAGE@$digest." >&2
-            echo "An aexhq package administrator must make environment-egress-gateway Public, then re-run this workflow." >&2
+            echo "An aexhq package administrator must make ${{ matrix.image }} Public, then re-run this workflow." >&2
             exit 1
           fi
 
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Published public immutable gateway manifest: $IMAGE@$digest"
+          echo "Published public immutable ${{ matrix.image }} manifest: $IMAGE@$digest"
           {
-            echo '### Environment egress gateway image'
+            echo '### ${{ matrix.image }} image'
             echo
             echo "Immutable source tag: \`$release\`"
             echo
