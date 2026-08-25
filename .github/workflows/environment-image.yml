@@ -100,6 +100,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
       - name: Exercise a prepared Tool in the environment runner
         run: node "$RUNTIME/scripts/test-tool-runner.mjs"
 
