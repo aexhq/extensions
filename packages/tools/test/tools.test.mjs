@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { prepareComponent } from "@aexhq/brain";
-import { bash, edit, glob, grep, ls, read, todo, write } from "../index.mjs";
+import { bash, edit, glob, grep, ls, read, subagents, task, todo, write } from "../index.mjs";
 
 test("official tools are immutable Environment-routed components", async () => {
   const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write()];
@@ -20,6 +20,16 @@ test("official tools are immutable Environment-routed components", async () => {
     assert.equal(Object.isFrozen(value.config), true);
   }
   const prepared = await prepareComponent(values[0]);
+  assert.ok(prepared.bytes > 0);
+  assert.equal(prepared.component_digest.length, 64);
+});
+
+test("subagents is an ordinary Tool component with child-session authority", async () => {
+  const value = subagents();
+  assert.equal(value.config.definition.name, "subagents");
+  assert.deepEqual(value.grants, ["children"]);
+  assert.deepEqual(task(), value);
+  const prepared = await prepareComponent(value);
   assert.ok(prepared.bytes > 0);
   assert.equal(prepared.component_digest.length, 64);
 });

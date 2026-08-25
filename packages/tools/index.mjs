@@ -2,6 +2,7 @@ import { component } from "@aexhq/brain";
 import { readFile } from "node:fs/promises";
 
 const asset = new URL("./dist/tool.component.wasm", import.meta.url);
+const childrenAsset = new URL("./dist/children.component.wasm", import.meta.url);
 
 async function load(name) {
   return JSON.parse(await readFile(new URL(`./dist/${name}.component.json`, import.meta.url), "utf8"));
@@ -16,6 +17,7 @@ const configs = Object.freeze({
   read: await load("read"),
   todo: await load("todo"),
   write: await load("write"),
+  subagents: await load("subagents"),
 });
 
 function official(name) {
@@ -33,3 +35,8 @@ export const ls = () => official("ls");
 export const read = () => official("read");
 export const todo = () => official("todo");
 export const write = () => official("write");
+export const subagents = () => component("tool", childrenAsset, configs.subagents, {
+  grants: ["children"],
+  metadata: { name: "subagents", source: "@aexhq/tools" },
+});
+export const task = subagents;

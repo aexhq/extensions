@@ -34,3 +34,18 @@ const output = await componentize(source, wit, {
 });
 await mkdir(new URL("./dist", here), { recursive: true });
 await writeFile(new URL("./dist/tool.component.wasm", here), output.component);
+
+const selected = (await import(new URL("./dist/subagents.js", here))).default;
+const compiled = await compileTools([selected]);
+const definition = compiled.items[0]?.definition;
+if (definition === undefined) throw new Error("subagents did not compile to one Tool definition");
+await writeFile(
+  new URL("./dist/subagents.component.json", here),
+  `${JSON.stringify({ definition })}\n`,
+);
+const childSource = await readFile(new URL("./children-dispatcher.mjs", here), "utf8");
+const childOutput = await componentize(childSource, wit, {
+  worldName: "tool",
+  disableFeatures: ["http", "fetch-event"],
+});
+await writeFile(new URL("./dist/children.component.wasm", here), childOutput.component);
