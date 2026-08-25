@@ -189,13 +189,28 @@ jobs:
             -p 8080:8080 environment:ci)
           trap 'docker logs "$CID"; docker stop "$CID" >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null && { exec 3>&-; sleep 1; break; }; sleep 0.5; done
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/)" = 401
-          test "$(curl --silent --output /tmp/environment-ready.json --write-out '%{http_code}' --request POST \
-            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/ready)" = 200
-          jq --exit-status '.ok == true' /tmp/environment-ready.json >/dev/null
-          test "$(curl --silent --output /tmp/environment-validate.json --write-out '%{http_code}' --request POST \
-            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/validate)" = 200
-          jq --exit-status '.ok == true' /tmp/environment-validate.json >/dev/null
+          root_status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/)
+          test "$root_status" = 401 || { echo "unauthenticated root returned HTTP $root_status"; exit 1; }
+          ready_status=$(curl --silent --output /tmp/environment-ready.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/ready)
+          test "$ready_status" = 200 || {
+            echo "ready probe returned HTTP $ready_status: $(cat /tmp/environment-ready.json)"
+            exit 1
+          }
+          jq --exit-status '.ok == true' /tmp/environment-ready.json >/dev/null || {
+            echo "ready probe rejected the image: $(cat /tmp/environment-ready.json)"
+            exit 1
+          }
+          validate_status=$(curl --silent --output /tmp/environment-validate.json --write-out '%{http_code}' --request POST \
+            http://127.0.0.1:8080/aws/lambda-microvms/runtime/v1/validate)
+          test "$validate_status" = 200 || {
+            echo "toolchain validation returned HTTP $validate_status: $(cat /tmp/environment-validate.json)"
+            exit 1
+          }
+          jq --exit-status '.ok == true' /tmp/environment-validate.json >/dev/null || {
+            echo "toolchain validation rejected the image: $(cat /tmp/environment-validate.json)"
+            exit 1
+          }
           docker cp "$RUNTIME/scripts/test-control-boundary.mjs" "$CID":/tmp/test-control-boundary.mjs
           docker exec --user 1000:1000 "$CID" node /tmp/test-control-boundary.mjs
           for uid in 1000:1000 65536:1000; do
