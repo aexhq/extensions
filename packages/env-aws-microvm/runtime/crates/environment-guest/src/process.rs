@@ -711,8 +711,9 @@ fn install_child_boundary(
                 {
                     return Err(std::io::Error::last_os_error());
                 }
-                // The supervisor executable has only CAP_KILL/CAP_SETUID/CAP_SETGID so it can
-                // cross the UID boundary and later enforce the child's deadline. Never depend on
+                // The supervisor executable has only CAP_KILL/CAP_NET_BIND_SERVICE/CAP_SETUID/
+                // CAP_SETGID so it can own the endpoint, cross the UID boundary, and later enforce
+                // the child's deadline. Never depend on
                 // exec-time capability recalculation: erase every effective/permitted/inheritable
                 // and ambient capability in the forked child before untrusted bash/Node code is
                 // evaluated. Each managed binding has its own uid; non-dumpability additionally

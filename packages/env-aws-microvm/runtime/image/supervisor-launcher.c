@@ -1,45 +1,42 @@
 #define _GNU_SOURCE
 
-#include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <grp.h>
 #include <linux/capability.h>
-#include <netinet/in.h>
 #include <pwd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 enum {
-    CONTROL_PORT = 8080,
     SUPERVISOR_UID = 1001,
     SUPERVISOR_GID = 1001,
 };
 
 static void fail(const char *operation) {
-    fprintf(stderr, "aex-control-listener: %s: %s\n", operation, strerror(errno));
+    fprintf(stderr, "aex-supervisor-launcher: %s: %s\n", operation, strerror(errno));
     exit(111);
 }
 
 static void require(int condition, const char *message) {
     if (!condition) {
-        fprintf(stderr, "aex-control-listener: %s\n", message);
+        fprintf(stderr, "aex-supervisor-launcher: %s\n", message);
         exit(111);
     }
 }
 
 static void set_supervisor_capabilities(void) {
-    _Static_assert(CAP_KILL < 32 && CAP_SETGID < 32 && CAP_SETUID < 32,
+    _Static_assert(CAP_KILL < 32 && CAP_NET_BIND_SERVICE < 32 && CAP_SETGID < 32 &&
+                       CAP_SETUID < 32,
                    "supervisor capabilities must fit in the first capability word");
     const uint32_t supervisor_mask =
-        (1U << CAP_KILL) | (1U << CAP_SETGID) | (1U << CAP_SETUID);
+        (1U << CAP_KILL) | (1U << CAP_NET_BIND_SERVICE) | (1U << CAP_SETGID) |
+        (1U << CAP_SETUID);
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,
         .pid = 0,
@@ -54,7 +51,8 @@ static void set_supervisor_capabilities(void) {
 }
 
 static void raise_supervisor_ambient_capabilities(void) {
-    const int supervisor_capabilities[] = {CAP_KILL, CAP_SETGID, CAP_SETUID};
+    const int supervisor_capabilities[] = {
+        CAP_KILL, CAP_NET_BIND_SERVICE, CAP_SETGID, CAP_SETUID};
     if (prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0) < 0) {
         fail("prctl(PR_CAP_AMBIENT_CLEAR_ALL)");
     }
@@ -70,55 +68,6 @@ static void raise_supervisor_ambient_capabilities(void) {
 
 int main(int argc, char **argv) {
     require(argc == 2, "expected the Environment supervisor executable");
-
-    const char *configured = getenv("ENVIRONMENT_LISTEN");
-    require(configured != NULL && strcmp(configured, "0.0.0.0:8080") == 0,
-            "ENVIRONMENT_LISTEN must be the sealed provider endpoint");
-
-    int listener = socket(AF_INET, SOCK_STREAM, 0);
-    if (listener < 0) {
-        fail("socket");
-    }
-    int enabled = 1;
-    if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)) < 0) {
-        fail("setsockopt");
-    }
-    struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_port = htons(CONTROL_PORT),
-        .sin_addr = {.s_addr = htonl(INADDR_ANY)},
-    };
-    if (bind(listener, (const struct sockaddr *)&address, sizeof(address)) < 0) {
-        fail("bind");
-    }
-    if (listen(listener, SOMAXCONN) < 0) {
-        fail("listen");
-    }
-    /*
-     * The provider may already own descriptor 3. Preserve every inherited descriptor and pass the
-     * actual new listener number to the supervisor instead of replacing a provider control fd.
-     */
-    if (listener < 3) {
-        int replacement = fcntl(listener, F_DUPFD, 3);
-        if (replacement < 0) {
-            fail("fcntl(F_DUPFD)");
-        }
-        close(listener);
-        listener = replacement;
-    }
-    int descriptor_flags = fcntl(listener, F_GETFD);
-    if (descriptor_flags < 0 ||
-        fcntl(listener, F_SETFD, descriptor_flags & ~FD_CLOEXEC) < 0) {
-        fail("fcntl");
-    }
-    char listener_number[32];
-    int listener_number_bytes =
-        snprintf(listener_number, sizeof(listener_number), "%d", listener);
-    require(listener_number_bytes > 0 &&
-                (size_t)listener_number_bytes < sizeof(listener_number),
-            "could not encode the control listener descriptor");
-    fprintf(stderr, "aex-control-listener: reserved port %d on descriptor %d\n",
-            CONTROL_PORT, listener);
 
     struct passwd *supervisor = getpwnam("environment");
     require(supervisor != NULL, "Environment supervisor account is unavailable");
@@ -152,8 +101,7 @@ int main(int argc, char **argv) {
             "failed to enter the Environment supervisor identity");
 
     if (setenv("HOME", "/home/agent", 1) < 0 || setenv("USER", "environment", 1) < 0 ||
-        setenv("LOGNAME", "environment", 1) < 0 ||
-        setenv("ENVIRONMENT_LISTEN_FD", listener_number, 1) < 0) {
+        setenv("LOGNAME", "environment", 1) < 0) {
         fail("setenv");
     }
     char *const child_argv[] = {argv[1], NULL};

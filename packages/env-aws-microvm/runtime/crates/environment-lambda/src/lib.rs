@@ -26,13 +26,13 @@ pub mod launch;
 pub const REGION: &str = "us-east-1";
 
 /// The single guest port: lifecycle hooks, probe, and the ABI WebSocket. Matches the port the
-/// image registration declares and the endpoint auth token is scoped to. `image/control-listener.c`
+/// image registration declares and the endpoint auth token is scoped to. `image/supervisor-launcher.c`
 /// and `image/environment-boot.sh` carry the same value; the image conformance tests pin them together.
 pub const AGENT_PORT: u16 = 8080;
 
 /// The sandbox identity split baked into both images and the C launcher: the trusted Environment
 /// supervisor uid/gid and the untrusted Tool uid/gid. The image conformance tests pin the
-/// Dockerfiles and `image/control-listener.c` to these values.
+/// Dockerfiles and `image/supervisor-launcher.c` to these values.
 pub const SUPERVISOR_UID: u32 = 1001;
 pub const TOOL_UID: u32 = 1000;
 pub const TOOL_GID: u32 = 1000;

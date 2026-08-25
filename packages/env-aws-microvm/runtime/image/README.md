@@ -33,15 +33,15 @@ payload and retained with the durable target route; it is never projected throug
 argv, or Tool environments. Both UID 1000 additional shells and dynamically allocated managed
 binding UIDs may share the guest network namespace, but receive only `401` from the live control
 endpoint without that bearer. Root boot also raises `ip_unprivileged_port_start` to 8081. A tiny
-root-owned, group-restricted launcher binds port 8080 first, drops to the supervisor identity, and
-passes only that socket descriptor to `environment-guest`; a background Tool therefore cannot bind or
+root-owned, group-restricted launcher gives the supervisor only `CAP_NET_BIND_SERVICE` before it
+binds port 8080; Tool children lose every capability, so a background Tool cannot bind or
 impersonate the port after a supervisor crash. CI proves both Tool identity classes cannot
 authenticate to a live supervisor or bind the released control port.
 
 The build removes every package-owned setuid/setgid bit and inherited file capability. The
-root-owned listener launcher carries only `CAP_KILL`, `CAP_SETGID`, and `CAP_SETUID` across its drop
-to the supervisor identity and into `environment-guest`; this does not depend on the provider honoring
-filesystem capabilities. The supervisor needs the UID/GID pair to spawn Tool children and
+root-owned supervisor launcher carries only `CAP_KILL`, `CAP_NET_BIND_SERVICE`, `CAP_SETGID`, and
+`CAP_SETUID` across its drop to the supervisor identity and into `environment-guest`; this does not
+depend on the provider honoring filesystem capabilities. The supervisor needs the UID/GID pair to spawn Tool children and
 `CAP_KILL` to enforce their deadlines after the UID split; Linux does not give parents an implicit
 cross-UID signal right. Children clear every capability set and set
 `no_new_privs`. Each immutable managed binding receives a distinct deterministic UID
