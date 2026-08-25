@@ -9,5 +9,12 @@ and an opaque `aws-microvm` driver binding; no AWS SDK enters the Brain kernel.
 ```js
 import { awsMicrovm } from "@aexhq/env-aws-microvm";
 
-const environment = awsMicrovm({ region: "eu-west-2" });
+const environment = awsMicrovm({
+  region: "eu-west-2",
+  idleSeconds: 60,
+  maximumSeconds: 3_600,
+});
 ```
+
+Both lifetimes are finite. The Environment driver rejects values above its deployment maxima;
+omitted values use those finite maxima.

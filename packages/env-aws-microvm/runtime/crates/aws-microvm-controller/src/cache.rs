@@ -426,7 +426,7 @@ pub(crate) fn preparation_public_projection(
 
 #[derive(Clone, Copy)]
 pub(crate) enum MaterializationMode<'a> {
-    LazyEnvironment,
+    LazyEnvironment(TargetLifetime),
     ExplicitEnvironment(&'a str),
     Additional(&'a str),
 }
@@ -434,7 +434,7 @@ pub(crate) enum MaterializationMode<'a> {
 impl<'a> MaterializationMode<'a> {
     pub(crate) fn generation_intent(self) -> Option<&'a str> {
         match self {
-            Self::LazyEnvironment => None,
+            Self::LazyEnvironment(_) => None,
             Self::ExplicitEnvironment(generation) | Self::Additional(generation) => {
                 Some(generation)
             }
@@ -442,7 +442,17 @@ impl<'a> MaterializationMode<'a> {
     }
 
     pub(crate) fn replace_after_loss(self) -> bool {
-        matches!(self, Self::LazyEnvironment | Self::ExplicitEnvironment(_))
+        matches!(
+            self,
+            Self::LazyEnvironment(_) | Self::ExplicitEnvironment(_)
+        )
+    }
+
+    pub(crate) fn lifetime(self) -> TargetLifetime {
+        match self {
+            Self::LazyEnvironment(lifetime) => lifetime,
+            Self::ExplicitEnvironment(_) | Self::Additional(_) => TargetLifetime::default(),
+        }
     }
 }
 

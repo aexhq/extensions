@@ -44,6 +44,38 @@ pub const MAX_IDLE_SECONDS: u64 = 180;
 /// The provider-hard retention wall: running plus suspended (quota L-B430C318).
 pub const MAX_DURATION_SECONDS: u64 = 28_800;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TargetLifetime {
+    pub idle_seconds: u64,
+    pub maximum_seconds: u64,
+}
+
+impl TargetLifetime {
+    pub fn new(idle_seconds: u64, maximum_seconds: u64) -> Result<Self, &'static str> {
+        if idle_seconds == 0
+            || maximum_seconds == 0
+            || idle_seconds > maximum_seconds
+            || idle_seconds > MAX_IDLE_SECONDS
+            || maximum_seconds > MAX_DURATION_SECONDS
+        {
+            return Err("AWS target lifetime is outside the provider boundary");
+        }
+        Ok(Self {
+            idle_seconds,
+            maximum_seconds,
+        })
+    }
+}
+
+impl Default for TargetLifetime {
+    fn default() -> Self {
+        Self {
+            idle_seconds: MAX_IDLE_SECONDS,
+            maximum_seconds: MAX_DURATION_SECONDS,
+        }
+    }
+}
+
 /// Endpoint auth token lifetime. `CreateMicrovmAuthToken` accepts minutes, max 60.
 pub const TOKEN_TTL_SECONDS: u64 = 3_600;
 

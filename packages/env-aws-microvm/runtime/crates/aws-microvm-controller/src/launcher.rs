@@ -9,6 +9,7 @@ pub(crate) struct GenerationLauncher {
     pub(crate) resources: ResourceCeiling,
     pub(crate) network: NetworkCeiling,
     pub(crate) resource_class: String,
+    pub(crate) lifetime: TargetLifetime,
 }
 
 /// Full RunMicrovm parameter projection. It intentionally has no `Debug`: the nested run-hook
@@ -43,6 +44,10 @@ impl GenerationLauncher {
             resources: payload.resources,
             network: payload.network,
             resource_class: payload.resource_class,
+            lifetime: TargetLifetime {
+                idle_seconds: sealed.request.max_idle_duration_seconds,
+                maximum_seconds: sealed.request.maximum_duration_seconds,
+            },
         })
     }
 
@@ -104,11 +109,15 @@ impl GenerationLauncher {
             &run_hook_payload,
             &lease.reservation_id,
             &connector_ref,
+            self.lifetime,
         );
         let sealed = SealedProviderLaunch {
             image_identity: lease.spec.image_identity.clone(),
-            dispatch_deadline_at_ms: launch_dispatch_deadline(lease)
-                .map_err(materialization_error)?,
+            dispatch_deadline_at_ms: launch_dispatch_deadline(
+                lease,
+                self.lifetime.maximum_seconds.saturating_mul(1_000),
+            )
+            .map_err(materialization_error)?,
             request,
         };
         let bytes = serde_jcs::to_vec(&sealed)
@@ -130,8 +139,14 @@ impl GenerationLauncher {
             .map_err(|_| LaunchError::OutcomeUnknown("durable resource seal is corrupt".into()))?;
         let network_digest = canonical_digest(&payload.network)
             .map_err(|_| LaunchError::OutcomeUnknown("durable network seal is corrupt".into()))?;
-        let expected_dispatch_deadline = launch_dispatch_deadline(lease)
-            .map_err(|error| LaunchError::OutcomeUnknown(error.to_string()))?;
+        let expected_dispatch_deadline = launch_dispatch_deadline(
+            lease,
+            sealed
+                .request
+                .maximum_duration_seconds
+                .saturating_mul(1_000),
+        )
+        .map_err(|error| LaunchError::OutcomeUnknown(error.to_string()))?;
         if payload.contract_digest != ENVIRONMENT_CONTRACT_DIGEST.trim()
             || payload.generation != lease.generation
             || payload.expires_at_ms != lease.target_expires_at_ms
@@ -255,16 +270,17 @@ impl PhysicalTargetLauncher for GenerationLauncher {
 
 pub(crate) fn launch_dispatch_deadline(
     lease: &MaterializationLease,
+    target_lifetime_ms: u64,
 ) -> Result<u64, MaterializationError> {
     let reserved_at_ms = lease
         .target_expires_at_ms
-        .checked_sub(TARGET_LIFETIME_MS)
+        .checked_sub(target_lifetime_ms)
         .ok_or(MaterializationError::InvalidLease)?;
     let deadline = reserved_at_ms
         .checked_add(TARGET_DISPATCH_WINDOW_MS)
         .ok_or(MaterializationError::InvalidLease)?;
     if deadline >= lease.lease_expires_at_ms
-        || lease.lease_expires_at_ms.saturating_sub(deadline) < TARGET_LIFETIME_MS
+        || lease.lease_expires_at_ms.saturating_sub(deadline) < target_lifetime_ms
     {
         return Err(MaterializationError::InvalidLease);
     }

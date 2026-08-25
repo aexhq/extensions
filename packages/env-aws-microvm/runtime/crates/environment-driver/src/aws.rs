@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use aws_microvm_controller::AwsMicrovmEnvironment;
+use aws_microvm_controller::{
+    AwsMicrovmEnvironment, PROVIDER_MAX_DURATION_SECONDS, PROVIDER_MAX_IDLE_SECONDS, TargetLifetime,
+};
 use base64::Engine as _;
 use brain::environment::{EnvironmentPort as _, SessionPreparationPort as _};
 use brain_protocol::contract::{canonical_digest, operation_request_digest};
@@ -20,19 +22,31 @@ const MAX_OBSERVE_WAIT_MS: u64 = 1_000;
 
 pub struct AwsDriver {
     environment: Arc<AwsMicrovmEnvironment>,
+    maximum_lifetime: TargetLifetime,
 }
+
+const MAX_IDLE_SECONDS_ENV: &str = "ENVIRONMENT_MAX_SESSION_IDLE_SECONDS";
+const MAX_DURATION_SECONDS_ENV: &str = "ENVIRONMENT_MAX_SESSION_DURATION_SECONDS";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Binding {
     driver: String,
-    configuration: serde_json::Map<String, Value>,
+    configuration: EnvironmentConfiguration,
     policy: Value,
     tenant_id: String,
     session_id: String,
     root_id: String,
     parent_id: Option<String>,
     environment_id: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct EnvironmentConfiguration {
+    region: Option<String>,
+    idle_seconds: Option<u64>,
+    maximum_seconds: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -86,8 +100,14 @@ struct ReleaseBody {
 
 impl AwsDriver {
     pub async fn from_env() -> anyhow::Result<Self> {
+        let maximum_lifetime = TargetLifetime::new(
+            optional_seconds(MAX_IDLE_SECONDS_ENV, PROVIDER_MAX_IDLE_SECONDS)?,
+            optional_seconds(MAX_DURATION_SECONDS_ENV, PROVIDER_MAX_DURATION_SECONDS)?,
+        )
+        .map_err(anyhow::Error::msg)?;
         Ok(Self {
             environment: AwsMicrovmEnvironment::from_env().await?,
+            maximum_lifetime,
         })
     }
 
@@ -105,8 +125,20 @@ impl AwsDriver {
         {
             return Err(DriverError::invalid("invalid AWS Environment binding"));
         }
+        if binding
+            .configuration
+            .region
+            .as_ref()
+            .is_some_and(|region| region.trim().is_empty())
+        {
+            return Err(DriverError::invalid("invalid AWS Environment region"));
+        }
         let _ = &binding.parent_id;
         Ok(())
+    }
+
+    fn target_lifetime(&self, binding: &Binding) -> Result<TargetLifetime, DriverError> {
+        bounded_target_lifetime(&binding.configuration, self.maximum_lifetime)
     }
 
     fn operation_ref(encoded: &str) -> Result<OperationRef, DriverError> {
@@ -152,6 +184,7 @@ impl AwsDriver {
             .map_err(|_| DriverError::invalid("invalid Tool deadline"))?;
         let input: Value = serde_json::from_str(&body.operation.input_json)
             .map_err(|_| DriverError::invalid("invalid Tool input"))?;
+        let lifetime = self.target_lifetime(&body.binding)?;
         let network = network(&body.binding.policy)?;
         let policy_digest = canonical_digest(&body.binding.policy)
             .map_err(|_| DriverError::invalid("Environment policy cannot be canonicalized"))?;
@@ -198,7 +231,11 @@ impl AwsDriver {
                 "tool_name": descriptor.tool_name
             },
             "capability": descriptor.tool_name,
-            "configuration": body.binding.configuration,
+            "configuration": {
+                "region": body.binding.configuration.region,
+                "idle_seconds": lifetime.idle_seconds,
+                "maximum_seconds": lifetime.maximum_seconds
+            },
             "contract_digest": descriptor.contract_digest,
             "environment_name": body.binding.environment_id,
             "extension": "@aexhq/env-aws-microvm",
@@ -246,7 +283,7 @@ impl AwsDriver {
             .min(MAX_OBSERVE_WAIT_MS);
         let receipt = self
             .environment
-            .submit_component(binding, envelope, bundle, wait)
+            .submit_component(binding, envelope, bundle, wait, lifetime)
             .await
             .map_err(map_environment_error)?;
         Ok(json!({"provider_operation_id": Self::encode_operation(&receipt.operation)?}))
@@ -327,6 +364,42 @@ impl AwsDriver {
             .map_err(map_environment_error)?;
         Ok(json!({}))
     }
+}
+
+fn optional_seconds(name: &str, default: u64) -> anyhow::Result<u64> {
+    let Some(value) = std::env::var_os(name) else {
+        return Ok(default);
+    };
+    let value = value
+        .into_string()
+        .map_err(|_| anyhow::anyhow!("{name} must contain UTF-8 decimal text"))?;
+    value
+        .parse::<u64>()
+        .map_err(|_| anyhow::anyhow!("{name} must contain an unsigned decimal integer"))
+}
+
+fn bounded_target_lifetime(
+    configuration: &EnvironmentConfiguration,
+    maximum: TargetLifetime,
+) -> Result<TargetLifetime, DriverError> {
+    let maximum_seconds = configuration
+        .maximum_seconds
+        .unwrap_or(maximum.maximum_seconds);
+    let requested = TargetLifetime::new(
+        configuration
+            .idle_seconds
+            .unwrap_or(maximum.idle_seconds.min(maximum_seconds)),
+        maximum_seconds,
+    )
+    .map_err(DriverError::invalid)?;
+    if requested.idle_seconds > maximum.idle_seconds
+        || requested.maximum_seconds > maximum.maximum_seconds
+    {
+        return Err(DriverError::invalid(
+            "AWS target lifetime exceeds the deployment maximum",
+        ));
+    }
+    Ok(requested)
 }
 
 #[async_trait]
@@ -452,5 +525,33 @@ mod tests {
             json!({"kind":"public"})
         );
         assert!(network(&json!({"network":{"outbound":"private"}})).is_err());
+    }
+
+    #[test]
+    fn component_lifetime_is_finite_and_capped_by_the_driver() {
+        let maximum = TargetLifetime::new(120, 3_600).unwrap();
+        let defaulted =
+            bounded_target_lifetime(&EnvironmentConfiguration::default(), maximum).unwrap();
+        assert_eq!(defaulted, maximum);
+        let requested = bounded_target_lifetime(
+            &EnvironmentConfiguration {
+                idle_seconds: Some(30),
+                maximum_seconds: Some(600),
+                ..EnvironmentConfiguration::default()
+            },
+            maximum,
+        )
+        .unwrap();
+        assert_eq!(requested, TargetLifetime::new(30, 600).unwrap());
+        assert!(
+            bounded_target_lifetime(
+                &EnvironmentConfiguration {
+                    idle_seconds: Some(121),
+                    ..EnvironmentConfiguration::default()
+                },
+                maximum,
+            )
+            .is_err()
+        );
     }
 }

@@ -63,6 +63,7 @@ impl AwsMicrovmEnvironment {
         envelope: brain_protocol::environment::OperationEnvelope,
         bundle: Vec<u8>,
         wait_up_to_ms: u64,
+        lifetime: TargetLifetime,
     ) -> EnvironmentResult<SubmitReceipt> {
         validate_managed_binding(&binding)?;
         validate_inline_input(&envelope.input)?;
@@ -110,7 +111,7 @@ impl AwsMicrovmEnvironment {
                 &envelope.resources,
                 &envelope.network,
                 RESOURCE_CLASS,
-                MaterializationMode::LazyEnvironment,
+                MaterializationMode::LazyEnvironment(lifetime),
             )
             .await?;
         let install_key = InstalledArtifact::Bundle {
@@ -378,7 +379,7 @@ impl AwsMicrovmEnvironment {
                     &prep.request.resources,
                     &prep.request.network,
                     RESOURCE_CLASS,
-                    MaterializationMode::LazyEnvironment,
+                    MaterializationMode::LazyEnvironment(TargetLifetime::default()),
                 )
                 .await
             }
@@ -419,6 +420,7 @@ impl AwsMicrovmEnvironment {
             ));
         }
         let spec = target_spec(&self.plane.cfg, resources, network, resource_class)?;
+        let lifetime = mode.lifetime();
         let now = now_ms();
         let reservation_id = random_identifier("reservation");
         let generation = mode
@@ -440,8 +442,11 @@ impl AwsMicrovmEnvironment {
             attempt_duration_ms: TARGET_ATTEMPT_MS,
             generation_is_fenced: mode.generation_intent().is_some(),
             now_ms: now,
-            lease_duration_ms: TARGET_LEASE_MS,
-            target_lifetime_ms: TARGET_LIFETIME_MS,
+            lease_duration_ms: lifetime
+                .maximum_seconds
+                .saturating_mul(1_000)
+                .saturating_add(5 * 60 * 1_000),
+            target_lifetime_ms: lifetime.maximum_seconds.saturating_mul(1_000),
             replace_after_loss: mode.replace_after_loss(),
         };
         let launcher = GenerationLauncher {
@@ -451,6 +456,7 @@ impl AwsMicrovmEnvironment {
             resources: resources.clone(),
             network: network.clone(),
             resource_class: resource_class.into(),
+            lifetime,
         };
         let preview = request.lease().map_err(materialization_error)?;
         request.launch_request = launcher.seal_launch(&preview).await?;

@@ -110,6 +110,10 @@ const TARGET_ATTEMPT_MS: u64 = 30_000;
 // dispatch and the conservative provider-lifetime-plus-skew refund boundary.
 const TARGET_DISPATCH_WINDOW_MS: u64 = 4 * 60 * 1_000;
 
+pub use environment_lambda::TargetLifetime;
+pub const PROVIDER_MAX_IDLE_SECONDS: u64 = environment_lambda::MAX_IDLE_SECONDS;
+pub const PROVIDER_MAX_DURATION_SECONDS: u64 = environment_lambda::MAX_DURATION_SECONDS;
+
 mod cache;
 mod config;
 mod environment;
@@ -866,7 +870,7 @@ mod tests {
     #[test]
     fn delayed_provider_dispatch_never_outlives_the_capacity_fence() {
         let fresh = materialization_lease(1_000);
-        let deadline = launch_dispatch_deadline(&fresh).unwrap();
+        let deadline = launch_dispatch_deadline(&fresh, TARGET_LIFETIME_MS).unwrap();
         assert_eq!(deadline, 1_000 + TARGET_DISPATCH_WINDOW_MS);
         assert!(admit_provider_dispatch(&fresh, deadline, deadline).is_ok());
         assert!(matches!(
