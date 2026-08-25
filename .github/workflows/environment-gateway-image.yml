@@ -1,0 +1,161 @@
+name: publish environment runtime images
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  build:
+    if: github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            image: environment-driver
+            dockerfile: driver/Dockerfile
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            image: environment-driver
+            dockerfile: driver/Dockerfile
+          - runner: ubuntu-24.04
+            arch: amd64
+            image: environment-egress-gateway
+            dockerfile: gateway/Dockerfile
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            image: environment-egress-gateway
+            dockerfile: gateway/Dockerfile
+    runs-on: ${{ matrix.runner }}
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse to overwrite candidate
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" >/dev/null 2>&1; then
+            echo "candidate tag already exists; immutable publication refuses overwrite" >&2
+            exit 1
+          fi
+      - name: Build candidate
+        working-directory: packages/env-aws-microvm/runtime
+        run: docker build -f "${{ matrix.dockerfile }}" -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" .
+      - name: Scan candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push candidate
+        run: docker push "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}"
+
+  manifest:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [environment-driver, environment-egress-gateway]
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish or verify immutable manifest
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_OWNER: ${{ github.repository_owner }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          digest_of() {
+            local raw
+            raw=$(mktemp)
+            docker buildx imagetools inspect "$1" --raw > "$raw"
+            printf 'sha256:%s' "$(sha256sum "$raw" | cut -d' ' -f1)"
+          }
+          verify_index() {
+            local ref=$1 amd=$2 arm=$3 raw
+            raw=$(mktemp)
+            docker buildx imagetools inspect "$ref" --raw > "$raw"
+            jq -e --arg amd "$amd" --arg arm "$arm" '
+              .schemaVersion == 2 and
+              (.manifests | type == "array" and length == 2) and
+              ([.manifests[] | select(.digest == $amd and .platform.os == "linux" and .platform.architecture == "amd64")] | length == 1) and
+              ([.manifests[] | select(.digest == $arm and .platform.os == "linux" and .platform.architecture == "arm64")] | length == 1) and
+              ([.manifests[].digest] | unique | length == 2)
+            ' "$raw" >/dev/null
+          }
+
+          amd=$(digest_of "$IMAGE:$SOURCE_SHA-amd64")
+          arm=$(digest_of "$IMAGE:$SOURCE_SHA-arm64")
+          release="$IMAGE:sha-$SOURCE_SHA"
+          if docker buildx imagetools inspect "$release" >/dev/null 2>&1; then
+            verify_index "$release" "$amd" "$arm" || {
+              echo "$release already exists with different children; refusing overwrite" >&2
+              exit 1
+            }
+          else
+            docker buildx imagetools create \
+              -t "$release" \
+              "$IMAGE@$amd" \
+              "$IMAGE@$arm"
+          fi
+          verify_index "$release" "$amd" "$arm"
+          digest=$(digest_of "$release")
+
+          package_api="/orgs/$PACKAGE_OWNER/packages/container/${{ matrix.image }}"
+          visibility=$(gh api "$package_api" --jq .visibility 2>/dev/null || true)
+          if [ "$visibility" != public ]; then
+            if ! gh api --method PATCH "$package_api" -f visibility=public >/dev/null; then
+              echo "GHCR package visibility could not be bootstrapped automatically." >&2
+              echo "An aexhq package administrator must set ${{ matrix.image }} to Public, then re-run this workflow." >&2
+              exit 1
+            fi
+          fi
+          visibility=$(gh api "$package_api" --jq .visibility 2>/dev/null || true)
+          if [ "$visibility" != public ]; then
+            echo "GHCR reports ${{ matrix.image }} visibility '$visibility', expected public." >&2
+            echo "An aexhq package administrator must set the package to Public, then re-run this workflow." >&2
+            exit 1
+          fi
+          docker logout ghcr.io >/dev/null
+          if ! docker buildx imagetools inspect "$IMAGE@$digest" >/dev/null 2>&1; then
+            echo "Anonymous pull verification failed for $IMAGE@$digest." >&2
+            echo "An aexhq package administrator must make ${{ matrix.image }} Public, then re-run this workflow." >&2
+            exit 1
+          fi
+
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published public immutable ${{ matrix.image }} manifest: $IMAGE@$digest"
+          {
+            echo '### ${{ matrix.image }} image'
+            echo
+            echo "Immutable source tag: \`$release\`"
+            echo
+            echo "Resolved deploy identity: \`$IMAGE@$digest\`"
+            echo
+            echo "Platforms: \`linux/amd64@$amd\`, \`linux/arm64@$arm\`"
+          } >> "$GITHUB_STEP_SUMMARY"
