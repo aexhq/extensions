@@ -1,0 +1,12 @@
+{
+  "name": "@aexhq/model",
+  "version": "0.1.0",
+  "description": "Bounded authoring utilities for Brain Model components",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=22.0.0" },
+  "exports": { ".": { "types": "./index.d.ts", "import": "./index.mjs" }, "./package.json": "./package.json" },
+  "files": ["index.mjs", "index.d.ts", "README.md"],
+  "scripts": { "test": "node --test" }
+}
