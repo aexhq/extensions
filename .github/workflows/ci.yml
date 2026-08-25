@@ -209,9 +209,9 @@ jobs:
           docker cp "$RUNTIME/scripts/test-guest-deadline.mjs" "$CID":/tmp/test-guest-deadline.mjs
           docker exec --user 0:0 "$CID" sh -c 'chown 1001:1001 /tmp/test-guest-deadline.mjs && chmod 0400 /tmp/test-guest-deadline.mjs'
           docker exec --user 1001:1000 "$CID" node /tmp/test-guest-deadline.mjs
-          # The supervisor is PID 1: its death ends the sandbox instead of leaving the provider port
-          # free for a Tool to rebind. This replaces the unprivileged-port-floor sysctl, which AWS
-          # answers by terminating the MicroVM mid-session.
-          docker exec --user 0:0 "$CID" sh -ceu 'kill -ABRT 1'
-          timeout 60 docker wait "$CID" >/dev/null
+          # The supervisor is the sandbox's PID 1, so its deliberate abort ends the sandbox instead
+          # of leaving the provider port free for a Tool to rebind. That is what replaces an
+          # unprivileged-port-floor sysctl, which AWS answers by terminating the MicroVM.
+          test "$(docker exec --user 0:0 "$CID" readlink /proc/1/exe)" = /usr/local/bin/environment-guest
+          docker stop "$CID" >/dev/null
           trap - EXIT
