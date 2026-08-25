@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 
 const authority = "http://127.0.0.1:8080";
-const environmentContractDigest = "61dbf587fc4b908610744df6ca319c9bd3d5884ba6ad40bebba5a28672af9100";
+const environmentContractDigest = "7aea6ad07f67b322300c752017bf2c5cda692e0e4fc6579fe6af5a7f7ab606dc";
 const controlToken = `control-${"a".repeat(64)}`;
 
 const payload = {
