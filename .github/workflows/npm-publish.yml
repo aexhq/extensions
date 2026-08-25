@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Bootstrap release ownership, stage versions under next, or promote them to latest
+        description: Bootstrap ownership, stage under next, hold next, or promote to latest
         type: choice
         required: true
         default: stage
-        options: [bootstrap, stage, promote]
+        options: [bootstrap, stage, hold, promote]
       expected_commit:
         description: Exact 40-character extensions commit selected by the workflow ref
         type: string
@@ -204,6 +204,31 @@ jobs:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" bootstrap
+
+  hold:
+    if: inputs.operation == 'hold'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - name: Keep this exact release staged without latest
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" hold
 
   promote:
     if: inputs.operation == 'promote'
