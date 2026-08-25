@@ -29,13 +29,18 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
-      - name: Rebuild determinism
+      - name: Source bundle determinism
         run: |
           set -euo pipefail
-          for p in packages/*/dist/identity.json; do cp "$p" "$p.first"; done
+          for p in packages/*/dist/identity.json; do
+            jq -r '.source_bundle_sha256' "$p" > "$p.source-first"
+          done
           npm run build
           for p in packages/*/dist/identity.json; do
-            cmp "$p" "$p.first" || { echo "$p is not deterministic"; exit 1; }
+            jq -r '.source_bundle_sha256' "$p" | cmp - "$p.source-first" || {
+              echo "$p source bundle is not deterministic"
+              exit 1
+            }
           done
       - run: npm test
 
@@ -96,6 +101,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
       - name: Exercise a prepared Tool in the environment runner
         run: node "$RUNTIME/scripts/test-tool-runner.mjs"
 

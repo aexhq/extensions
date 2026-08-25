@@ -5,12 +5,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildToolModule } from "@aexhq/brain";
 
 const environmentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const brainRoot = resolve(process.env.AEX_BRAIN_CHECKOUT ?? join(environmentRoot, "..", "brain"));
-const { buildToolModule } = await import(
-  pathToFileURL(join(brainRoot, "packages", "brain", "dist", "index.js")).href
-);
 const runner = join(environmentRoot, "image", "tool-runner.mjs");
 const contractDigest = "0123456789abcdef".repeat(4);
 const secretValue = "runner-secret-value-that-must-not-leak";
@@ -52,6 +49,7 @@ function request(executeDigest, digest = contractDigest, operationId = "operatio
   return {
     operation_id: operationId,
     session_id: "session-1",
+    phase: "execute",
     seal: {
       name: "runner_fixture",
       description: "Environments runner fixture.",

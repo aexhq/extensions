@@ -73,7 +73,7 @@ try {
   // bytes are verified above before any customer top-level code can run.
   const loaded = await import(pathToFileURL(bundlePath).href);
   const tool = loaded.default;
-  if (tool === null || typeof tool !== "object" || tool.kind !== "tool-runtime/v1") {
+  if (tool === null || typeof tool !== "object" || tool.kind !== "brain.tool-runtime") {
     throw new TypeError("bundle default export is not a Tool runtime");
   }
   const description = tool.description ?? null;

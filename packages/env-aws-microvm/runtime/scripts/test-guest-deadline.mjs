@@ -211,7 +211,7 @@ const bundle = Buffer.from(`
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 export default {
-  kind: "tool-runtime/v1",
+  kind: "brain.tool-runtime",
   name: "proc_secret_fixture",
   description: "Per-binding procfs isolation fixture.",
   contractDigest: ${JSON.stringify(contractDigest)},
@@ -317,7 +317,7 @@ async function probeLegacyIpc(operationId, index) {
   return result;
 }
 export default {
-  kind: "tool-runtime/v1",
+  kind: "brain.tool-runtime",
   name: "proc_attacker_fixture",
   description: "Different-binding procfs attacker fixture.",
   contractDigest: ${JSON.stringify(contractDigest)},

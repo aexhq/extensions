@@ -287,7 +287,7 @@ async fn prepared_environment() -> (tempfile::TempDir, Arc<Environment>, String)
         .arm("mvm-1".into(), run_payload(NetworkCeiling::None))
         .await
         .unwrap();
-    let bytes = br#"export default {kind:'tool-runtime/v1',name:'fixture',execute: async () => ({ok:true})};"#;
+    let bytes = br#"export default {kind:'brain.tool-runtime',name:'fixture',execute: async () => ({ok:true})};"#;
     let digest = hex::encode(Sha256::digest(bytes));
     let node = b"#!/bin/sh\nexit 0\n";
     let node_digest = hex::encode(Sha256::digest(node));
