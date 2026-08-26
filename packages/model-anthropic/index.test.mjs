@@ -35,3 +35,16 @@ test("an unset sampling field stays absent", () => {
   assert.equal("temperature" in body, false);
   assert.equal("stop_sequences" in body, false);
 });
+
+test("the sealed prefix always carries reasoning effort, and only a chosen one is refused", () => {
+  const unset = JSON.parse(new TextDecoder().decode(buildRequest({
+    ...request,
+    generationJson: JSON.stringify({ max_tokens: 100, system_prompt: "system", reasoning_effort: null }),
+  }).body));
+  assert.equal(unset.model, "claude-test");
+
+  assert.throws(() => buildRequest({
+    ...request,
+    generationJson: JSON.stringify({ max_tokens: 100, system_prompt: "system", reasoning_effort: "high" }),
+  }), /not supported/u);
+});

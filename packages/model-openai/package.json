@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/model-openai",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "OpenAI-compatible Model component for Brain",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/model-openai" },
@@ -11,6 +11,6 @@
   "exports": { ".": { "types": "./index.d.ts", "import": "./index.mjs" }, "./component": "./dist/model.component.wasm", "./package.json": "./package.json" },
   "files": ["dist", "adapter.mjs", "provider.mjs", "index.mjs", "index.d.ts", "README.md"],
   "scripts": { "build": "node build.mjs", "test": "npm run build && node --test", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.4.0", "@aexhq/model": "0.1.2" },
+  "dependencies": { "@aexhq/brain": "0.5.0", "@aexhq/model": "0.1.2" },
   "devDependencies": { "@bytecodealliance/componentize-js": "0.22.0", "esbuild": "0.25.9" }
 }
