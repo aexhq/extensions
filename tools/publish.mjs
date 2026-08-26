@@ -188,8 +188,8 @@ if (operation === "bootstrap") {
   const failures = [];
   // Each package carries its own evidence, so one unproven package stays staged instead of
   // holding back the release. Dependency order still decides who moves first.
-  for (const workspace of [...order.base, ...order.dependents]) {
-    const item = selected.find((candidate) => candidate.workspace === workspace);
+  for (const member of [...order.base, ...order.dependents]) {
+    const item = selected.find((candidate) => candidate.workspace === member);
     const spec = `${item.name}@${item.version}`;
     try {
       assertSmoked(item);
