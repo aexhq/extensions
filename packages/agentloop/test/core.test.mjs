@@ -214,3 +214,25 @@ test("session_start hydration reaches the handler and later message ctx", async 
   await activate(activation("message", messagePayload()));
   assert.equal(ctxStart.kv.n, 7);
 });
+
+test("a failure before the turn exists still names itself instead of trapping", async () => {
+  const { activate } = defineAgentloop({
+    onSessionStart() {
+      throw new Error("hydration rejected the journal tail");
+    },
+    async onMessage() {},
+  });
+
+  // Anything that escapes this export reaches the host as a bare Wasm trace with no message.
+  const hydration = JSON.parse((await activate(activation("session_start", JSON.stringify({
+    activation_id: "act-start",
+    tail: [],
+  })))).payloadJson);
+  assert.equal(hydration.outcome, "failed");
+  assert.equal(hydration.error.message, "hydration rejected the journal tail");
+
+  const malformed = JSON.parse((await activate(activation("message", "{not json"))).payloadJson);
+  assert.equal(malformed.outcome, "failed");
+  assert.equal(malformed.activation_id, "act-unknown");
+  assert.ok(malformed.error.message.length > 0);
+});

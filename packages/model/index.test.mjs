@@ -36,3 +36,11 @@ test("a host import's own typed failure is preserved exactly", () => {
   const hostFailure = { payload: { code: 'network_denied', message: 'blocked', retryable: false } };
   assert.equal(caught(() => typed('start', () => { throw hostFailure; })), hostFailure);
 });
+
+test("SSE decoding accepts any byte sequence the component ABI delivers", () => {
+  const wire = [...new TextEncoder().encode("data: {\"a\":1}\n\n")];
+  // A host list<u8> does not reach a componentized guest as a Uint8Array.
+  assert.deepEqual(new SseDecoder().feed(wire), [{ event: undefined, data: "{\"a\":1}" }]);
+  assert.deepEqual(new SseDecoder().feed(Uint8Array.from(wire)), [{ event: undefined, data: "{\"a\":1}" }]);
+  assert.throws(() => new SseDecoder().feed("data: x"), /byte sequence/u);
+});
