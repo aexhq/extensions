@@ -1,3 +1,4 @@
 # `@aexhq/model`
 
-Small, runtime-neutral helpers for authoring Brain `Model/v1` components. Provider components remain ordinary packages; Brain brokers their bounded HTTP stream and does not contain provider dialect code.
+The guard every component export reports through, so a failure returns the component's declared
+`extension-error` instead of trapping as an opaque wasm fault.

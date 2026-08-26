@@ -32,8 +32,6 @@ try {
     "loop-codex",
     "loop-pi",
     "model",
-    "model-anthropic",
-    "model-openai",
     "tools",
   ].map((name) => pack(path.join(root, "packages", name)));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
@@ -46,13 +44,11 @@ import { app } from "@aexhq/env-app";
 import { awsMicrovm } from "@aexhq/env-aws-microvm";
 import { codex } from "@aexhq/loop-codex";
 import { pi } from "@aexhq/loop-pi";
-import { anthropic } from "@aexhq/model-anthropic";
-import { openai } from "@aexhq/model-openai";
 import { bash, subagents } from "@aexhq/tools";
 
-const values = [app({ id: "smoke" }), awsMicrovm(), pi(), codex(), anthropic(), openai(), bash(), subagents()];
+const values = [app({ id: "smoke" }), awsMicrovm(), pi(), codex(), bash(), subagents()];
 assert.deepEqual(values.map((value) => value.extension), [
-  "environment", "environment", "agentloop", "agentloop", "model", "model", "tool", "tool",
+  "environment", "environment", "agentloop", "agentloop", "tool", "tool",
 ]);
 for (const value of values) assert.ok((await prepareComponent(value)).bytes > 0);
 console.log("packed extension packages compose through the public Brain SDK");

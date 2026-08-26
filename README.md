@@ -14,9 +14,7 @@ available to external authors; no package in this repository is privileged.
 | `@aexhq/tools` | file, shell, search, web, and child-session Tool components |
 | `@aexhq/env-app` | customer-application callback Environment component |
 | `@aexhq/env-aws-microvm` | AWS Lambda MicroVM Environment component |
-| `@aexhq/model` | Model component authoring helpers |
-| `@aexhq/model-openai` | OpenAI Model component |
-| `@aexhq/model-anthropic` | Anthropic Model component |
+| `@aexhq/model` | The typed-failure guard for component exports |
 
 Package factories return immutable component declarations for Brain. Published
 packages include precompiled WebAssembly components and their verified identity;
