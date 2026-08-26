@@ -1,0 +1,41 @@
+name: component host
+description: Brain's own component-host worker, built from the immutable Brain revision this repository pins.
+
+outputs:
+  binary:
+    description: The component-host executable.
+    value: ${{ steps.install.outputs.binary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the pinned Brain revision
+      id: source
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The AWS MicroVM runtime already pins the one immutable Brain source this repository
+        # builds against; extension rounds must cross that exact host ABI, not a second pin.
+        revision=$(grep -m1 -oE 'brain\.git", rev = "[0-9a-f]{40}"' \
+          packages/env-aws-microvm/runtime/Cargo.toml | grep -oE '[0-9a-f]{40}')
+        [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+        echo "revision=$revision" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ~/.component-host
+        key: component-host-${{ runner.os }}-${{ steps.source.outputs.revision }}
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: "1.97.1"
+    - name: Install the worker
+      id: install
+      shell: bash
+      env:
+        REVISION: ${{ steps.source.outputs.revision }}
+      run: |
+        set -euo pipefail
+        binary="$HOME/.component-host/bin/component-host"
+        test -x "$binary" || cargo install --locked --root "$HOME/.component-host" \
+          --git https://github.com/aexhq/brain.git --rev "$REVISION" \
+          --bin component-host brain-component-host
+        echo "binary=$binary" >> "$GITHUB_OUTPUT"

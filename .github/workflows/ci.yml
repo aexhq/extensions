@@ -44,6 +44,70 @@ jobs:
           done
       - run: npm test
 
+  components:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      workspaces: ${{ steps.list.outputs.workspaces }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - id: list
+        run: echo "workspaces=$(node tools/npm-release.mjs workspaces)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: extensions-components-${{ github.sha }}
+          path: packages/*/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  component-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/component-host
+
+  # The four component contracts only exist between a real componentized guest and a real host, so
+  # a plain-JS test cannot reach an opaque trap, a forwarded null, a dropped sealed instruction or
+  # a `list<u8>` the guest does not recognise. Each package proves its own components here.
+  component-smoke:
+    needs: [components, component-host]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJSON(needs.components.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: ./.github/actions/component-host
+        id: host
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-components-${{ github.sha }}
+          path: packages
+      - name: Drive the built components through a real round
+        env:
+          COMPONENT_HOST: ${{ steps.host.outputs.binary }}
+        run: node tools/component-smoke.mjs "${{ matrix.workspace }}"
+
   runtime-format:
     runs-on: ubuntu-24.04
     steps:

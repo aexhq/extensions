@@ -114,6 +114,19 @@ jobs:
       - run: npm run build
       - run: npm run package-smoke
 
+  component-host:
+    if: inputs.operation == 'bootstrap' || inputs.operation == 'stage'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/component-host
+
   prepare:
     if: inputs.operation == 'bootstrap' || inputs.operation == 'stage'
     needs: [validate, stage-tests, stage-package-smoke]
@@ -123,6 +136,9 @@ jobs:
       contents: read
     outputs:
       versions: ${{ steps.pack.outputs.versions }}
+      workspaces: ${{ steps.pack.outputs.workspaces }}
+      base: ${{ steps.pack.outputs.base }}
+      dependents: ${{ steps.pack.outputs.dependents }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -144,7 +160,11 @@ jobs:
           release_dir="$RUNNER_TEMP/extensions-npm-release"
           node tools/npm-release.mjs pack "$release_dir"
           versions=$(node tools/npm-release.mjs versions "$release_dir/manifest.json")
+          order=$(node tools/npm-release.mjs order "$release_dir/manifest.json")
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          echo "workspaces=$(node tools/npm-release.mjs workspaces)" >> "$GITHUB_OUTPUT"
+          echo "base=$(jq -c .base <<<"$order")" >> "$GITHUB_OUTPUT"
+          echo "dependents=$(jq -c .dependents <<<"$order")" >> "$GITHUB_OUTPUT"
           node tools/npm-release.mjs markdown "$release_dir/manifest.json" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
         with:
@@ -161,6 +181,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJSON(needs.prepare.outputs.base || '[]') }}
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -176,11 +200,105 @@ jobs:
       - name: Publish once with provenance under next
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
-        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" stage
-      - name: Record staged versions
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" stage "${{ matrix.workspace }}"
+
+  # Registry visibility of an exact version is a hard dependency of everything built or installed
+  # against it, so these wait for the wave above and for nothing else.
+  stage-dependents:
+    if: inputs.operation == 'stage'
+    needs: [prepare, stage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJSON(needs.prepare.outputs.dependents || '[]') }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" "$RUNNER_TEMP/extensions-npm-release/manifest.json"
+      - name: Publish once with provenance under next
         env:
-          VERSIONS: ${{ needs.prepare.outputs.versions }}
-        run: echo "Staged exact versions under npm dist-tag \`next\` — \`$VERSIONS\`" >> "$GITHUB_STEP_SUMMARY"
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" stage "${{ matrix.workspace }}"
+
+  # The staged archive is the artifact a session loads, so its components run against the real host
+  # ABI here, installed from the registry rather than rebuilt. Promotion consumes these receipts.
+  component-smoke:
+    if: ${{ !cancelled() && (needs.stage-dependents.result == 'success' || needs.bootstrap.result == 'success') }}
+    needs: [prepare, component-host, stage-dependents, bootstrap]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJSON(needs.prepare.outputs.workspaces || '[]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: ./.github/actions/component-host
+        id: host
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: extensions-npm-release-${{ github.sha }}
+          path: ${{ runner.temp }}/extensions-npm-release
+      - name: Install the exact staged version
+        id: staged
+        shell: bash
+        env:
+          WORKSPACE: ${{ matrix.workspace }}
+        run: |
+          set -euo pipefail
+          entry=$(jq -e --arg workspace "$WORKSPACE" '.packages[] | select(.workspace == $workspace)' \
+            "$RUNNER_TEMP/extensions-npm-release/manifest.json")
+          spec="$(jq -r .name <<<"$entry")@$(jq -r .version <<<"$entry")"
+          consumer="$RUNNER_TEMP/staged-consumer"
+          mkdir -p "$consumer"
+          cd "$consumer"
+          npm init --yes > /dev/null
+          npm install --no-audit --no-fund "$spec"
+          integrity=$(npm view "$spec" dist.integrity)
+          test "$integrity" = "$(jq -r .integrity <<<"$entry")"
+          echo "from=$consumer/node_modules/$(jq -r .name <<<"$entry")" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+      - name: Drive the staged components through a real round
+        env:
+          COMPONENT_HOST: ${{ steps.host.outputs.binary }}
+          FROM: ${{ steps.staged.outputs.from }}
+          SMOKE_INTEGRITY: ${{ steps.staged.outputs.integrity }}
+          WORKSPACE: ${{ matrix.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/smoke"
+          node tools/component-smoke.mjs "$WORKSPACE" --from "$FROM" \
+            --receipt "$RUNNER_TEMP/smoke/$WORKSPACE.json"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: extensions-npm-smoke-${{ github.sha }}-${{ matrix.workspace }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: error
+          retention-days: 30
 
   bootstrap:
     if: inputs.operation == 'bootstrap'
@@ -264,6 +382,13 @@ jobs:
           path: ${{ runner.temp }}/extensions-npm-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.stage_run_id }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: extensions-npm-smoke-${{ needs.validate.outputs.release_sha }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/extensions-npm-smoke
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.stage_run_id }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -275,4 +400,5 @@ jobs:
         env:
           EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+          SMOKE_RECEIPTS: ${{ runner.temp }}/extensions-npm-smoke
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" promote

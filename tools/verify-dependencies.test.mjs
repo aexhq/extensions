@@ -70,6 +70,13 @@ test("promotion verifies the staged manifest with the current workflow source", 
     promote,
     /EXPECTED_COMMIT: \$\{\{ needs\.validate\.outputs\.release_sha \}\}/u,
   );
+  // Without these the job cannot see the stage run's receipts, and every promotion fails closed
+  // mid-release instead of at the pull request that dropped them.
+  assert.match(
+    promote,
+    /pattern: extensions-npm-smoke-\$\{\{ needs\.validate\.outputs\.release_sha \}\}-\*/u,
+  );
+  assert.match(promote, /SMOKE_RECEIPTS: \$\{\{ runner\.temp \}\}\/extensions-npm-smoke/u);
   assert.doesNotMatch(promote, /node "\$RUNNER_TEMP\/extensions-npm-release\/verify-dependencies\.mjs"/u);
   assert.doesNotMatch(workflow, /test "\$release_sha" = "\$EXPECTED_COMMIT"/u);
 });

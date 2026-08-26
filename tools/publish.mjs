@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 
+import { stageOrder } from "./npm-release.mjs";
+
 const npmCli = [
   process.env.npm_execpath,
   path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
@@ -90,7 +92,27 @@ const publishHoldPlaceholder = async (item) => {
   process.stdout.write(`reserved ${item.name}@latest with ${placeholderSpec} (${integrity})\n`);
 };
 
+/**
+ * A staged version is promotable only with a passing component smoke of that exact registry
+ * object: nothing else proves the published bytes run as a component against the host ABI.
+ */
+const assertSmoked = (item) => {
+  const directory = process.env.SMOKE_RECEIPTS;
+  if (directory === undefined) throw new Error("SMOKE_RECEIPTS is unavailable");
+  const receipt = JSON.parse(readFileSync(path.join(directory, `${item.workspace}.json`), "utf8"));
+  if (receipt.name !== item.name || receipt.version !== item.version ||
+      receipt.integrity !== item.integrity) {
+    throw new Error(`the component smoke covered ${receipt.name}@${receipt.version} (${receipt.integrity})`);
+  }
+};
+
 const operation = process.argv[2];
+const workspace = process.argv[3];
+const selected = workspace === undefined
+  ? manifest.packages
+  : manifest.packages.filter((item) => item.workspace === workspace);
+if (selected.length === 0) throw new Error(`the release manifest has no ${workspace} package`);
+
 if (operation === "bootstrap") {
   if (!process.env.NODE_AUTH_TOKEN) {
     throw new Error("the protected npm-production environment has no NPM_DIST_TAG_TOKEN");
@@ -143,7 +165,7 @@ if (operation === "bootstrap") {
   }
 } else if (operation === "stage") {
   const existing = new Map();
-  for (const item of manifest.packages) {
+  for (const item of selected) {
     const spec = `${item.name}@${item.version}`;
     const integrity = registryValue(spec, "dist.integrity");
     if (integrity !== undefined && integrity !== item.integrity) {
@@ -151,7 +173,7 @@ if (operation === "bootstrap") {
     }
     existing.set(spec, integrity);
   }
-  for (const item of manifest.packages) {
+  for (const item of selected) {
     const spec = `${item.name}@${item.version}`;
     if (existing.get(spec) === undefined) {
       run(["publish", path.join(directory, item.filename), "--access", "public", "--tag", "next", "--provenance"], "inherit");
@@ -162,19 +184,31 @@ if (operation === "bootstrap") {
   }
 } else if (operation === "promote") {
   if (!process.env.NODE_AUTH_TOKEN) throw new Error("NPM_DIST_TAG_TOKEN is unavailable");
-  for (const item of manifest.packages) {
-    assertRegistryObject(item);
-    const staged = registryValue(`${item.name}@next`, "version");
-    if (staged !== item.version) {
-      throw new Error(`${item.name}@next is ${staged ?? "absent"}; refusing promotion`);
+  const order = stageOrder(selected);
+  const failures = [];
+  // Each package carries its own evidence, so one unproven package stays staged instead of
+  // holding back the release. Dependency order still decides who moves first.
+  for (const workspace of [...order.base, ...order.dependents]) {
+    const item = selected.find((candidate) => candidate.workspace === workspace);
+    const spec = `${item.name}@${item.version}`;
+    try {
+      assertSmoked(item);
+      assertRegistryObject(item);
+      const staged = registryValue(`${item.name}@next`, "version");
+      if (staged !== item.version) {
+        throw new Error(`${item.name}@next is ${staged ?? "absent"}`);
+      }
+      run(["dist-tag", "add", spec, "latest"], "inherit");
+      await waitFor(() => registryValue(`${item.name}@latest`, "version"), item.version, `${item.name}@latest`);
+      process.stdout.write(`promoted ${spec} without republishing\n`);
+    } catch (error) {
+      failures.push(`${spec}: ${error.message}`);
+      process.stdout.write(`held ${spec} on next: ${error.message}\n`);
     }
   }
-  for (const item of manifest.packages) {
-    const spec = `${item.name}@${item.version}`;
-    run(["dist-tag", "add", spec, "latest"], "inherit");
-    await waitFor(() => registryValue(`${item.name}@latest`, "version"), item.version, `${item.name}@latest`);
-    process.stdout.write(`promoted ${spec} without republishing\n`);
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} package(s) stayed on next:\n${failures.join("\n")}`);
   }
 } else {
-  throw new Error("usage: publish.mjs bootstrap|stage|hold|promote");
+  throw new Error("usage: publish.mjs bootstrap|hold|promote | stage <workspace>");
 }

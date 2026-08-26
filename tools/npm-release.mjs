@@ -51,6 +51,26 @@ const releasedIntegrity = (spec) => {
 export const versionSetByLatestChange = (packageJsonPatch) =>
   /^\+\s*"version":/mu.test(packageJsonPatch);
 
+/**
+ * Staging fans out per package, so the order has to come from the release itself: a package waits
+ * only for the exact versions it is built and installed against. Two waves cover this release; a
+ * deeper chain has to add a wave rather than publish a dependent before its dependency is visible.
+ */
+export const stageOrder = (packages) => {
+  if (packages.some((item) => !Array.isArray(item.needs))) {
+    throw new Error("this release manifest predates per-package staging; stage the release again");
+  }
+  const base = packages.filter((item) => item.needs.length === 0).map((item) => item.workspace);
+  const dependents = packages.filter((item) => item.needs.length > 0);
+  for (const item of dependents) {
+    const late = item.needs.filter((need) => !base.includes(need));
+    if (late.length > 0) {
+      throw new Error(`${item.name} needs ${late.join(", ")}, which no earlier stage wave publishes`);
+    }
+  }
+  return { base, dependents: dependents.map((item) => item.workspace) };
+};
+
 const assertReleasedVersionIsCurrent = (workspace, spec) => {
   const directory = `packages/${workspace}`;
   const commit = git(["log", "-1", "--format=%H", "--", directory]);
@@ -87,8 +107,10 @@ const manifest = async (filename) => {
 async function pack(directory) {
   await mkdir(directory, { recursive: false });
   const packages = [];
+  const documents = new Map();
   for (const workspace of workspaces) {
     const packageDocument = await document(workspace);
+    documents.set(workspace, packageDocument);
     if (packageDocument.publishConfig?.access !== "public" || packageDocument.publishConfig?.tag !== "next") {
       throw new Error(`${packageDocument.name} must publish publicly under the next dist-tag`);
     }
@@ -126,6 +148,7 @@ async function pack(directory) {
       peerDependencies: packageDocument.peerDependencies ?? {},
     });
   }
+  const owner = new Map(packages.map((item) => [item.name, item.workspace]));
   for (const item of packages) {
     for (const [name, version] of Object.entries(item.dependencies)) {
       const local = packages.find((candidate) => candidate.name === name);
@@ -133,7 +156,15 @@ async function pack(directory) {
         throw new Error(`${item.name} must depend on the exact release version ${name}@${local.version}`);
       }
     }
+    // An authoring toolchain is a development edge and still orders staging: its dependent is
+    // built with it, and the exact version has to be on the registry before that happens.
+    const declared = documents.get(item.workspace);
+    item.needs = [...new Set(Object.keys({ ...declared.dependencies, ...declared.devDependencies }))]
+      .map((name) => owner.get(name))
+      .filter((workspace) => workspace !== undefined && workspace !== item.workspace)
+      .sort();
   }
+  stageOrder(packages);
   const value = { schema: 1, source: process.env.GITHUB_SHA ?? "local", packages };
   await writeFile(path.join(directory, "manifest.json"), `${JSON.stringify(value, null, 2)}\n`);
   for (const filename of ["npm-release.mjs", "verify-dependencies.mjs", "publish.mjs"]) {
@@ -147,7 +178,12 @@ const [command, argument] = process.argv[1] !== undefined &&
   : ["import"];
 if (command === "import") { /* imported for its exported contracts */ }
 else if (command === "pack" && argument !== undefined) await pack(path.resolve(argument));
-else if (command === "versions" && argument !== undefined) {
+else if (command === "workspaces") process.stdout.write(JSON.stringify(workspaces));
+else if (command === "order" && argument !== undefined) {
+  const value = await manifest(path.resolve(argument));
+  const { base, dependents } = stageOrder(value.packages);
+  process.stdout.write(JSON.stringify({ base, dependents }));
+} else if (command === "versions" && argument !== undefined) {
   const value = await manifest(path.resolve(argument));
   process.stdout.write(value.packages.map(({ name, version }) => `${name}@${version}`).join(","));
 } else if (command === "markdown" && argument !== undefined) {
@@ -157,5 +193,7 @@ else if (command === "versions" && argument !== undefined) {
     process.stdout.write(`| \`${item.name}\` | \`${item.version}\` | \`${item.integrity}\` |\n`);
   }
 } else {
-  throw new Error("usage: npm-release.mjs pack <directory> | versions|markdown <manifest.json>");
+  throw new Error(
+    "usage: npm-release.mjs pack <directory> | workspaces | order|versions|markdown <manifest.json>",
+  );
 }
