@@ -9,7 +9,6 @@ export interface OfficialToolConfig {
     readonly contract_digest: string;
   };
   readonly descriptor: Readonly<Record<string, unknown>>;
-  readonly bundleBase64: string;
 }
 
 export type OfficialTool = ComponentExtension<"tool", OfficialToolConfig>;

@@ -12,6 +12,6 @@
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.3.1"
+    "@aexhq/brain": "0.4.0"
   }
 }

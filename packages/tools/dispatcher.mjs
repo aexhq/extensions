@@ -5,7 +5,6 @@ export function invoke(request) {
   const terminal = invokeEnvironment(
     request.metadata.callId,
     JSON.stringify(config.descriptor),
-    decodeBase64(config.bundleBase64),
     request.inputJson,
     request.deadlineAtMs,
   );
@@ -24,11 +23,4 @@ export function invoke(request) {
     };
   }
   return { valueJson: terminal, content: terminal, isError: false };
-}
-
-function decodeBase64(value) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
 }

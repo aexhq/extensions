@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-app",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Customer application Environment component for Brain sessions",
   "license": "Apache-2.0",
   "repository": {
@@ -18,6 +18,6 @@
   },
   "files": ["dist", "index.mjs", "index.d.ts", "README.md"],
   "scripts": { "build": "node build.mjs", "test": "npm run build && node --test", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.3.1" },
+  "dependencies": { "@aexhq/brain": "0.4.0" },
   "devDependencies": { "@bytecodealliance/componentize-js": "0.22.0" }
 }
