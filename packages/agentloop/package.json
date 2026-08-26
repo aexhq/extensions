@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Author precompiled Agentloop components for Brain sessions against the canonical typed context",
   "license": "Apache-2.0",
   "repository": {
@@ -24,7 +24,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.3.1",
+    "@aexhq/brain": "0.4.0",
     "esbuild": "0.25.9"
   },
   "devDependencies": {
