@@ -19,7 +19,8 @@ function observeAttempt(providerOperationId, cursor) {
   const attempt = requiredAttempt(providerOperationId);
   if (attempt.completed) return { state: "completed", events: [], nextCursor: attempt.cursor, terminalJson: terminal(attempt.stopReason) };
   const chunk = httpRead(attempt.requestId, cursor ?? attempt.cursor, 64 * 1024);
-  if (chunk.status !== undefined && (chunk.status < 200 || chunk.status >= 300)) throw new Error(`OpenAI HTTP status ${chunk.status}`);
+  // Only the first chunk carries a status; the ABI may render the absent option as null.
+  if (typeof chunk.status === "number" && (chunk.status < 200 || chunk.status >= 300)) throw new Error(`OpenAI HTTP status ${chunk.status}`);
   const events = [];
   for (const frame of attempt.decoder.feed(chunk.bytes)) {
     for (const decoded of decodeFrame(frame.event, frame.data)) {

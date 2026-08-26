@@ -16,8 +16,8 @@ export class SseDecoder {
     return this.#buffer.byteLength;
   }
 
-  feed(chunk) {
-    if (!(chunk instanceof Uint8Array)) throw new TypeError("SSE chunks must be Uint8Array values");
+  feed(source) {
+    const chunk = bytes(source);
     const combined = new Uint8Array(this.#buffer.byteLength + chunk.byteLength);
     combined.set(this.#buffer);
     combined.set(chunk, this.#buffer.byteLength);
@@ -54,6 +54,20 @@ export class SseDecoder {
     }
     return events;
   }
+}
+
+/**
+ * A host `list<u8>` does not reach a componentized guest as a `Uint8Array`, so a chunk arrives as
+ * an ordinary array of byte values. Accept any byte sequence the component ABI delivers and reject
+ * everything else, rather than pinning one representation of the same bytes.
+ */
+function bytes(source) {
+  if (source instanceof Uint8Array) return source;
+  if (ArrayBuffer.isView(source)) {
+    return new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  }
+  if (Array.isArray(source)) return Uint8Array.from(source);
+  throw new TypeError("SSE chunks must be a byte sequence");
 }
 
 export function parseJson(value, field) {

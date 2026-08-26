@@ -269,9 +269,13 @@ export function defineAgentloop<Config = unknown>(handlers: AgentloopHandlers<Co
   let start: SessionStart | null = null;
   return {
     async activate(request: ComponentActivation): Promise<{ payloadJson: string }> {
+      // Nothing may escape this export. The host compiles a thrown error into a bare Wasm trap
+      // whose message is gone, so activation parsing and hydration report themselves too.
+      let activationId = "act-unknown";
+      try {
       const parsed = JSON.parse(request.payloadJson) as Record<string, unknown>;
       const config = JSON.parse(request.configJson) as Config;
-      const activationId = String(parsed["activation_id"] ?? "act-unknown");
+      activationId = String(parsed["activation_id"] ?? "act-unknown");
       const completed = JSON.stringify({ activation_id: activationId, outcome: "completed" });
       if (request.kind === "session_start") {
         start = parsed as unknown as SessionStart;
@@ -323,12 +327,19 @@ export function defineAgentloop<Config = unknown>(handlers: AgentloopHandlers<Co
             // The kernel latch already owns the failure (e.g. the op channel is gone).
           }
         }
-        return { payloadJson: JSON.stringify({
-          activation_id: activationId,
-          outcome: "failed",
-          error: { code: "internal", message: message.slice(0, 4096), retryable: false },
-        }) };
+        return { payloadJson: failed(activationId, message) };
+      }
+      } catch (error) {
+        return {
+          payloadJson: failed(activationId, error instanceof Error ? error.message : String(error)),
+        };
       }
     },
   };
 }
+
+const failed = (activationId: string, message: string): string => JSON.stringify({
+  activation_id: activationId,
+  outcome: "failed",
+  error: { code: "internal", message: message.slice(0, 4096), retryable: false },
+});
