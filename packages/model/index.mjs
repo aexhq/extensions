@@ -104,11 +104,12 @@ function parseFrame(bytes) {
   return { event, data: data.join("\n") };
 }
 
-// A Model export declares `result<_, extension-error>`, but componentize-js rethrows a plain
+// A component export declares `result<_, extension-error>`, but componentize-js rethrows a plain
 // `Error` as an opaque wasm trap that reaches the kernel without a reason. Every export reports
-// through this guard so a provider or host failure keeps its message. A host import already
-// throws its own typed payload; that one is preserved exactly.
-export function typed(operation, call) {
+// through this guard so a provider, host or marshalling failure keeps its message. A host import
+// already throws its own typed payload; that one is preserved exactly. `kind` names the component
+// the failure belongs to, so a Tool export does not report a Model code.
+export function typed(operation, call, kind = "model") {
   try {
     return call();
   } catch (error) {
@@ -118,7 +119,7 @@ export function typed(operation, call) {
     }
     throw {
       payload: {
-        code: `model_${operation}_failed`,
+        code: `${kind}_${operation}_failed`,
         message: String(error?.message ?? error).slice(0, 4096),
         retryable: false,
       },
