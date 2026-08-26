@@ -21,9 +21,12 @@ for (const name of names) {
       contract_digest: definition.contract_digest,
       bundle_digest: bundle.checksum,
     },
-    bundleBase64: bundle.content_base64,
   };
   await writeFile(new URL(`./dist/${name}.component.json`, here), `${JSON.stringify(config)}\n`);
+  await writeFile(
+    new URL(`./dist/${name}.bundle.mjs`, here),
+    Buffer.from(bundle.content_base64, "base64"),
+  );
 }
 
 const source = await readFile(new URL("./dispatcher.mjs", here), "utf8");

@@ -24,6 +24,7 @@ function official(name) {
   return component("tool", asset, configs[name], {
     grants: ["environment"],
     metadata: { name, source: "@aexhq/tools" },
+    bundle: new URL(`./dist/${name}.bundle.mjs`, import.meta.url),
   });
 }
 
