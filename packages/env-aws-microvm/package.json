@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-aws-microvm",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "AWS MicroVM Environment component and external driver runtime for Brain",
   "license": "Apache-2.0",
   "repository": {
@@ -14,6 +14,6 @@
   "exports": { ".": "./index.mjs", "./package.json": "./package.json" },
   "files": ["dist", "index.mjs", "index.d.ts", "README.md", "runtime"],
   "scripts": { "build": "node build.mjs", "test": "npm run build && node --test index.test.mjs && cargo test --manifest-path runtime/Cargo.toml --workspace --all-targets", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.4.0" },
+  "dependencies": { "@aexhq/brain": "0.5.0" },
   "devDependencies": { "@bytecodealliance/componentize-js": "0.22.0" }
 }

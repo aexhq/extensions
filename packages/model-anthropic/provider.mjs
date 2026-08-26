@@ -8,7 +8,8 @@ export function buildRequest(request) {
   if (!Array.isArray(messages) || !Array.isArray(tools) || !isObject(generation) || !isObject(options)) {
     throw new Error("model request JSON fields have invalid root types");
   }
-  if (generation.reasoning_effort !== undefined || generation.reasoningEffort !== undefined) {
+  // The sealed prefix always carries this field, null when unset, so only a chosen effort is one.
+  if ((generation.reasoning_effort ?? generation.reasoningEffort) != null) {
     throw new Error("reasoning_effort is not supported by the Anthropic MVP profile");
   }
   const body = {
