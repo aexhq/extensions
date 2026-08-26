@@ -132,17 +132,24 @@ impl Driver for HttpRelayDriver {
             .await
             .map_err(|_| DriverError::unavailable("Environment relay is unavailable"))?;
         let status = response.status();
+        const MAX_RELAY_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
         if !status.is_success() {
+            // Collapsing every client error into one status, and dropping the relayed body, left a
+            // caller with "400 Bad Request" and no way to tell a refusal from a bad credential.
+            let detail = response.text().await.unwrap_or_default();
+            let detail = detail.trim();
             return Err(DriverError {
-                status: if status.is_client_error() {
-                    StatusCode::BAD_REQUEST
+                status,
+                message: if detail.is_empty() {
+                    format!("Environment relay returned {status}")
                 } else {
-                    StatusCode::SERVICE_UNAVAILABLE
+                    format!(
+                        "Environment relay returned {status}: {}",
+                        detail.chars().take(512).collect::<String>()
+                    )
                 },
-                message: format!("Environment relay returned {status}"),
             });
         }
-        const MAX_RELAY_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
         let mut body = Vec::new();
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
@@ -234,9 +241,22 @@ async fn dispatch(State(state): State<DriverState>, headers: HeaderMap, body: By
             "Environment driver is not configured",
         );
     };
+    let driver = driver.clone();
+    let selected = driver_name.to_owned();
+    let action = request.action.clone();
     match driver.dispatch(request).await {
         Ok(value) => Json(value).into_response(),
-        Err(error) => failure(error.status, &error.message),
+        Err(error) => {
+            // A refusal that is never logged is a refusal nobody can diagnose from the plane.
+            tracing::warn!(
+                driver = %selected,
+                action = %action,
+                status = %error.status,
+                reason = %error.message,
+                "Environment dispatch refused"
+            );
+            failure(error.status, &error.message)
+        }
     }
 }
 
@@ -279,6 +299,41 @@ mod tests {
                 .to_string(),
             ))
             .unwrap()
+    }
+
+    struct Refuse;
+
+    #[async_trait]
+    impl Driver for Refuse {
+        async fn dispatch(&self, _request: DispatchRequest) -> Result<Value, DriverError> {
+            Err(DriverError {
+                status: StatusCode::UNAUTHORIZED,
+                message: "Environment relay returned 401 Unauthorized: bad credential".into(),
+            })
+        }
+    }
+
+    /// A refusal used to reach its caller as a bare 400 whatever the relay actually said, which is
+    /// how an Environment release that could never succeed was retried until the plane suffered.
+    #[tokio::test]
+    async fn a_refusal_keeps_its_status_and_its_reason() {
+        let app = router(
+            "secret",
+            [("echo".into(), Arc::new(Refuse) as Arc<dyn Driver>)],
+        )
+        .unwrap();
+        let response = app.oneshot(request("secret", "echo")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            value["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("bad credential")),
+            "the refusal must carry its reason: {value}"
+        );
     }
 
     #[tokio::test]
