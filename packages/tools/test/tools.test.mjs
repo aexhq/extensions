@@ -30,7 +30,7 @@ test("official tools are immutable Environment-routed components", async () => {
 // quarter of the ceiling because the same record also carries the prompt, model and environment
 // seals of whatever session selects these tools.
 test("the full official Tool set seals far below Brain's CONFIG journal ceiling", async () => {
-  const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write(), subagents()];
+  const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write()];
   const sealed = values.reduce((total, value) => total + JSON.stringify(value.config).length, 0);
   assert.ok(
     sealed < MAX_SEALED_CONFIG_BYTES / 4,
@@ -49,14 +49,15 @@ test("the full official Tool set seals far below Brain's CONFIG journal ceiling"
   }
 });
 
-test("subagents is an ordinary Tool component with child-session authority", async () => {
+// Spawning reaches parent and child session data, so subagents is a builtin a customer turns
+// on, not a sandboxed extension: it ships no component and never crosses the component host.
+test("subagents declares Brain's builtin capability rather than a component", () => {
   const value = subagents();
-  assert.equal(value.config.definition.name, "subagents");
-  assert.deepEqual(value.grants, ["children"]);
+  assert.equal(value.kind, "brain.tool");
+  assert.equal(value.name, "subagents");
+  assert.deepEqual(value.executor, { kind: "engine", capability: "brain.subagents" });
+  assert.equal(value.artifact, undefined);
   assert.deepEqual(task(), value);
-  const prepared = await prepareComponent(value);
-  assert.ok(prepared.bytes > 0);
-  assert.equal(prepared.component_digest.length, 64);
 });
 
 test("each factory reuses one executable component and seals distinct configuration", () => {

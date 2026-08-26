@@ -17,6 +17,8 @@ create-time artifact layer, so Brain hands the Environment exactly the code the 
 Brain neither evaluates the tool module nor requires the Environment to be a particular operating
 system, provider or isolation product.
 
-`task()` (also exported as `subagents()`) is a separate ordinary Tool component. Its only grant is
-the bounded child-session interface, so it can create, message, inspect, wait for, list, interrupt,
-or end durable direct child sessions without an Environment binding.
+`subagents()` (also exported as `task()`) is not an extension at all: it declares Brain's builtin
+`brain.subagents` capability, which a customer turns on by selecting it. Spawning reaches parent
+and child session data, so it resolves inside Brain and never crosses the component host. It can
+create, message, inspect, wait for, list, interrupt, or end durable direct child sessions, and it
+ships no component and needs no Environment binding.
