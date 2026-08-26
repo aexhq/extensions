@@ -1,8 +1,11 @@
+import { typed } from "@aexhq/model";
 import { dispatch } from "aex:environment/host@1.0.0";
 
 const NO_DEADLINE = 18_446_744_073_709_551_615n;
 
-export function resolve(request) {
+export function resolve(request) { return typed("resolve", () => resolveBinding(request), "app_environment"); }
+
+function resolveBinding(request) {
   const config = JSON.parse(request.configJson);
   return {
     bindingJson: JSON.stringify({
@@ -18,7 +21,9 @@ export function resolve(request) {
   };
 }
 
-export function submit(bindingJson, operation) {
+export function submit(bindingJson, operation) { return typed("submit", () => submitOperation(bindingJson, operation), "app_environment"); }
+
+function submitOperation(bindingJson, operation) {
   const response = call(operation.operationId, "submit", {
     binding: JSON.parse(bindingJson),
     operation: {
@@ -33,7 +38,9 @@ export function submit(bindingJson, operation) {
   return { providerOperationId: response.provider_operation_id ?? operation.operationId };
 }
 
-export function observe(bindingJson, providerOperationId, cursor) {
+export function observe(bindingJson, providerOperationId, cursor) { return typed("observe", () => observeOperation(bindingJson, providerOperationId, cursor), "app_environment"); }
+
+function observeOperation(bindingJson, providerOperationId, cursor) {
   const response = call(providerOperationId, "observe", {
     binding: JSON.parse(bindingJson),
     provider_operation_id: providerOperationId,
@@ -52,14 +59,18 @@ export function observe(bindingJson, providerOperationId, cursor) {
   };
 }
 
-export function cancel(bindingJson, providerOperationId) {
+export function cancel(bindingJson, providerOperationId) { return typed("cancel", () => cancelOperation(bindingJson, providerOperationId), "app_environment"); }
+
+function cancelOperation(bindingJson, providerOperationId) {
   call(providerOperationId, "cancel", {
     binding: JSON.parse(bindingJson),
     provider_operation_id: providerOperationId,
   });
 }
 
-export function acknowledge(bindingJson, providerOperationId, terminalJson) {
+export function acknowledge(bindingJson, providerOperationId, terminalJson) { return typed("acknowledge", () => acknowledgeOperation(bindingJson, providerOperationId, terminalJson), "app_environment"); }
+
+function acknowledgeOperation(bindingJson, providerOperationId, terminalJson) {
   call(providerOperationId, "acknowledge", {
     binding: JSON.parse(bindingJson),
     provider_operation_id: providerOperationId,
@@ -67,7 +78,9 @@ export function acknowledge(bindingJson, providerOperationId, terminalJson) {
   });
 }
 
-export function release(bindingJson) {
+export function release(bindingJson) { return typed("release", () => releaseBinding(bindingJson), "app_environment"); }
+
+function releaseBinding(bindingJson) {
   const binding = JSON.parse(bindingJson);
   call(binding.environment_id, "release", { binding });
 }
