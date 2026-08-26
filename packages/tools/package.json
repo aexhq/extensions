@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tools",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Official precompiled Tool components for Brain sessions",
   "license": "Apache-2.0",
   "homepage": "https://aex.dev",
@@ -41,7 +41,9 @@
   "devDependencies": {
     "@bytecodealliance/componentize-js": "0.22.0",
     "@types/node": "^24.3.0",
-    "typescript": "^5.9.2",
-    "zod": "4.4.3"
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "zod": ">=4.4.3 <5"
   }
 }

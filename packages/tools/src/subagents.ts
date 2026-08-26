@@ -1,4 +1,4 @@
-import { tool } from "@aexhq/brain";
+import { officialTool } from "@aexhq/brain/internal";
 import { z } from "zod";
 
 const childId = z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
@@ -9,8 +9,13 @@ const forkTurns = z.union([
   z.string().max(10).regex(/^[1-9][0-9]*$/),
 ]);
 
-const subagents = tool(
-  z.object({
+// Spawning reaches parent and child session data, which is why this is a builtin a customer
+// turns on rather than a sandboxed extension: `brain.subagents` resolves inside Brain and never
+// crosses the component host. The capability name is fixed here so it is never a caller's choice.
+const subagents = officialTool({
+  name: "subagents",
+  description: "Create and explicitly interact with durable direct child sessions.",
+  input: z.object({
     action: z.enum([
       "spawn_agent",
       "send_message",
@@ -29,13 +34,7 @@ const subagents = tool(
     cursor: z.string().max(4096).optional(),
     limit: z.number().int().positive().max(100).optional(),
   }),
-  async () => {
-    throw new Error("subagents runs through the Tool child-session capability");
-  },
-)
-  .named("subagents")
-  .describe("Create and explicitly interact with durable direct child sessions.")
-  .returns(z.unknown())
-  .server(import.meta.url);
+  capability: "brain.subagents",
+});
 
 export default subagents;
