@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/brain-pi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pi-style parallel-Tool Brain extension",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.8.2",
+    "@aexhq/brain": "0.8.4",
     "zod": "4.4.3"
   },
   "devDependencies": {}
