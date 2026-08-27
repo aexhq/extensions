@@ -2,7 +2,7 @@
   "name": "@aexhq/tools",
   "version": "0.6.3",
   "description": "Official remote Tool definitions and Environment-side implementations for Brain sessions",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "homepage": "https://aex.dev",
   "repository": {
     "type": "git",

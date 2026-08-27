@@ -2,7 +2,7 @@
   "name": "@aexhq/env-app",
   "version": "0.4.0",
   "description": "Language-neutral HTTP Environment adapter for Brain sessions",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aexhq/extensions.git",

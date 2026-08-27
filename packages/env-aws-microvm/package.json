@@ -2,7 +2,7 @@
   "name": "@aexhq/env-aws-microvm",
   "version": "0.5.3",
   "description": "AWS MicroVM remote Environment descriptor and provider runtime for Brain",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aexhq/extensions.git",
