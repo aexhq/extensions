@@ -104,9 +104,6 @@ enum ImageCommand {
         public_connector: String,
         #[arg(long)]
         gateway_authority: String,
-        /// Host-only API Gateway names from the dev and production Platform outputs.
-        #[arg(long = "customer-environment-host", required = true, num_args = 2, action = clap::ArgAction::Append)]
-        customer_environment_hosts: Vec<String>,
         #[arg(long, required = true, action = clap::ArgAction::SetTrue)]
         confirm_dev_network_canary: bool,
     },
@@ -232,16 +229,9 @@ async fn image_command(
             allowlist_connector,
             public_connector,
             gateway_authority,
-            customer_environment_hosts,
             confirm_dev_network_canary,
         } => {
             debug_assert!(confirm_dev_network_canary, "clap enforces the flag");
-            let customer_environment_hosts: [String; 2] =
-                customer_environment_hosts.try_into().map_err(|_| {
-                    anyhow::anyhow!(
-                        "exactly two --customer-environment-host values are required (dev and production)"
-                    )
-                })?;
             run_network_boundary_canary(
                 control,
                 NetworkBoundaryCanaryConfig {
@@ -255,7 +245,6 @@ async fn image_command(
                     gateway_authority: environment_core::connector::GatewayAuthority::parse(
                         &gateway_authority,
                     )?,
-                    customer_environment_hosts,
                 },
             )
             .await

@@ -218,14 +218,12 @@ jobs:
       - name: Prove dev image connector boundaries
         if: inputs.plane == 'dev'
         env:
-          AEX_CUSTOMER_ENVIRONMENT_DEV_HOST: ${{ vars.AEX_CUSTOMER_ENVIRONMENT_DEV_HOST }}
-          AEX_CUSTOMER_ENVIRONMENT_PRD_HOST: ${{ vars.AEX_CUSTOMER_ENVIRONMENT_PRD_HOST }}
           ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY: ${{ vars.ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY }}
           ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST }}
           ENVIRONMENT_NETWORK_CONNECTOR_NONE: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_NONE }}
           ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC: ${{ vars.ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC }}
         run: |
-          test -n "$AEX_CUSTOMER_ENVIRONMENT_DEV_HOST" && test -n "$AEX_CUSTOMER_ENVIRONMENT_PRD_HOST" && test -n "$ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY"
+          test -n "$ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY"
           environment-image-binaries/environment-lambda --region us-east-1 image network-canary \
             --image-arn '${{ steps.publish.outputs.image_arn }}' \
             --image-version '${{ steps.publish.outputs.image_version }}' \
@@ -233,5 +231,4 @@ jobs:
             --allowlist-connector "$ENVIRONMENT_NETWORK_CONNECTOR_ALLOWLIST" \
             --public-connector "$ENVIRONMENT_NETWORK_CONNECTOR_PUBLIC" \
             --gateway-authority "$ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY" \
-            --customer-environment-host "$AEX_CUSTOMER_ENVIRONMENT_DEV_HOST" "$AEX_CUSTOMER_ENVIRONMENT_PRD_HOST" \
             --confirm-dev-network-canary

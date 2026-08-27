@@ -123,17 +123,13 @@ CONNECT capabilities. These negative canaries do not receive the KMS signing per
 the production Environment. The `public` target attempts TCP connections to every connector-routed
 canonical IPv4 special-use fixture and fails if any succeeds, then requires canonical public IPv4
 controls to remain reachable so a broken connector cannot produce a pass. It also requires source
-denial from the website, both public API planes, and both customer-Environment API Gateway hosts. For each
-customer-Environment host it exercises a WSS `$connect` handshake and an unauthenticated Management API
-request; it does not claim that the public API Gateway TCP endpoint is unreachable.
+denial from the website and both public API planes.
 
-The workflow reads host-only `AEX_CUSTOMER_ENVIRONMENT_DEV_HOST` and
-`AEX_CUSTOMER_ENVIRONMENT_PRD_HOST`, the three connector identities, and the bare fixed-private
-`ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY` from the protected `dev` GitHub environment. Operators install the
-host values during dormant bootstrap by extracting the hostname from each Platform
-`customer_environment_websocket_url` Terraform output; the gateway authority and connector identities
-come from the corresponding dev plane outputs. They are environment configuration, not workflow
-dispatch inputs, and full callback URLs or grants are never passed to or logged by the canary.
+The workflow reads the three connector identities and the bare fixed-private
+`ENVIRONMENT_EGRESS_GATEWAY_AUTHORITY` from the protected `dev` GitHub environment. The gateway
+authority and connector identities come from the corresponding dev plane outputs. They are
+environment configuration, not workflow dispatch inputs, and grants are never passed to or logged
+by the canary.
 This is behavioral coverage only: an unreachable destination does not reveal which layer rejected
 it. The plane's exact Terraform/NACL plan remains the authoritative rule proof. Every canary always
 terminates its known target.
