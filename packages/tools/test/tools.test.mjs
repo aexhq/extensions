@@ -5,12 +5,15 @@ import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { defineEnvironment } from "@aexhq/brain";
 import { definitions, handlers, read } from "../index.mjs";
 
 test("publishes model definitions separately from Environment-side handlers", () => {
   assert.deepEqual(Object.keys(definitions), ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"]);
   assert.equal(read().definition.name, "read");
   assert.equal(read().remoteToolId, "read");
+  const workspace = defineEnvironment({ capability: "workspace", configuration: {} });
+  assert.equal(read().runIn(workspace).kind, "bound-tool");
   assert.equal(typeof handlers.read, "function");
   assert.equal("execute" in read(), false);
 });
