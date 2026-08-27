@@ -192,7 +192,7 @@ struct ToolBundle {
 #[derive(Clone)]
 struct ActiveEnvironment {
     driver: String,
-    configuration: Value,
+    provider_configuration: Value,
     configuration_digest: String,
 }
 
@@ -501,7 +501,7 @@ async fn execute(
         .unwrap_or_else(|| serde_json::json!({}));
     let binding = serde_json::json!({
         "driver":environment.driver,
-        "configuration":environment.configuration,
+        "configuration":environment.provider_configuration,
         "policy":policy,
         "tenant_id":operation.session_id,
         "session_id":operation.session_id,
@@ -609,7 +609,7 @@ async fn teardown(
             request: serde_json::json!({
                 "binding":{
                     "driver":environment.driver,
-                    "configuration":environment.configuration,
+                    "configuration":environment.provider_configuration,
                     "policy":{},
                     "tenant_id":operation.session_id,
                     "session_id":operation.session_id,
@@ -646,9 +646,14 @@ fn environment_from_binding(
             message: "Environment driver is not configured".into(),
         });
     }
+    let mut provider_configuration = configuration.clone();
+    provider_configuration
+        .as_object_mut()
+        .expect("a configuration containing driver is an object")
+        .remove("driver");
     Ok(ActiveEnvironment {
         driver: driver.to_owned(),
-        configuration,
+        provider_configuration,
         configuration_digest,
     })
 }
@@ -666,7 +671,7 @@ fn terminal_value(observation: &Value) -> Result<Value, DriverError> {
 fn provider_binding(environment: &ActiveEnvironment, operation: &EnvironmentOperation) -> Value {
     serde_json::json!({
         "driver":environment.driver,
-        "configuration":environment.configuration,
+        "configuration":environment.provider_configuration,
         "policy":{},
         "tenant_id":operation.session_id,
         "session_id":operation.session_id,
@@ -778,6 +783,10 @@ mod tests {
     #[async_trait]
     impl Driver for FixtureDriver {
         async fn dispatch(&self, request: DispatchRequest) -> Result<Value, DriverError> {
+            assert_eq!(
+                request.request["binding"]["configuration"],
+                serde_json::json!({})
+            );
             self.actions.lock().unwrap().push(request.action.clone());
             if self.refuse {
                 return Err(DriverError {
