@@ -2,7 +2,7 @@
   "name": "aex-extension",
   "private": true,
   "description": "Official Aex Agentloop, Tool, and Environment extensions built against public Brain contracts",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"

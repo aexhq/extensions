@@ -57,4 +57,4 @@ Read the [tool image guide](image/README.md), [egress gateway contract](gateway/
 [AWS adapter contract](crates/environment-brain-aws/README.md) for runtime details. Hosted Brain
 composition belongs to Aex; this repository has no standalone or hosted Brain image.
 
-Licensed under [Apache 2.0](LICENSE).
+Licensed under [MIT](LICENSE).

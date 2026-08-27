@@ -2,7 +2,7 @@
   "name": "@aexhq/agentloop",
   "version": "0.4.2",
   "description": "Author capability-pure Agentloop Components for Brain without handling WIT or Wasm",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aexhq/extensions.git",
