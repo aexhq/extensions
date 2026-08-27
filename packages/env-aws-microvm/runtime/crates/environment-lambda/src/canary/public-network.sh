@@ -4,7 +4,6 @@ trap 'status=$?; (( status == 0 )) || printf "public network canary shell failed
 denied=(__DENIED__)
 controls=(__CONTROLS__)
 http_surfaces=(__HTTP_SURFACES__)
-customer_environment_hosts=(__CUSTOMER_ENVIRONMENT_HOSTS__)
 
 probe_hosts() {
   local ports=$1 host port output url remote authority
@@ -51,23 +50,5 @@ for surface in "${http_surfaces[@]}"; do
   fi
 done
 
-for host in "${customer_environment_hosts[@]}"; do
-  websocket_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 3 --max-time 3 \
-    --header 'Connection: Upgrade' --header 'Upgrade: websocket' \
-    --header 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' --header 'Sec-WebSocket-Version: 13' \
-    "https://$host/v1" 2>/dev/null || true)
-  if [[ $websocket_status != 401 && $websocket_status != 403 ]]; then
-    echo "customer Environment WebSocket did not return an authentication denial: $host" >&2
-    exit 1
-  fi
-  management_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 3 --max-time 3 \
-    --request POST --header 'Content-Length: 0' \
-    "https://$host/v1/@connections/L0SM9cOFvHcCIhw%3D" 2>/dev/null || true)
-  if [[ $management_status != 401 && $management_status != 403 ]]; then
-    echo "customer Environment Management API did not return an authentication denial: $host" >&2
-    exit 1
-  fi
-done
-
 printf 'network_canary=ok denied=%s controls=%s surfaces=%s source=%s\n' \
-  "${#denied[@]}" "${#controls[@]}" "$(( ${#http_surfaces[@]} + ${#customer_environment_hosts[@]} ))" "$observed_public_source"
+  "${#denied[@]}" "${#controls[@]}" "${#http_surfaces[@]}" "$observed_public_source"

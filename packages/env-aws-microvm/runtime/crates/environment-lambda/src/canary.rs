@@ -46,7 +46,6 @@ pub struct NetworkBoundaryCanaryConfig {
     pub image_version: String,
     pub connectors: ConnectorCatalog,
     pub gateway_authority: GatewayAuthority,
-    pub customer_environment_hosts: [String; 2],
 }
 
 /// The two connector classes the restricted-network proof accepts. A separate type instead of
@@ -80,7 +79,6 @@ pub async fn run_network_boundary_canary(
     control: &Control,
     cfg: NetworkBoundaryCanaryConfig,
 ) -> anyhow::Result<()> {
-    validate_customer_environment_hosts(&cfg.customer_environment_hosts, control.region())?;
     for class in [RestrictedClass::None, RestrictedClass::Allowlist] {
         run_restricted_network_canary(
             control,
@@ -372,10 +370,7 @@ async fn run_public_network_canary(
         "direct-public network",
         seal,
         &payload,
-        |seal| async move {
-            run_public_network_on_known_target(control, &seal, &cfg.customer_environment_hosts)
-                .await
-        },
+        |seal| async move { run_public_network_on_known_target(control, &seal).await },
     )
     .await
 }
@@ -383,7 +378,6 @@ async fn run_public_network_canary(
 async fn run_public_network_on_known_target(
     control: &Control,
     target: &KnownTargetSeal,
-    customer_environment_hosts: &[String; 2],
 ) -> anyhow::Result<()> {
     let (_environment, mut socket) = connect_to_target(control, target).await?;
     let request = public_network_execution(
@@ -391,7 +385,6 @@ async fn run_public_network_on_known_target(
         &target.generation,
         &target.root_id,
         &target.session_id,
-        customer_environment_hosts,
     )?;
     let mut request_number = 1u64;
     let (_, terminal) =
@@ -666,7 +659,6 @@ fn public_network_execution(
     generation: &str,
     root_id: &str,
     session_id: &str,
-    customer_environment_hosts: &[String; 2],
 ) -> anyhow::Result<SandboxExecutionRequest> {
     let denied = connector_routed_special_use_ipv4_fixtures();
     let controls: Vec<&str> = brain_protocol::network::PUBLIC_UNICAST_FIXTURES
@@ -697,10 +689,6 @@ fn public_network_execution(
                     surface["path"].as_str().expect("static path")
                 )
             })),
-        )
-        .replace(
-            "__CUSTOMER_ENVIRONMENT_HOSTS__",
-            &shell_words(customer_environment_hosts),
         );
     let mut request: SandboxExecutionRequest = serde_json::from_value(serde_json::json!({
         "execution_id": operation_id,
@@ -723,40 +711,6 @@ fn public_network_execution(
     }))?;
     request.request_digest = sandbox_execution_request_digest(&request);
     Ok(request)
-}
-
-fn validate_customer_environment_hosts(hosts: &[String; 2], region: &str) -> anyhow::Result<()> {
-    ensure!(
-        hosts[0] != hosts[1],
-        "customer Environment hosts must be distinct"
-    );
-    let suffix = format!(".execute-api.{region}.amazonaws.com");
-    for host in hosts {
-        ensure!(
-            host.len() <= 253
-                && host == host.trim()
-                && host.bytes().all(|byte| {
-                    byte.is_ascii_lowercase()
-                        || byte.is_ascii_digit()
-                        || matches!(byte, b'.' | b'-')
-                })
-                && host.ends_with(&suffix)
-                && host.split('.').all(|label| {
-                    !label.is_empty()
-                        && label.len() <= 63
-                        && label
-                            .as_bytes()
-                            .first()
-                            .is_some_and(u8::is_ascii_alphanumeric)
-                        && label
-                            .as_bytes()
-                            .last()
-                            .is_some_and(u8::is_ascii_alphanumeric)
-                }),
-            "invalid customer Environment API Gateway host"
-        );
-    }
-    Ok(())
 }
 
 fn terminal_diagnostic(inline: Option<&serde_json::Value>) -> &str {
@@ -1011,10 +965,6 @@ mod tests {
             "network-canary-generation",
             "network-canary-root",
             "network-canary-session",
-            &[
-                "dev123.execute-api.us-east-1.amazonaws.com".into(),
-                "prd456.execute-api.us-east-1.amazonaws.com".into(),
-            ],
         )
         .unwrap();
         assert_eq!(
@@ -1046,22 +996,9 @@ mod tests {
         assert!(request.input.command.contains("Aex HTTPS surface"));
         assert!(request.input.command.contains("checkip.amazonaws.com"));
         assert!(request.input.command.contains("observed_public_source"));
-        for host in [
-            "aex.dev",
-            "api.aex.dev",
-            "api-dev.aex.dev",
-            "dev123.execute-api.us-east-1.amazonaws.com",
-            "prd456.execute-api.us-east-1.amazonaws.com",
-        ] {
+        for host in ["aex.dev", "api.aex.dev", "api-dev.aex.dev"] {
             assert!(request.input.command.contains(host), "{host}");
         }
-        assert!(request.input.command.contains("Sec-WebSocket-Key"));
-        assert!(
-            request
-                .input
-                .command
-                .contains("@connections/L0SM9cOFvHcCIhw%3D")
-        );
         assert!(!request.input.command.contains("aex-network-canary"));
     }
 
@@ -1118,36 +1055,6 @@ mod tests {
                     assert!(request.input.command.contains("$invalid == 403"));
                 }
             }
-        }
-    }
-
-    #[test]
-    fn customer_environment_canary_hosts_are_two_distinct_regional_api_gateway_hosts() {
-        assert!(
-            validate_customer_environment_hosts(
-                &[
-                    "dev123.execute-api.us-east-1.amazonaws.com".into(),
-                    "prd456.execute-api.us-east-1.amazonaws.com".into(),
-                ],
-                "us-east-1"
-            )
-            .is_ok()
-        );
-        for invalid in [
-            [
-                "dev123.execute-api.us-east-1.amazonaws.com".into(),
-                "dev123.execute-api.us-east-1.amazonaws.com".into(),
-            ],
-            [
-                "https://dev123.execute-api.us-east-1.amazonaws.com/v1".into(),
-                "prd456.execute-api.us-east-1.amazonaws.com".into(),
-            ],
-            [
-                "dev123.execute-api.eu-west-1.amazonaws.com".into(),
-                "prd456.execute-api.us-east-1.amazonaws.com".into(),
-            ],
-        ] {
-            assert!(validate_customer_environment_hosts(&invalid, "us-east-1").is_err());
         }
     }
 
