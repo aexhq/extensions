@@ -12,7 +12,6 @@ publish = false
 workspace = true
 
 [dependencies]
-brain-protocol.workspace = true
 base64.workspace = true
 hickory-resolver.workspace = true
 idna.workspace = true

@@ -2,6 +2,11 @@
 
 use zeroize::Zeroize as _;
 
+const MAX_SECRET_NAMES: usize = 128;
+const MAX_SECRET_NAME_BYTES: usize = 128;
+const MAX_SECRET_VALUE_UTF8_BYTES: usize = 8 * 1024;
+const MAX_SECRET_DOCUMENT_BYTES: usize = 4 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SecretMaterialError {
     #[error("secret document declares more names than Brain's custody bound")]
@@ -20,7 +25,7 @@ pub enum SecretMaterialError {
 pub fn environment_name_is_valid(name: &str) -> bool {
     let bytes = name.as_bytes();
     !bytes.is_empty()
-        && bytes.len() <= brain_protocol::MAX_SESSION_SECRET_NAME_BYTES
+        && bytes.len() <= MAX_SECRET_NAME_BYTES
         && (bytes[0].is_ascii_alphabetic() || bytes[0] == b'_')
         && bytes[1..]
             .iter()
@@ -84,7 +89,7 @@ pub fn secret_material_fits(
     env_names: &[String],
     values: &std::collections::HashMap<String, String>,
 ) -> Result<(), SecretMaterialError> {
-    if env_names.len() > brain_protocol::MAX_SESSION_SECRET_NAMES {
+    if env_names.len() > MAX_SECRET_NAMES {
         return Err(SecretMaterialError::TooManyNames);
     }
     if values.len() != env_names.len() {
@@ -98,15 +103,16 @@ pub fn secret_material_fits(
             return Err(SecretMaterialError::NamesValuesMismatch);
         }
     }
-    if values.values().any(|value| {
-        value.len() > brain_protocol::MAX_SESSION_SECRET_VALUE_UTF8_BYTES || value.contains('\0')
-    }) {
+    if values
+        .values()
+        .any(|value| value.len() > MAX_SECRET_VALUE_UTF8_BYTES || value.contains('\0'))
+    {
         return Err(SecretMaterialError::InvalidValue);
     }
     let Ok(mut canonical) = serde_jcs::to_vec(values) else {
         return Err(SecretMaterialError::DocumentTooLarge);
     };
-    let fits = canonical.len() <= brain_protocol::MAX_SESSION_SECRET_DOCUMENT_BYTES;
+    let fits = canonical.len() <= MAX_SECRET_DOCUMENT_BYTES;
     canonical.zeroize();
     if fits {
         Ok(())
@@ -126,7 +132,7 @@ mod tests {
         let exact = std::collections::HashMap::from([("A".into(), exact_value)]);
         assert_eq!(
             serde_jcs::to_vec(&exact).unwrap().len(),
-            brain_protocol::MAX_SESSION_SECRET_DOCUMENT_BYTES
+            MAX_SECRET_DOCUMENT_BYTES
         );
         assert_eq!(secret_material_fits(&names, &exact), Ok(()));
 
@@ -134,7 +140,7 @@ mod tests {
         let oversized = std::collections::HashMap::from([("A".into(), oversized_value)]);
         assert_eq!(
             serde_jcs::to_vec(&oversized).unwrap().len(),
-            brain_protocol::MAX_SESSION_SECRET_DOCUMENT_BYTES + 1
+            MAX_SECRET_DOCUMENT_BYTES + 1
         );
         assert_eq!(
             secret_material_fits(&names, &oversized),

@@ -9,6 +9,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use brain_protocol_current::{EnvironmentBinding, EnvironmentRequest, ToolInvocation};
 use futures_util::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -207,63 +208,8 @@ struct ToolRegistryEntry {
     filename: String,
 }
 
-#[derive(Deserialize)]
-struct EnvironmentCommand {
-    contract: String,
-    binding: EnvironmentBinding,
-    operation: EnvironmentOperation,
-}
-
-#[derive(Deserialize)]
-struct EnvironmentBinding {
-    environment_id: String,
-    configuration_digest: String,
-    adapter_binding: String,
-    directory_generation: u64,
-    lifecycle_policy: String,
-}
-
-#[derive(Deserialize, Serialize)]
-struct EnvironmentOperation {
-    operation_id: String,
-    request_digest: String,
-    environment_id: String,
-    session_id: String,
-    attachment_id: Option<String>,
-    request: EnvironmentRequest,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum EnvironmentRequest {
-    Setup {
-        configuration: Value,
-    },
-    Attach {
-        grants: Value,
-    },
-    Call {
-        name: String,
-        input: Value,
-    },
-    Execute {
-        tool: ToolInvocation,
-        remote_tool_id: String,
-        grant: Value,
-    },
-    Cancel {
-        target_operation_id: String,
-    },
-    Detach,
-    Teardown,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct ToolInvocation {
-    call_id: String,
-    name: String,
-    input: Value,
-}
+type EnvironmentCommand = brain_protocol_current::EnvironmentCommand<EnvironmentRequest>;
+type EnvironmentOperation = brain_protocol_current::EnvironmentOperation<EnvironmentRequest>;
 
 pub fn router(
     bearer: impl Into<String>,
@@ -379,14 +325,16 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
     }
     let operation_id = command.operation.operation_id.clone();
     let request_digest = command.operation.request_digest.clone();
-    if let Some(receipt) = record_operation_identity(&state, &operation_id, &request_digest).await {
-        return environment_response(&operation_id, &request_digest, receipt);
+    if let Some(receipt) =
+        record_operation_identity(&state, operation_id.as_str(), &request_digest).await
+    {
+        return environment_response(operation_id.as_str(), &request_digest, receipt);
     }
     let receipt = match handle_operation(&state, command.binding, command.operation).await {
         Ok(receipt) => receipt,
         Err(error) => {
             tracing::warn!(
-                operation_id,
+                operation_id = %operation_id,
                 status = %error.status,
                 reason = %error.message,
                 "Environment operation refused"
@@ -399,7 +347,7 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
             })
         }
     };
-    environment_response(&operation_id, &request_digest, receipt)
+    environment_response(operation_id.as_str(), &request_digest, receipt)
 }
 
 async fn record_operation_identity(
@@ -439,8 +387,11 @@ async fn handle_operation(
         EnvironmentRequest::Setup { configuration } => setup(&environment, configuration),
         EnvironmentRequest::Attach { grants } => {
             let _ = grants;
-            let expected = attachment_id(&operation.session_id, &operation.environment_id)?;
-            if operation.attachment_id.as_deref() != Some(expected.as_str()) {
+            let expected = attachment_id(
+                operation.session_id.as_str(),
+                operation.environment_id.as_str(),
+            )?;
+            if operation.attachment_id.as_ref().map(|id| id.as_str()) != Some(expected.as_str()) {
                 return Err(DriverError::invalid("invalid Environment attachment"));
             }
             Ok(serde_json::json!({"type":"accepted"}))
@@ -469,14 +420,33 @@ async fn handle_operation(
         EnvironmentRequest::Cancel {
             target_operation_id,
         } => {
-            let _ = target_operation_id;
-            Err(DriverError::invalid(
-                "AWS MicroVM cancellation requires an active provider operation",
-            ))
+            let driver = state
+                .drivers
+                .get(&environment.driver)
+                .cloned()
+                .ok_or_else(|| {
+                    DriverError::unavailable("Environment driver is no longer configured")
+                })?;
+            let deadline = now_ms().saturating_add(5_000);
+            driver
+                .dispatch(DispatchRequest {
+                    operation_id: operation.operation_id.to_string(),
+                    action: "cancel".into(),
+                    request: serde_json::json!({
+                        "binding":provider_binding(&environment, &operation),
+                        "target_operation_id":target_operation_id
+                    }),
+                    deadline_at_ms: deadline.to_string(),
+                })
+                .await?;
+            Ok(serde_json::json!({"type":"accepted"}))
         }
         EnvironmentRequest::Detach => {
-            let expected = attachment_id(&operation.session_id, &operation.environment_id)?;
-            if operation.attachment_id.as_deref() != Some(expected.as_str()) {
+            let expected = attachment_id(
+                operation.session_id.as_str(),
+                operation.environment_id.as_str(),
+            )?;
+            if operation.attachment_id.as_ref().map(|id| id.as_str()) != Some(expected.as_str()) {
                 return Err(DriverError::invalid("invalid Environment attachment"));
             }
             Ok(serde_json::json!({"type":"accepted"}))
@@ -505,8 +475,11 @@ async fn execute(
     remote_tool_id: &str,
     grant: Value,
 ) -> Result<Value, DriverError> {
-    let expected = attachment_id(&operation.session_id, &operation.environment_id)?;
-    if operation.attachment_id.as_deref() != Some(expected.as_str()) {
+    let expected = attachment_id(
+        operation.session_id.as_str(),
+        operation.environment_id.as_str(),
+    )?;
+    if operation.attachment_id.as_ref().map(|id| id.as_str()) != Some(expected.as_str()) {
         return Err(DriverError::invalid("invalid Environment attachment"));
     }
     if !valid_identifier(&tool.call_id) || !valid_identifier(&tool.name) {
@@ -538,12 +511,13 @@ async fn execute(
     });
     let submit = driver
         .dispatch(DispatchRequest {
-            operation_id: operation.operation_id.clone(),
+            operation_id: operation.operation_id.to_string(),
             action: "submit".into(),
             request: serde_json::json!({
                 "binding":binding,
                 "operation":{
                     "operation_id":operation.operation_id,
+                    "request_digest":operation.request_digest,
                     "kind":"invoke",
                     "descriptor_json":serde_json::to_string(&serde_json::json!({
                         "runtime":"node22",
@@ -577,7 +551,7 @@ async fn execute(
         }
         let observation = driver
             .dispatch(DispatchRequest {
-                operation_id: operation.operation_id.clone(),
+                operation_id: operation.operation_id.to_string(),
                 action: "observe".into(),
                 request: serde_json::json!({
                     "binding":binding,
@@ -630,7 +604,7 @@ async fn teardown(
     let deadline = now_ms().saturating_add(30_000);
     driver
         .dispatch(DispatchRequest {
-            operation_id: operation.operation_id.clone(),
+            operation_id: operation.operation_id.to_string(),
             action: "release".into(),
             request: serde_json::json!({
                 "binding":{
@@ -689,6 +663,19 @@ fn terminal_value(observation: &Value) -> Result<Value, DriverError> {
         .ok_or_else(|| DriverError::unavailable("Environment terminal result is missing"))
 }
 
+fn provider_binding(environment: &ActiveEnvironment, operation: &EnvironmentOperation) -> Value {
+    serde_json::json!({
+        "driver":environment.driver,
+        "configuration":environment.configuration,
+        "policy":{},
+        "tenant_id":operation.session_id,
+        "session_id":operation.session_id,
+        "root_id":operation.session_id,
+        "parent_id":Value::Null,
+        "environment_id":operation.environment_id
+    })
+}
+
 fn attachment_id(session_id: &str, environment_id: &str) -> Result<String, DriverError> {
     let digest = canonical_digest(&(session_id, environment_id))?;
     Ok(format!("att_{}", &digest[..24]))
@@ -701,17 +688,18 @@ fn canonical_digest(value: &impl Serialize) -> Result<String, DriverError> {
 }
 
 fn valid_operation(operation: &EnvironmentOperation) -> bool {
-    valid_identifier(&operation.operation_id)
+    valid_identifier(operation.operation_id.as_str())
         && operation.request_digest.len() == 64
         && operation
             .request_digest
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit())
-        && valid_identifier(&operation.environment_id)
-        && valid_identifier(&operation.session_id)
+        && valid_identifier(operation.environment_id.as_str())
+        && valid_identifier(operation.session_id.as_str())
         && operation
             .attachment_id
-            .as_deref()
+            .as_ref()
+            .map(|id| id.as_str())
             .is_none_or(valid_identifier)
 }
 
@@ -726,8 +714,10 @@ fn valid_binding(binding: &EnvironmentBinding, operation: &EnvironmentOperation)
         && binding.adapter_binding.len() <= 65_536
         && binding.directory_generation > 0
         && matches!(
-            binding.lifecycle_policy.as_str(),
-            "session" | "shared" | "external"
+            binding.lifecycle_policy,
+            brain_protocol_current::LifecyclePolicy::Session
+                | brain_protocol_current::LifecyclePolicy::Shared
+                | brain_protocol_current::LifecyclePolicy::External
         )
 }
 
@@ -803,6 +793,7 @@ mod tests {
                     "chunks":[],
                     "terminal_json":"{\"answer\":42}"
                 })),
+                "cancel" => Ok(serde_json::json!({})),
                 "release" => Ok(serde_json::json!({})),
                 _ => Err(DriverError::invalid("unexpected fixture action")),
             }
@@ -935,6 +926,21 @@ mod tests {
             serde_json::json!({"answer":42})
         );
 
+        let cancel = first_task
+            .clone()
+            .oneshot(command(
+                "secret",
+                "operation-cancel",
+                Some(&attachment),
+                serde_json::json!({
+                    "type":"cancel",
+                    "target_operation_id":"operation-execute"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body(cancel).await["receipt"]["type"], "accepted");
+
         let teardown = first_task
             .oneshot(command(
                 "secret",
@@ -947,7 +953,7 @@ mod tests {
         assert_eq!(body(teardown).await["receipt"]["type"], "accepted");
         assert_eq!(
             *driver.actions.lock().unwrap(),
-            ["submit", "observe", "release"]
+            ["submit", "observe", "cancel", "release"]
         );
     }
 

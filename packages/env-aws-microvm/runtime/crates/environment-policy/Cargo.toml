@@ -12,7 +12,6 @@ publish = false
 workspace = true
 
 [dependencies]
-brain-protocol.workspace = true
 serde.workspace = true
 serde_jcs.workspace = true
 thiserror.workspace = true

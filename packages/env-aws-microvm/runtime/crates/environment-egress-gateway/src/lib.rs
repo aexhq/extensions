@@ -6,6 +6,7 @@
 
 mod capability;
 mod config;
+mod network;
 mod policy;
 mod proxy;
 mod tls;

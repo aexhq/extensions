@@ -2,12 +2,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 pub const MAX_PORTS_PER_DESTINATION: usize = 32;
 
-use brain_protocol::network::is_public_unicast;
 use hickory_resolver::TokioResolver;
 use hickory_resolver::proto::rr::{RData, Record};
 use ipnet::Ipv4Net;
 
 use crate::capability::{CapabilityDestination, DestinationProtocol, VerifiedCapability};
+use crate::network::is_public_unicast;
 
 #[derive(Debug, Clone)]
 pub struct DenyPolicy {
@@ -341,14 +341,14 @@ mod tests {
 
     #[test]
     fn special_use_classifier_matches_the_cross_boundary_golden_vectors() {
-        for &(address, _) in brain_protocol::network::SPECIAL_USE_FIXTURES {
+        for &(address, _) in crate::network::SPECIAL_USE_FIXTURES {
             let address: IpAddr = address.parse().unwrap();
             if address.is_ipv4() {
                 assert!(!is_public_unicast(&address), "{address} must be denied");
             }
         }
 
-        for &address in brain_protocol::network::PUBLIC_UNICAST_FIXTURES {
+        for &address in crate::network::PUBLIC_UNICAST_FIXTURES {
             let address: IpAddr = address.parse().unwrap();
             if address.is_ipv4() {
                 assert!(is_public_unicast(&address), "{address} must remain public");

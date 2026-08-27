@@ -240,7 +240,7 @@ dependencies = [
  "aws-sdk-lambdamicrovms",
  "base64",
  "brain",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
  "environment-core",
  "environment-egress-gateway",
  "environment-lambda",
@@ -888,7 +888,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "base64",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
  "chrono",
  "futures-util",
  "hex",
@@ -920,6 +920,19 @@ dependencies = [
  "serde_jcs",
  "serde_json",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "brain-protocol"
+version = "0.1.0"
+source = "git+https://github.com/aexhq/brain.git?rev=a6058210cdff1e19d39ed49f2e137dd92c9b7de4#a6058210cdff1e19d39ed49f2e137dd92c9b7de4"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
 ]
 
 [[package]]
@@ -1391,11 +1404,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-config",
  "aws-microvm-controller",
+ "aws-sdk-dynamodb",
  "axum",
  "base64",
  "brain",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=a6058210cdff1e19d39ed49f2e137dd92c9b7de4)",
  "futures-util",
  "hex",
  "reqwest",
@@ -1416,7 +1432,6 @@ name = "environment-egress-gateway"
 version = "0.1.0"
 dependencies = [
  "base64",
- "brain-protocol",
  "hickory-resolver",
  "idna",
  "ipnet",
@@ -1437,7 +1452,7 @@ dependencies = [
  "axum",
  "base64",
  "brain",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
  "environment-core",
  "environment-policy",
  "environment-wire",
@@ -1469,7 +1484,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-lambdamicrovms",
  "aws-sdk-s3",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
  "clap",
  "environment-core",
  "environment-wire",
@@ -1493,7 +1508,6 @@ dependencies = [
 name = "environment-policy"
 version = "0.1.0"
 dependencies = [
- "brain-protocol",
  "serde",
  "serde_jcs",
  "thiserror",
@@ -1505,7 +1519,7 @@ name = "environment-wire"
 version = "0.1.0"
 dependencies = [
  "brain",
- "brain-protocol",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
  "environment-policy",
  "serde",
 ]
@@ -1523,7 +1537,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2817,7 +2831,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3092,7 +3106,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3159,7 +3173,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3599,7 +3613,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4174,7 +4188,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

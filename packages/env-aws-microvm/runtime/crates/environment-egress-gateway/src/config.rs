@@ -235,7 +235,7 @@ mod tests {
             Ipv4Addr::new(192, 168, 1, 1),
             Ipv4Addr::new(224, 1, 1, 1),
         ] {
-            assert!(!brain_protocol::network::is_public_unicast(&address.into()));
+            assert!(!crate::network::is_public_unicast(&address.into()));
         }
         assert_eq!(builtin_deny_hosts(), ["aex.dev", "*.aex.dev"]);
     }
