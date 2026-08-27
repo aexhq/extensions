@@ -103,7 +103,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - name: Exercise a prepared Tool in the environment runner
-        run: node "$RUNTIME/scripts/test-tool-runner.mjs"
+        run: |
+          npm run build --workspace @aexhq/tools
+          node "$RUNTIME/scripts/test-tool-runner.mjs"
 
   build:
     runs-on: ubuntu-24.04-arm
