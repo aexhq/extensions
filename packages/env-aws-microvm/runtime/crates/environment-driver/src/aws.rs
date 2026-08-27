@@ -248,6 +248,7 @@ impl AwsDriver {
             )
         );
         let object_id = format!("component-{}", descriptor.bundle_digest);
+        let provider_configuration = managed_configuration(&body.binding.configuration);
         let binding_value = json!({
             "binding_id": binding_id,
             "bundle": {
@@ -273,11 +274,7 @@ impl AwsDriver {
                 "tool_name": descriptor.tool_name
             },
             "capability": descriptor.tool_name,
-            "configuration": {
-                "region": body.binding.configuration.region,
-                "idle_seconds": lifetime.idle_seconds,
-                "maximum_seconds": lifetime.maximum_seconds
-            },
+            "configuration": provider_configuration,
             "contract_digest": descriptor.contract_digest,
             "environment_name": body.binding.environment_id,
             "extension": "@aexhq/env-aws-microvm",
@@ -601,6 +598,13 @@ fn network(policy: &Value) -> Result<Value, DriverError> {
     }
 }
 
+fn managed_configuration(configuration: &EnvironmentConfiguration) -> Value {
+    configuration
+        .region
+        .as_ref()
+        .map_or_else(|| json!({}), |region| json!({"region": region}))
+}
+
 fn map_environment_error(error: EnvironmentError) -> DriverError {
     if error.retryable {
         DriverError::unavailable("AWS Environment is temporarily unavailable")
@@ -655,6 +659,26 @@ mod tests {
             json!({"kind":"public"})
         );
         assert!(network(&json!({"network":{"outbound":"private"}})).is_err());
+    }
+
+    #[test]
+    fn managed_configuration_contains_only_present_provider_options() {
+        assert_eq!(
+            managed_configuration(&EnvironmentConfiguration {
+                idle_seconds: Some(30),
+                maximum_seconds: Some(60),
+                ..EnvironmentConfiguration::default()
+            }),
+            json!({})
+        );
+        assert_eq!(
+            managed_configuration(&EnvironmentConfiguration {
+                region: Some("us-east-1".into()),
+                idle_seconds: Some(30),
+                maximum_seconds: Some(60)
+            }),
+            json!({"region":"us-east-1"})
+        );
     }
 
     #[test]
