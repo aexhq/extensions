@@ -20,7 +20,6 @@ for (const name of names) {
         export default {
           kind: "brain.tool-runtime",
           name: ${JSON.stringify(name)},
-          description: ${JSON.stringify(definition.description)},
           contractDigest: ${JSON.stringify(contractDigest)},
           requiredEnv: [],
           execute(input, context) { return tool.execute(input, { ...context, grant: null }); }
