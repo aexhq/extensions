@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { definitions, handlers, read } from "../index.mjs";
 
@@ -12,6 +13,12 @@ test("publishes model definitions separately from Environment-side handlers", ()
   assert.equal(read().remoteToolId, "read");
   assert.equal(typeof handlers.read, "function");
   assert.equal("execute" in read(), false);
+});
+
+test("keeps model-visible descriptions out of the Environment runtime", async () => {
+  const runtime = (await import(pathToFileURL(join(import.meta.dirname, "../dist/runtime/read.mjs")))).default;
+  assert.equal(runtime.description, undefined);
+  assert.match(runtime.contractDigest, /^[0-9a-f]{64}$/u);
 });
 
 test("executes a Tool only when an Environment invokes its handler", async () => {
