@@ -399,6 +399,7 @@ async fn handle_operation(
         EnvironmentRequest::Execute {
             tool,
             remote_tool_id,
+            tool_configuration,
             grant,
         } => {
             execute(
@@ -407,15 +408,21 @@ async fn handle_operation(
                 &operation,
                 tool.clone(),
                 remote_tool_id,
+                tool_configuration.clone(),
                 grant.clone(),
             )
             .await
         }
         EnvironmentRequest::Call { name, input } => {
-            let _ = (name, input);
-            Err(DriverError::invalid(
-                "AWS MicroVM Environment does not expose direct calls",
-            ))
+            if name != "suspend"
+                || !input.is_null() && input.as_object().is_none_or(|value| !value.is_empty())
+            {
+                return Err(DriverError::invalid(
+                    "unsupported AWS MicroVM Environment method",
+                ));
+            }
+            teardown(state, &environment, &operation).await?;
+            Ok(serde_json::json!({"type":"result","output":null}))
         }
         EnvironmentRequest::Cancel {
             target_operation_id,
@@ -473,6 +480,7 @@ async fn execute(
     operation: &EnvironmentOperation,
     tool: ToolInvocation,
     remote_tool_id: &str,
+    tool_configuration: Value,
     grant: Value,
 ) -> Result<Value, DriverError> {
     let expected = attachment_id(
@@ -529,7 +537,10 @@ async fn execute(
                         &base64::engine::general_purpose::STANDARD,
                         bundle.bytes.as_ref()
                     ),
-                    "input_json":serde_json::to_string(&tool.input)
+                    "input_json":serde_json::to_string(&serde_json::json!({
+                        "input": tool.input,
+                        "options": tool_configuration
+                    }))
                         .map_err(|_| DriverError::invalid("Tool input cannot be encoded"))?,
                     "deadline_at_ms":deadline.to_string()
                 }
@@ -923,6 +934,7 @@ mod tests {
                     "type":"execute",
                     "tool":{"call_id":"call-1","name":"echo","input":{"value":42}},
                     "remote_tool_id":"echo",
+                    "tool_configuration":{},
                     "grant":{}
                 }),
             ))

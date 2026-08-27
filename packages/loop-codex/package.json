@@ -1,7 +1,7 @@
 {
-  "name": "@aexhq/loop-codex",
-  "version": "1.5.1",
-  "description": "The codex-style agentloop for Brain sessions: a semantic port of codex's loop policies onto contracts/agentloop/v1, built with the public @aexhq/agentloop toolchain",
+  "name": "@aexhq/brain-codex",
+  "version": "1.0.0",
+  "description": "Codex-style sequential-Tool Brain extension",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -18,29 +18,24 @@
     "provenance": true,
     "tag": "next"
   },
-  "agentloop": {
-    "name": "codex-style"
-  },
   "exports": {
-    ".": { "types": "./index.d.ts", "import": "./index.mjs" },
-    "./package": "./dist/loop.brain.json",
+    ".": { "types": "./index.d.ts", "import": "./dist/index.mjs" },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src",
-    "index.mjs",
     "index.d.ts",
     "README.md"
   ],
   "scripts": {
-    "build": "node build.mjs",
+    "build": "brain build src/index.mjs --out dist",
     "test": "npm run build && node --test",
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/agentloop": "0.4.2",
-    "@aexhq/brain": "0.7.2"
+    "@aexhq/brain": "0.8.2",
+    "zod": "4.4.3"
   },
   "devDependencies": {}
 }

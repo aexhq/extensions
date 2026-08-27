@@ -7,7 +7,6 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const workspaces = [
-  "agentloop",
   "env-app",
   "env-aws-microvm",
   "loop-codex",

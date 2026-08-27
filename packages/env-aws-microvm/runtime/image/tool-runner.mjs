@@ -91,13 +91,17 @@ try {
   for (const name of required) {
     if (process.env[name] === undefined) throw new Error(`required environment variable ${name} is unavailable`);
   }
-  const input = request.phase === "setup" ? undefined : request.input;
+  if (request.input === null || typeof request.input !== "object" || !("input" in request.input) || !("options" in request.input)) {
+    throw new TypeError("tool input envelope is malformed");
+  }
+  const input = request.phase === "setup" ? undefined : request.input.input;
   const value = await handler(input, {
     signal: abort.signal,
     operationId: request.operation_id,
     sessionId: request.session_id,
     workspace: request.workspace,
     deadlineMs: request.deadline_ms,
+    options: request.input.options,
   });
   const normalizedOutput = value === undefined ? null : value;
   JSON.stringify(normalizedOutput);

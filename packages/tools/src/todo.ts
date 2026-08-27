@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { tool } from "./definition.js";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -14,7 +14,8 @@ const todoInput = z.discriminatedUnion("action", [
   ]);
 const todoOutput = z.object({ items: z.array(item) });
 
-const todo = tool(todoInput, async function todo(input, context) {
+export const todo = tool({ description: "Read or replace the session's portable to-do list.", input: todoInput, output: todoOutput }, (author) => {
+  author.run(async (input, context) => {
     const path = workspacePath(workspaceOf(context), ".brain/todo.json");
     if (input.action === "set") {
       await mkdir(dirname(path), { recursive: true });
@@ -27,10 +28,5 @@ const todo = tool(todoInput, async function todo(input, context) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { items: [] };
       throw error;
     }
-  })
-  .named("todo")
-  .describe("Read or replace the session's portable to-do list.")
-  .returns(todoOutput)
-  .server(import.meta.url);
-
-export default todo;
+  });
+});

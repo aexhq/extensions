@@ -1,4 +1,3 @@
-import type { AgentLoop } from "@aexhq/brain";
+import type { BrainExtension } from "@aexhq/brain";
 
-export declare const packageUrl: URL;
-export declare const pi: () => AgentLoop;
+export declare const pi: () => BrainExtension;

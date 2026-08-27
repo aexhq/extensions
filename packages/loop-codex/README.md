@@ -1,14 +1,12 @@
-# @aexhq/loop-codex
+# @aexhq/brain-codex
 
-The official codex-style Agentloop for Brain sessions: a semantic port of codex loop policy
-including the environment preamble, sequential tool execution, resident conversation cache,
-and one summary mark per turn.
+The official Codex-style Brain extension, including its environment preamble, sequential Tool
+execution, resident conversation context, and summary policy.
 
 ```js
-import { codex } from "@aexhq/loop-codex";
+import { codex } from "@aexhq/brain-codex";
 
-const agentLoop = codex();
+const extension = codex();
 ```
 
-`codex()` returns an immutable AgentLoop value. Its package is admitted automatically when a
-session is created; Brain does not compile or rewrite source.
+The built Brain artifact is admitted automatically when a session is created.

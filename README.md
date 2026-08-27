@@ -1,38 +1,31 @@
 # extensions
 
-Official Agentloops, remote Environments, and Tool definitions for Brain. Every Agentloop uses the
-same public Component pipeline; Brain has no privileged built-in extension path. Tool code runs in
-an Environment, never in Brain.
+Official Brain, Tool, and Environment extensions for Aex. Every package uses the public
+`@aexhq/brain` authoring API and the same `brain build` pipeline; official extensions have no
+privileged runtime path.
 
 | package | role |
 | --- | --- |
-| `@aexhq/agentloop` | TypeScript authoring API and `brain-loop` Component builder |
-| `@aexhq/loop-pi` | Pi-style parallel-Tool Agentloop package |
-| `@aexhq/loop-codex` | Codex-style sequential-Tool Agentloop package |
-| `@aexhq/tools` | Model-visible Tool definitions plus Environment-side handlers |
-| `@aexhq/env-app` | Language-neutral HTTP Environment lifecycle and Tool runtime |
-| `@aexhq/env-aws-microvm` | AWS MicroVM Environment requirement and provider runtime |
+| `@aexhq/brain-pi` | Pi-style Brain with parallel Tool calls |
+| `@aexhq/brain-codex` | Codex-style Brain with sequential Tool calls |
+| `@aexhq/tools` | Model-visible Tool definitions and bundled Node implementations |
+| `@aexhq/env-app` | Application-process Environment and HTTP provider adapter |
+| `@aexhq/env-aws-microvm` | AWS MicroVM Environment and provider runtime |
 
-An Agentloop author writes a synchronous reducer and builds an opaque portable package:
+All three roles have the same authoring shape:
 
 ```ts
-import { defineAgentloop } from "@aexhq/agentloop";
+import { brain } from "@aexhq/brain";
 
-export default defineAgentloop({
-  step(input) {
-    return { context: input.context, decision: { type: "finish" } };
-  },
+export const support = brain((author) => {
+  author.on.message((_message, turn) => turn.reply("Hello"));
 });
 ```
 
 ```sh
-brain-loop build loop.mjs --out loop.brain.json
+brain build
 ```
 
-The toolchain handles WIT, WebAssembly, and the canonical ABI. Authors do not select Wasmtime or
-write host imports. Model access and Tool effects are decisions returned to Brain; the Agentloop has
-no filesystem, network, secrets, process, or real-time capability.
-
-Environments implement `setup`, `attach`, `call`, `execute`, `cancel`, `detach`, and `teardown` over
-the `environment/v1` HTTP contract. They own the real sandbox, browser, user-machine, or remote Tool
-lifecycle. Stable operation IDs and request digests make replay and conflict handling explicit.
+Brain handlers synchronously choose the next durable action. Tool and Environment handlers may be
+async and use normal libraries supported by their runtime. Applications place a Tool explicitly
+with `tool().useIn(environment)` and can call extension-owned methods on the same Environment object.

@@ -93,7 +93,7 @@ async function execute(operation, environments, tools, options, signal, active) 
       if (attachment === undefined || attachment.sessionId !== operation.session_id) throw new Error("attachment does not authorize this session");
       const tool = tools.get(request.remote_tool_id);
       if (typeof tool !== "function") throw new Error(`unknown remote Tool ${request.remote_tool_id}`);
-      const output = await tool(request.tool.input, { signal, grant: request.grant, configuration: environment.configuration, workspace: environment.configuration?.workspace, deadlineMs: Date.now() + 120_000, environmentId: operation.environment_id, sessionId: operation.session_id, attachmentId: operation.attachment_id });
+      const output = await tool(request.tool.input, { signal, options: request.tool_configuration, grant: request.grant, configuration: environment.configuration, workspace: environment.configuration?.workspace, deadlineMs: Date.now() + 120_000, environmentId: operation.environment_id, sessionId: operation.session_id, attachmentId: operation.attachment_id });
       return { type: "tool_result", result: { call_id: request.tool.call_id, output, is_error: false } };
     }
     case "call":
