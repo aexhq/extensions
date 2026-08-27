@@ -108,6 +108,7 @@ impl AwsMicrovmEnvironment {
                 "component Tool bundle does not match its descriptor",
             ));
         }
+        self.resolve_binding(binding.clone()).await?;
         let environment_ref = brain_protocol::contract::environment_binding_ref(
             envelope.root_id.as_str(),
             binding.environment_name.as_str(),
