@@ -22,7 +22,7 @@ repository = "https://github.com/aexhq/extensions"
 # identity so Environments can build without a sibling checkout and cannot drift across contracts.
 brain = { git = "https://github.com/aexhq/brain.git", rev = "3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d" }
 brain-protocol = { git = "https://github.com/aexhq/brain.git", rev = "3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d" }
-brain-protocol-current = { package = "brain-protocol", git = "https://github.com/aexhq/brain.git", rev = "6081ebbf94f4dd38a7dfbd97c641c18f58efb187" }
+brain-protocol-current = { package = "brain-protocol", git = "https://github.com/aexhq/brain.git", rev = "79602a5595d8ab5c335f30c98cb23e2976d870f6" }
 anyhow = "1"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "credentials-process", "default-https-client", "rt-tokio", "sso"] }

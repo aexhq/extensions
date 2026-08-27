@@ -925,7 +925,7 @@ dependencies = [
 [[package]]
 name = "brain-protocol"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=6081ebbf94f4dd38a7dfbd97c641c18f58efb187#6081ebbf94f4dd38a7dfbd97c641c18f58efb187"
+source = "git+https://github.com/aexhq/brain.git?rev=79602a5595d8ab5c335f30c98cb23e2976d870f6#79602a5595d8ab5c335f30c98cb23e2976d870f6"
 dependencies = [
  "hex",
  "serde",
@@ -1411,7 +1411,7 @@ dependencies = [
  "base64",
  "brain",
  "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=3b991a3a25a7ea2a64c3bb44df9339f0e7b1e10d)",
- "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=6081ebbf94f4dd38a7dfbd97c641c18f58efb187)",
+ "brain-protocol 0.1.0 (git+https://github.com/aexhq/brain.git?rev=79602a5595d8ab5c335f30c98cb23e2976d870f6)",
  "futures-util",
  "hex",
  "reqwest",

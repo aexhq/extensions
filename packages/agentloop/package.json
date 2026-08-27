@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Author capability-pure Agentloop Components for Brain without handling WIT or Wasm",
   "license": "Apache-2.0",
   "repository": {
@@ -26,7 +26,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.7.0",
+    "@aexhq/brain": "0.7.2",
     "@bytecodealliance/componentize-js": "0.19.3",
     "@bytecodealliance/jco": "1.17.9",
     "esbuild": "0.25.9"
