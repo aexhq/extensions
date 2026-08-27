@@ -59,7 +59,7 @@ async function execute(bundle, body) {
   const frame = Buffer.concat(resultFrame);
   assert.ok(frame.length >= 4, `runner emitted no result: ${Buffer.concat(diagnostics).toString("utf8")}`);
   assert.equal(frame.length, frame.readUInt32BE(0) + 4);
-  return { status, result: JSON.parse(frame.subarray(4).toString("utf8")) };
+  return { status, result: JSON.parse(frame.subarray(4).toString("utf8")), diagnostics: Buffer.concat(diagnostics).toString("utf8") };
 }
 
 test("the published Tool runtime executes through the Environment runner", async () => {
@@ -67,7 +67,7 @@ test("the published Tool runtime executes through the Environment runner", async
   try {
     const prepared = await fixture(directory);
     const ran = await execute(prepared.path, request(prepared, directory, "operation-1"));
-    assert.deepEqual(ran.status, { code: 0, signal: null });
+    assert.deepEqual(ran.status, { code: 0, signal: null }, `${ran.diagnostics}${JSON.stringify(ran.result)}`);
     assert.equal(ran.result.ok, true);
     assert.deepEqual(ran.result.output, { path: "operation-1.txt", bytes: 13 });
     assert.equal(await readFile(join(directory, "operation-1.txt"), "utf8"), "AEX_RUNNER_OK");
