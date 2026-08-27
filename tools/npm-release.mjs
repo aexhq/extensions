@@ -39,21 +39,45 @@ const releasedIntegrity = (spec) => {
   }
 };
 
-/**
- * A published version is immutable, so the commit that last changed a package must be the commit
- * that set its current version. This is the deterministic form of "never mix an old artifact with
- * a new source": componentize-js emits a different Wasm module for identical source, so comparing
- * a rebuilt archive with the released one proves nothing.
- */
-export const versionSetByLatestChange = (packageJsonPatch) =>
-  /^\+\s*"version":/mu.test(packageJsonPatch);
+export const releasedSourceCommit = (document) => {
+  const provenance = document.attestations?.find(
+    ({ predicateType }) => predicateType === "https://slsa.dev/provenance/v1",
+  );
+  const payload = provenance?.bundle?.dsseEnvelope?.payload;
+  if (typeof payload !== "string") throw new Error("published package has no SLSA provenance");
+  const statement = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+  const dependency = statement.predicate?.buildDefinition?.resolvedDependencies?.find(
+    ({ uri }) => uri?.startsWith("git+https://github.com/aexhq/extensions@"),
+  );
+  const commit = dependency?.digest?.gitCommit;
+  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/u.test(commit)) {
+    throw new Error("published package provenance has no Extensions source commit");
+  }
+  return commit;
+};
 
-const assertReleasedVersionIsCurrent = (workspace, spec) => {
+const releasedAttestations = async (spec) => {
+  const output = run(["view", spec, "dist.attestations.url", "--json"]);
+  const url = JSON.parse(output);
+  if (typeof url !== "string" || !url.startsWith("https://registry.npmjs.org/-/npm/v1/attestations/")) {
+    throw new Error(`${spec} has no registry attestations`);
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`could not read ${spec} provenance: HTTP ${response.status}`);
+  return response.json();
+};
+
+/**
+ * Rebuilding a component is not byte-for-byte deterministic. The registry provenance identifies
+ * the source that produced the immutable package, so compare source rather than rebuilt archives.
+ */
+const assertReleasedVersionIsCurrent = async (workspace, spec) => {
   const directory = `packages/${workspace}`;
-  const commit = git(["log", "-1", "--format=%H", "--", directory]);
-  if (commit === "") throw new Error(`${directory} has no history; cannot prove ${spec} is current`);
-  const patch = git(["show", "--format=", "--unified=0", commit, "--", `${directory}/package.json`]);
-  if (!versionSetByLatestChange(patch)) {
+  const commit = releasedSourceCommit(await releasedAttestations(spec));
+  git(["merge-base", "--is-ancestor", commit, "HEAD"]);
+  try {
+    git(["diff", "--quiet", `${commit}..HEAD`, "--", directory]);
+  } catch {
     throw new Error(`${directory} changed after ${spec} was published; release it under a new version`);
   }
 };
@@ -110,7 +134,7 @@ async function pack(directory) {
     const spec = `${packageDocument.name}@${packageDocument.version}`;
     const released = releasedIntegrity(spec);
     if (released !== undefined) {
-      assertReleasedVersionIsCurrent(workspace, spec);
+      await assertReleasedVersionIsCurrent(workspace, spec);
       await rm(archive);
     }
     packages.push({
