@@ -1,47 +1,15 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildAgentloopComponent, buildLoopBundle, lintLoopBundle } from "../dist/build.js";
-import { componentize } from "@bytecodealliance/componentize-js";
 
-const fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+import { buildAgentloop } from "../dist/build.js";
 
-test("a loop entry bundles deterministically with the host binding injected", async () => {
-  const first = await buildLoopBundle({ entry: fixture("probe-loop.mjs") });
-  const second = await buildLoopBundle({ entry: fixture("probe-loop.mjs") });
-  assert.equal(first.sha256, second.sha256, "the sealed identity must be reproducible");
-  assert.equal(first.bytes, Buffer.byteLength(first.source, "utf8"));
-  assert.match(first.source, /aex:agentloop\/context@1\.0\.0/, "the host import stays external");
-  assert.match(first.source, /activate/, "the activate export survives bundling");
-  assert.ok(
-    !first.source.includes("@aexhq/agentloop"),
-    "the SDK is bundled in, not left as an import the guest cannot resolve",
-  );
-});
-
-test("an authored loop compiles to the canonical Agentloop component", async () => {
-  const built = await buildAgentloopComponent({ entry: fixture("probe-loop.mjs") }, componentize);
-  assert.ok(built.componentBytes > 0);
-  assert.equal(built.componentSha256.length, 64);
-  assert.equal(built.component.byteLength, built.componentBytes);
-});
-
-test("the gate refuses Unicode property escapes with an explicit override", async () => {
-  await assert.rejects(
-    buildLoopBundle({ entry: fixture("unicode-loop.mjs") }),
-    /Unicode property escapes/,
-  );
-  const overridden = await buildLoopBundle({
-    entry: fixture("unicode-loop.mjs"),
-    allowUnicodePropertyEscapes: true,
+test("builds an opaque portable Agentloop package without exposing WIT", async () => {
+  const built = await buildAgentloop({
+    entry: fileURLToPath(new URL("./fixtures/diagnostic-loop.mjs", import.meta.url)),
   });
-  assert.ok(overridden.sha256.length === 64);
-});
-
-test("the lint gate names offending lines", () => {
-  assert.throws(
-    () => lintLoopBundle("const ok = 1;\nconst re = /\\p{L}/u;\n"),
-    /line\(s\) 2/,
-  );
-  lintLoopBundle("const fine = 'no escapes here';\n");
+  assert.equal(built.manifest.contract_version, "agentloop/v1");
+  assert.match(built.manifest.component_digest, /^[0-9a-f]{64}$/u);
+  assert.ok(built.manifest.component_bytes > 0);
+  assert.ok(Buffer.from(built.component_base64, "base64").byteLength > 0);
 });

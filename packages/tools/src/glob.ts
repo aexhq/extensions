@@ -1,7 +1,7 @@
 import { glob as fsGlob } from "node:fs/promises";
 import { relative } from "node:path";
 
-import { tool } from "@aexhq/brain";
+import { tool } from "./definition.js";
 import { z } from "zod";
 
 import { workspaceOf } from "./path.js";

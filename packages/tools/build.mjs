@@ -1,41 +1,50 @@
-import { componentize } from "@bytecodealliance/componentize-js";
-import { compileTools } from "@aexhq/brain";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { build } from "esbuild";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
-const here = new URL("./", import.meta.url);
 const names = ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"];
+const packageRoot = import.meta.dirname;
+const directory = path.join(packageRoot, "dist/runtime");
+await mkdir(directory, { recursive: true });
+const registry = {};
 
 for (const name of names) {
-  const selected = (await import(new URL(`./dist/${name}.js`, here))).default;
-  const compiled = await compileTools([selected]);
-  const definition = compiled.items[0]?.definition;
-  const bundle = compiled.bundles[0];
-  if (definition === undefined || bundle === undefined) {
-    throw new Error(`${name} did not compile to one Environment-executed Tool bundle`);
-  }
-  const config = {
-    definition,
-    descriptor: {
-      runtime: "node22",
-      tool_name: definition.name,
-      contract_digest: definition.contract_digest,
-      bundle_digest: bundle.checksum,
+  const imported = await import(`./dist/${name}.js`);
+  const definition = imported.default.definition;
+  const contractDigest = createHash("sha256").update(canonical(definition)).digest("hex");
+  await build({
+    stdin: {
+      contents: `
+        import tool from ${JSON.stringify(`./dist/${name}.js`)};
+        export default {
+          kind: "brain.tool-runtime",
+          name: ${JSON.stringify(name)},
+          description: ${JSON.stringify(definition.description)},
+          contractDigest: ${JSON.stringify(contractDigest)},
+          requiredEnv: [],
+          execute(input, context) { return tool.execute(input, { ...context, grant: null }); }
+        };
+      `,
+      resolveDir: packageRoot,
+      sourcefile: `${name}-runtime.js`,
+      loader: "js",
     },
-  };
-  await writeFile(new URL(`./dist/${name}.component.json`, here), `${JSON.stringify(config)}\n`);
-  await writeFile(
-    new URL(`./dist/${name}.bundle.mjs`, here),
-    Buffer.from(bundle.content_base64, "base64"),
-  );
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "node22",
+    outfile: path.join(directory, `${name}.mjs`),
+    legalComments: "none",
+  });
+  registry[name] = { contract_digest: contractDigest, filename: `${name}.mjs` };
 }
+await writeFile(path.join(directory, "registry.json"), `${JSON.stringify(registry, null, 2)}\n`);
 
-const source = await readFile(new URL("./dispatcher.mjs", here), "utf8");
-const wit = await readFile(new URL(import.meta.resolve("@aexhq/brain/contracts/tool")), "utf8");
-const output = await componentize(source, wit, {
-  worldName: "tool",
-  disableFeatures: ["http", "fetch-event"],
-});
-await mkdir(new URL("./dist", here), { recursive: true });
-await writeFile(new URL("./dist/tool.component.wasm", here), output.component);
-
-// subagents is Brain's builtin: `tsc` emitting dist/subagents.js is the whole build.
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}

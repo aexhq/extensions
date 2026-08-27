@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "@aexhq/brain";
+import { tool } from "./definition.js";
 import { z } from "zod";
 
 const MAX_CAPTURE_BYTES = 1024 * 1024;

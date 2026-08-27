@@ -1,17 +1,27 @@
 {
   "name": "aex-extension",
   "private": true,
-  "description": "Official Aex Agentloop, Tool, Environment, and Model components built against public Brain contracts",
+  "description": "Official Aex Agentloop, Tool, and Environment extensions built against public Brain contracts",
   "license": "Apache-2.0",
   "type": "module",
-  "engines": { "node": ">=22.0.0" },
-  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present && node --test tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.5.0"
+    "@aexhq/brain": "0.6.0",
+    "@bytecodealliance/jco": "1.17.9",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "@bytecodealliance/jco": "1.17.9"
   }
 }

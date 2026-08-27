@@ -1,33 +1,38 @@
 # extensions
 
-Official Agentloop, Tool, Environment, and Model components for
-[Aex](https://aex.dev). They use the same public `@aexhq/brain` component contract
-available to external authors; no package in this repository is privileged.
+Official Agentloops, remote Environments, and Tool definitions for Brain. Every Agentloop uses the
+same public Component pipeline; Brain has no privileged built-in extension path. Tool code runs in
+an Environment, never in Brain.
 
-## Packages
-
-| package | what it is |
+| package | role |
 | --- | --- |
-| `@aexhq/agentloop` | Agentloop authoring and component builder |
-| `@aexhq/loop-pi` | pi's agent loop as an Agentloop component |
-| `@aexhq/loop-codex` | Codex-style policy as an Agentloop component |
-| `@aexhq/tools` | file, shell, search, web, and child-session Tool components |
-| `@aexhq/env-app` | customer-application callback Environment component |
-| `@aexhq/env-aws-microvm` | AWS Lambda MicroVM Environment component |
-| `@aexhq/model` | Model component authoring helpers |
-| `@aexhq/model-openai` | OpenAI Model component |
-| `@aexhq/model-anthropic` | Anthropic Model component |
+| `@aexhq/agentloop` | TypeScript authoring API and `brain-loop` Component builder |
+| `@aexhq/loop-pi` | Pi-style parallel-Tool Agentloop package |
+| `@aexhq/loop-codex` | Codex-style sequential-Tool Agentloop package |
+| `@aexhq/tools` | Model-visible Tool definitions plus Environment-side handlers |
+| `@aexhq/env-app` | Language-neutral HTTP Environment lifecycle and Tool runtime |
+| `@aexhq/env-aws-microvm` | AWS MicroVM Environment requirement and provider runtime |
 
-Package factories return immutable component declarations for Brain. Published
-packages include precompiled WebAssembly components and their verified identity;
-Brain does not compile extension source at runtime. Authors can use another
-compiler or language as long as the resulting component implements the public
-WIT contract.
+An Agentloop author writes a synchronous reducer and builds an opaque portable package:
 
-## Layout rules
+```ts
+import { defineAgentloop } from "@aexhq/agentloop";
 
-- The four component kinds remain independently selectable and replaceable.
-- Tool implementations receive only their declared Brain grants, such as an
-  Environment or the bounded child-session interface.
-- CI and package smoke tests consume published `@aexhq/brain`; no source-repository
-  link is part of the public contract.
+export default defineAgentloop({
+  step(input) {
+    return { context: input.context, decision: { type: "finish" } };
+  },
+});
+```
+
+```sh
+brain-loop build loop.mjs --out loop.brain.json
+```
+
+The toolchain handles WIT, WebAssembly, and the canonical ABI. Authors do not select Wasmtime or
+write host imports. Model access and Tool effects are decisions returned to Brain; the Agentloop has
+no filesystem, network, secrets, process, or real-time capability.
+
+Environments implement `setup`, `attach`, `call`, `execute`, `cancel`, `detach`, and `teardown` over
+the `environment/v1` HTTP contract. They own the real sandbox, browser, user-machine, or remote Tool
+lifecycle. Stable operation IDs and request digests make replay and conflict handling explicit.

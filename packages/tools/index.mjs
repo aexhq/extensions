@@ -1,41 +1,22 @@
-import { component } from "@aexhq/brain";
-import { readFile } from "node:fs/promises";
+import bashTool from "./dist/bash.js";
+import editTool from "./dist/edit.js";
+import globTool from "./dist/glob.js";
+import grepTool from "./dist/grep.js";
+import lsTool from "./dist/ls.js";
+import readTool from "./dist/read.js";
+import todoTool from "./dist/todo.js";
+import writeTool from "./dist/write.js";
 
-const asset = new URL("./dist/tool.component.wasm", import.meta.url);
+const tools = { bash: bashTool, edit: editTool, glob: globTool, grep: grepTool, ls: lsTool, read: readTool, todo: todoTool, write: writeTool };
 
-async function load(name) {
-  return JSON.parse(await readFile(new URL(`./dist/${name}.component.json`, import.meta.url), "utf8"));
-}
+export const definitions = Object.freeze(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, Object.freeze({ definition: tool.definition, remoteToolId: name })])));
+export const handlers = Object.freeze(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, tool.execute.bind(tool)])));
 
-const configs = Object.freeze({
-  bash: await load("bash"),
-  edit: await load("edit"),
-  glob: await load("glob"),
-  grep: await load("grep"),
-  ls: await load("ls"),
-  read: await load("read"),
-  todo: await load("todo"),
-  write: await load("write"),
-});
-
-const subagentsTool = (await import("./dist/subagents.js")).default;
-
-function official(name) {
-  return component("tool", asset, configs[name], {
-    grants: ["environment"],
-    metadata: { name, source: "@aexhq/tools" },
-    bundle: new URL(`./dist/${name}.bundle.mjs`, import.meta.url),
-  });
-}
-
-export const bash = () => official("bash");
-export const edit = () => official("edit");
-export const glob = () => official("glob");
-export const grep = () => official("grep");
-export const ls = () => official("ls");
-export const read = () => official("read");
-export const todo = () => official("todo");
-export const write = () => official("write");
-/** Brain's builtin child-session capability. Turning it on is declaring it. */
-export const subagents = () => subagentsTool;
-export const task = subagents;
+export const bash = () => definitions.bash;
+export const edit = () => definitions.edit;
+export const glob = () => definitions.glob;
+export const grep = () => definitions.grep;
+export const ls = () => definitions.ls;
+export const read = () => definitions.read;
+export const todo = () => definitions.todo;
+export const write = () => definitions.write;

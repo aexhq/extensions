@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/loop-codex",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "The codex-style agentloop for Brain sessions: a semantic port of codex's loop policies onto contracts/agentloop/v1, built with the public @aexhq/agentloop toolchain",
   "license": "Apache-2.0",
   "repository": {
@@ -23,8 +23,7 @@
   },
   "exports": {
     ".": { "types": "./index.d.ts", "import": "./index.mjs" },
-    "./component": "./dist/loop.component.wasm",
-    "./identity": "./dist/identity.json",
+    "./package": "./dist/loop.brain.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -40,10 +39,9 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.5.0"
+    "@aexhq/agentloop": "0.4.0"
   },
   "devDependencies": {
-    "@aexhq/agentloop": "0.3.3",
-    "@bytecodealliance/componentize-js": "0.22.0"
+    "@aexhq/brain": "0.6.0"
   }
 }

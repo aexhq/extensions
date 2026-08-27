@@ -1,238 +1,27 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { AgentloopOpError, __bindHost, defineAgentloop } from "../dist/index.js";
+import test from "node:test";
 
-/** A scripted host: records every envelope and answers from a queue keyed by op name. */
-function scriptedHost(answers) {
-  const requests = [];
-  __bindHost((_operationId, payload) => {
-    const request = JSON.parse(payload);
-    requests.push(request);
-    const op = request.op.op;
-    const next = answers[op]?.shift();
-    if (!next) {
-      throw new Error(`unscripted ctx op ${op}`);
-    }
-    return JSON.stringify(next);
-  }, () => false);
-  return requests;
-}
+import { defineAgentloop } from "../dist/index.js";
+import { step } from "../dist/testing.js";
 
-const session = {
-  session_id: "ses_00000000000000000001",
-  model: "claude-test",
-  limits: { max_rounds_per_turn: 512, turn_wall_ms: 1000, max_parallel_tools: 8 },
-};
-
-function messagePayload() {
-  return JSON.stringify({
-    kind: "message",
-    activation_id: "act-1",
-    session,
-    message: { seq: 4, at: "2026-08-21T00:00:00Z", content: [{ type: "text", text: "go" }] },
+test("defines one synchronous pure step contract", () => {
+  const loop = defineAgentloop({
+    step(input) {
+      input.context.items.push("changed");
+      return { context: input.context, decision: { type: "finish" } };
+    },
   });
-}
-
-function activation(kind, payload, config = {}) {
-  return {
-    operationId: "op-activation",
-    sessionId: session.session_id,
-    kind,
-    payloadJson: payload,
-    configJson: JSON.stringify(config),
-    deadlineAtMs: 1000n,
+  const input = {
+    context: { protocolVersion: "agentloop/v1", items: [] },
+    observation: { type: "user_message", content: "hello" },
+    presentation: { bytes: new Uint8Array(), digest: "a".repeat(64) },
+    runtime: { logicalTimeMs: 1n, deterministicSeed: new Uint8Array() },
   };
-}
-
-test("a handler drives typed ops and returning cleanly finishes the turn", async () => {
-  const requests = scriptedHost({
-    kv_get: [{ op_id: "x", result: { op: "kv_get", entries: { n: 2 } } }],
-    kv_set: [{ op_id: "x", result: { op: "kv_set" } }],
-    model_stream: [
-      {
-        op_id: "x",
-        result: {
-          op: "model_stream",
-          message: {
-            content: [{ type: "text", text: "answer" }],
-            stop_reason: "end_turn",
-            model: "claude-test",
-          },
-        },
-      },
-    ],
-    turn_finish: [{ op_id: "x", result: { op: "turn_finish" } }],
-  });
-  const seen = {};
-  const { activate } = defineAgentloop({
-    async onMessage(ctx, message) {
-      seen.messageText = message.content[0].text;
-      seen.model = ctx.session.model;
-      const kv = await ctx.kv.get(["n"]);
-      await ctx.kv.set({ n: kv.n + 1 });
-      const round = await ctx.model.stream({
-        messages: [{ role: "user", content: message.content }],
-      });
-      seen.answer = round.content[0].text;
-      // No explicit finish: returning is finishing.
-    },
-  });
-  const returned = JSON.parse((await activate(activation("message", messagePayload(), { flavor: "test" }))).payloadJson);
-  assert.equal(returned.outcome, "completed");
-  assert.deepEqual(seen, { messageText: "go", model: "claude-test", answer: "answer" });
-  const ops = requests.map((request) => request.op.op);
-  assert.deepEqual(ops, ["kv_get", "kv_set", "model_stream", "turn_finish"]);
-  assert.equal(new Set(requests.map((request) => request.op_id)).size, requests.length);
-  for (const request of requests) {
-    assert.equal(request.activation_id, "act-1");
-  }
+  assert.equal(step(loop, input).decision.type, "finish");
+  assert.deepEqual(input.context.items, []);
+  assert.ok(Object.isFrozen(loop));
 });
 
-test("a thrown handler error fails the turn with the message", async () => {
-  const requests = scriptedHost({
-    turn_fail: [{ op_id: "x", result: { op: "turn_fail" } }],
-  });
-  const { activate } = defineAgentloop({
-    async onMessage() {
-      throw new Error("policy exploded");
-    },
-  });
-  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
-  assert.equal(returned.outcome, "failed");
-  assert.equal(returned.error.message, "policy exploded");
-  assert.equal(requests[0].op.op, "turn_fail");
-  assert.equal(requests[0].op.error.message, "policy exploded");
-});
-
-test("typed op errors surface with their code and can be handled", async () => {
-  scriptedHost({
-    tools_dispatch: [
-      {
-        op_id: "x",
-        error: { code: "unsealed_tool", message: "tool nope is not sealed", retryable: false },
-      },
-    ],
-    turn_finish: [{ op_id: "x", result: { op: "turn_finish" } }],
-  });
-  let caught = null;
-  const { activate } = defineAgentloop({
-    async onMessage(ctx) {
-      try {
-        await ctx.tools.dispatch([{ tool_call_id: "c1", name: "nope", input: {} }]);
-      } catch (error) {
-        caught = error;
-      }
-    },
-  });
-  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
-  assert.equal(returned.outcome, "completed");
-  assert.ok(caught instanceof AgentloopOpError);
-  assert.equal(caught.code, "unsealed_tool");
-});
-
-test("an aborted ctx op aborts the activation without failing the turn", async () => {
-  const requests = scriptedHost({
-    tools_dispatch: [
-      {
-        op_id: "x",
-        error: { code: "aborted", message: "the turn was cancelled", retryable: false },
-      },
-    ],
-  });
-  const { activate } = defineAgentloop({
-    async onMessage(ctx) {
-      await ctx.tools.dispatch([{ tool_call_id: "c1", name: "bash", input: {} }]);
-    },
-  });
-
-  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
-  assert.deepEqual(returned, {
-    activation_id: "act-1",
-    outcome: "aborted",
-    error: { code: "aborted", message: "the turn was cancelled", retryable: false },
-  });
-  assert.deepEqual(
-    requests.map((request) => request.op.op),
-    ["tools_dispatch"],
-  );
-});
-
-test("a return_direct terminal makes the implicit finish a clean no-op", async () => {
-  scriptedHost({
-    tools_dispatch: [
-      {
-        op_id: "x",
-        result: {
-          op: "tools_dispatch",
-          results: [{ tool_call_id: "c1", name: "emit", is_error: false, content: [] }],
-        },
-      },
-    ],
-    turn_finish: [
-      {
-        op_id: "x",
-        error: {
-          code: "turn_already_terminal",
-          message: "the turn already has a terminal",
-          retryable: false,
-        },
-      },
-    ],
-  });
-  const { activate } = defineAgentloop({
-    async onMessage(ctx) {
-      await ctx.tools.dispatch([{ tool_call_id: "c1", name: "emit", input: {} }]);
-    },
-  });
-  const returned = JSON.parse((await activate(activation("message", messagePayload()))).payloadJson);
-  assert.equal(returned.outcome, "completed");
-});
-
-test("session_start hydration reaches the handler and later message ctx", async () => {
-  scriptedHost({ turn_finish: [{ op_id: "x", result: { op: "turn_finish" } }] });
-  let started = null;
-  let ctxStart = null;
-  const { activate } = defineAgentloop({
-    onSessionStart(start) {
-      started = start;
-    },
-    async onMessage(ctx) {
-      ctxStart = ctx.start;
-    },
-  });
-  const startPayload = JSON.stringify({
-    kind: "session_start",
-    activation_id: "act-0",
-    session,
-    resumed: true,
-    kv: { n: 7 },
-    tail: [],
-  });
-  const startReturn = JSON.parse((await activate(activation("session_start", startPayload))).payloadJson);
-  assert.equal(startReturn.outcome, "completed");
-  assert.equal(started.resumed, true);
-  await activate(activation("message", messagePayload()));
-  assert.equal(ctxStart.kv.n, 7);
-});
-
-test("a failure before the turn exists still names itself instead of trapping", async () => {
-  const { activate } = defineAgentloop({
-    onSessionStart() {
-      throw new Error("hydration rejected the journal tail");
-    },
-    async onMessage() {},
-  });
-
-  // Anything that escapes this export reaches the host as a bare Wasm trace with no message.
-  const hydration = JSON.parse((await activate(activation("session_start", JSON.stringify({
-    activation_id: "act-start",
-    tail: [],
-  })))).payloadJson);
-  assert.equal(hydration.outcome, "failed");
-  assert.equal(hydration.error.message, "hydration rejected the journal tail");
-
-  const malformed = JSON.parse((await activate(activation("message", "{not json"))).payloadJson);
-  assert.equal(malformed.outcome, "failed");
-  assert.equal(malformed.activation_id, "act-unknown");
-  assert.ok(malformed.error.message.length > 0);
+test("rejects an object without a step function", () => {
+  assert.throws(() => defineAgentloop({}), /step function/u);
 });

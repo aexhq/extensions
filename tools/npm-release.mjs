@@ -12,9 +12,6 @@ const workspaces = [
   "env-aws-microvm",
   "loop-codex",
   "loop-pi",
-  "model",
-  "model-anthropic",
-  "model-openai",
   "tools",
 ];
 const root = path.resolve(import.meta.dirname, "..");

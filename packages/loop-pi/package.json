@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/loop-pi",
-  "version": "0.87.1",
-  "description": "The pi agentloop for Brain sessions: pinned @earendil-works/pi-agent-core adapted onto contracts/agentloop/v1, built with the public @aexhq/agentloop toolchain",
+  "version": "0.88.0",
+  "description": "Pi-style parallel-Tool Agentloop for Brain, built through the universal Component pipeline",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -23,8 +23,7 @@
   },
   "exports": {
     ".": { "types": "./index.d.ts", "import": "./index.mjs" },
-    "./component": "./dist/loop.component.wasm",
-    "./identity": "./dist/identity.json",
+    "./package": "./dist/loop.brain.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -40,12 +39,9 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.5.0"
+    "@aexhq/agentloop": "0.4.0"
   },
   "devDependencies": {
-    "@aexhq/agentloop": "0.3.3",
-    "@bytecodealliance/componentize-js": "0.22.0",
-    "@earendil-works/pi-agent-core": "0.84.2",
-    "@earendil-works/pi-ai": "0.84.2"
+    "@aexhq/brain": "0.6.0"
   }
 }

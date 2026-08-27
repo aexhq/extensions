@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 
-import { tool } from "@aexhq/brain";
+import { tool } from "./definition.js";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";

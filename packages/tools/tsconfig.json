@@ -6,6 +6,7 @@
     "strict": true,
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
+    "types": ["node"],
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src"

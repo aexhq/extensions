@@ -17,18 +17,22 @@ jobs:
             arch: amd64
             image: environment-driver
             dockerfile: driver/Dockerfile
+            context: .
           - runner: ubuntu-24.04-arm
             arch: arm64
             image: environment-driver
             dockerfile: driver/Dockerfile
+            context: .
           - runner: ubuntu-24.04
             arch: amd64
             image: environment-egress-gateway
             dockerfile: gateway/Dockerfile
+            context: packages/env-aws-microvm/runtime
           - runner: ubuntu-24.04-arm
             arch: arm64
             image: environment-egress-gateway
             dockerfile: gateway/Dockerfile
+            context: packages/env-aws-microvm/runtime
     runs-on: ${{ matrix.runner }}
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
@@ -51,8 +55,7 @@ jobs:
             exit 1
           fi
       - name: Build candidate
-        working-directory: packages/env-aws-microvm/runtime
-        run: docker build -f "${{ matrix.dockerfile }}" -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" .
+        run: docker build -f "packages/env-aws-microvm/runtime/${{ matrix.dockerfile }}" -t "$IMAGE:${{ github.event.workflow_run.head_sha }}-${{ matrix.arch }}" "${{ matrix.context }}"
       - name: Scan candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

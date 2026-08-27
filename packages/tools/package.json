@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/tools",
   "version": "0.6.0",
-  "description": "Official precompiled Tool components for Brain sessions",
+  "description": "Official remote Tool definitions and Environment-side implementations for Brain sessions",
   "license": "Apache-2.0",
   "homepage": "https://aex.dev",
   "repository": {
@@ -36,14 +36,11 @@
     "test": "npm run build && node --test"
   },
   "dependencies": {
-    "@aexhq/brain": "0.5.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@bytecodealliance/componentize-js": "0.22.0",
     "@types/node": "^24.3.0",
-    "typescript": "^5.9.2"
-  },
-  "peerDependencies": {
-    "zod": ">=4.4.3 <5"
+    "typescript": "^5.9.2",
+    "esbuild": "0.25.9"
   }
 }

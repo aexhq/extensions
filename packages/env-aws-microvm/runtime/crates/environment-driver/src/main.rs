@@ -39,7 +39,13 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(HttpRelayDriver::new(url, token, Duration::from_secs(30))?),
         ));
     }
-    let app = environment_driver::router(required("ENVIRONMENT_DRIVER_TOKEN")?, drivers)?;
+    let tool_directory = std::env::var("ENVIRONMENT_TOOL_DIRECTORY")
+        .unwrap_or_else(|_| "/usr/local/share/aex-tools".into());
+    let app = environment_driver::router(
+        required("ENVIRONMENT_DRIVER_TOKEN")?,
+        drivers,
+        tool_directory,
+    )?;
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(%listen, "Environment driver listening");
     axum::serve(listener, app).await?;

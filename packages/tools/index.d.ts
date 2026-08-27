@@ -1,31 +1,20 @@
-import type { ComponentExtension } from "@aexhq/brain";
-
-export interface OfficialToolConfig {
+export interface RemoteTool {
   readonly definition: {
     readonly name: string;
-    readonly description?: string;
+    readonly description: string;
     readonly input_schema: Record<string, unknown>;
     readonly output_schema?: Record<string, unknown>;
-    readonly contract_digest: string;
   };
-  readonly descriptor: Readonly<Record<string, unknown>>;
+  readonly remoteToolId: string;
 }
 
-export type OfficialTool = ComponentExtension<"tool", OfficialToolConfig>;
-
-export interface ChildToolConfig {
-  readonly definition: OfficialToolConfig["definition"];
-}
-
-export type ChildTool = ComponentExtension<"tool", ChildToolConfig>;
-
-export declare const bash: () => OfficialTool;
-export declare const edit: () => OfficialTool;
-export declare const glob: () => OfficialTool;
-export declare const grep: () => OfficialTool;
-export declare const ls: () => OfficialTool;
-export declare const read: () => OfficialTool;
-export declare const todo: () => OfficialTool;
-export declare const write: () => OfficialTool;
-export declare const subagents: () => ChildTool;
-export declare const task: () => ChildTool;
+export declare const definitions: Readonly<Record<string, RemoteTool>>;
+export declare const handlers: Readonly<Record<string, (input: unknown, context: unknown) => Promise<unknown>>>;
+export declare const bash: () => RemoteTool;
+export declare const edit: () => RemoteTool;
+export declare const glob: () => RemoteTool;
+export declare const grep: () => RemoteTool;
+export declare const ls: () => RemoteTool;
+export declare const read: () => RemoteTool;
+export declare const todo: () => RemoteTool;
+export declare const write: () => RemoteTool;

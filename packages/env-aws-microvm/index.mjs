@@ -1,15 +1,16 @@
-import { component } from "@aexhq/brain";
-
 export function awsMicrovm(options = {}) {
   if (options === null || typeof options !== "object" || Array.isArray(options)) {
     throw new TypeError("awsMicrovm options must be an object");
   }
   for (const name of Object.keys(options)) {
-    if (!["region", "idleSeconds", "maximumSeconds"].includes(name)) {
+    if (!["id", "region", "idleSeconds", "maximumSeconds", "lifecyclePolicy"].includes(name)) {
       throw new TypeError(`unknown awsMicrovm option: ${name}`);
     }
   }
   const configuration = {};
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(options.id ?? "")) {
+    throw new TypeError("awsMicrovm id must be a stable Environment identifier");
+  }
   if (options.region !== undefined) {
     if (typeof options.region !== "string" || options.region.trim() === "") {
       throw new TypeError("awsMicrovm region must be a non-empty string");
@@ -31,12 +32,11 @@ export function awsMicrovm(options = {}) {
   ) {
     throw new TypeError("awsMicrovm idleSeconds cannot exceed maximumSeconds");
   }
-  return component(
-    "environment",
-    new URL("./dist/environment.component.wasm", import.meta.url),
-    { driver: "aws-microvm", configuration },
-    { metadata: { name: "aws-microvm", source: "@aexhq/env-aws-microvm" } },
-  );
+  const lifecyclePolicy = options.lifecyclePolicy ?? "session";
+  if (!["session", "shared", "external"].includes(lifecyclePolicy)) {
+    throw new TypeError("awsMicrovm lifecyclePolicy must be session, shared, or external");
+  }
+  return Object.freeze({ environment_id: options.id, configuration: { driver: "aws-microvm", ...configuration }, lifecycle_policy: lifecyclePolicy });
 }
 
 function assertPositiveInteger(value, name) {

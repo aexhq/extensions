@@ -16,49 +16,40 @@ const runNpm = (args, options = {}) => run(process.execPath, [npmCli, ...args], 
 const pack = (directory) => {
   const filename = runNpm(["pack", "--silent", "--pack-destination", artifacts], { cwd: directory })
     .split(/\r?\n/u).at(-1);
-  if (filename === undefined || !filename.endsWith(".tgz")) {
-    throw new Error(`npm pack returned no archive for ${directory}`);
-  }
+  if (filename === undefined || !filename.endsWith(".tgz")) throw new Error(`npm pack returned no archive for ${directory}`);
   return path.join(artifacts, filename);
 };
 
 try {
   await mkdir(artifacts);
   await mkdir(consumer);
-  const packages = [
-    "agentloop",
-    "env-app",
-    "env-aws-microvm",
-    "loop-codex",
-    "loop-pi",
-    "model",
-    "model-anthropic",
-    "model-openai",
-    "tools",
-  ].map((name) => pack(path.join(root, "packages", name)));
+  const packages = ["agentloop", "env-app", "env-aws-microvm", "loop-codex", "loop-pi", "tools"]
+    .map((name) => pack(path.join(root, "packages", name)));
+  if (process.env.BRAIN_PACKAGE_ARCHIVE !== undefined) packages.unshift(path.resolve(process.env.BRAIN_PACKAGE_ARCHIVE));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
     name: "extensions-clean-consumer", private: true, type: "module",
   }, null, 2)}\n`);
   runNpm(["install", "--no-package-lock", "--no-audit", "--no-fund", ...packages], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
-import { prepareComponent } from "@aexhq/brain";
-import { app } from "@aexhq/env-app";
+import { BrainClient } from "@aexhq/brain";
+import { defineAgentloop } from "@aexhq/agentloop";
+import { createEnvironment } from "@aexhq/env-app";
 import { awsMicrovm } from "@aexhq/env-aws-microvm";
-import { codex } from "@aexhq/loop-codex";
-import { pi } from "@aexhq/loop-pi";
-import { anthropic } from "@aexhq/model-anthropic";
-import { openai } from "@aexhq/model-openai";
-import { bash, subagents } from "@aexhq/tools";
+import { packageUrl as codexPackage } from "@aexhq/loop-codex";
+import { packageUrl as piPackage } from "@aexhq/loop-pi";
+import { definitions, handlers } from "@aexhq/tools";
 
-const values = [app({ id: "smoke" }), awsMicrovm(), pi(), codex(), anthropic(), openai(), bash(), subagents()];
-assert.deepEqual(values.map((value) => value.extension), [
-  "environment", "environment", "agentloop", "agentloop", "model", "model", "tool", "tool",
-]);
-for (const value of values) assert.ok((await prepareComponent(value)).bytes > 0);
-console.log("packed extension packages compose through the public Brain SDK");
+assert.equal(typeof new BrainClient({ baseUrl: "http://127.0.0.1:8080" }).listSessions, "function");
+assert.equal(typeof defineAgentloop({ step: (input) => ({ context: input.context, decision: { type: "finish" } }) }).step, "function");
+assert.equal(typeof createEnvironment({ tools: handlers }), "function");
+assert.equal(awsMicrovm({ id: "smoke" }).environment_id, "smoke");
+assert.equal(codexPackage.protocol, "file:");
+assert.equal(piPackage.protocol, "file:");
+assert.equal(definitions.bash.remoteToolId, "bash");
+console.log("packed extension packages compose through the public Brain contracts");
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
-  assert.match(output, /public Brain SDK/u);
+  assert.match(output, /public Brain contracts/u);
   process.stdout.write(`${output}\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });

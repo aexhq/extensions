@@ -1,159 +1,107 @@
-/**
- * The Agentloop component builder (node-only; import from `@aexhq/agentloop/build`). The SDK
- * is bundled from its canonical TypeScript source, then an explicitly supplied compiler emits
- * the publishable Wasm component. Brain never compiles extension source.
- */
-
+import { componentize } from "@bytecodealliance/componentize-js";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { build, type Plugin } from "esbuild";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { build } from "esbuild";
 
-/**
- * Build provenance for the official compiler. Runtime identity is the component SHA-256 plus
- * the canonical Agentloop WIT digest, independent of the compiler that produced the bytes.
- */
-export const LOOP_TOOLCHAIN = "componentize-js-0.22.0";
+export const LOOP_TOOLCHAIN = "componentize-js-0.19.3";
 
-/** The authoring bundle bound before component compilation. */
-export const MAX_LOOP_BUNDLE_BYTES = 8 * 1024 * 1024;
-
-export interface LoopBundle {
-  /** The complete ESM source bundle, the exact bytes to upload. */
-  source: string;
-  /** SHA-256 of the UTF-8 source bytes for reproducible build provenance. */
-  sha256: string;
-  bytes: number;
-}
-
-export interface AgentloopComponent extends LoopBundle {
-  component: Uint8Array;
-  componentSha256: string;
-  componentBytes: number;
-}
-
-export type AgentloopCompiler = (
-  source: string,
-  wit: string,
-  options: { worldName: "agentloop"; disableFeatures: readonly ["http", "fetch-event"] },
-) => Promise<{ component: Uint8Array }>;
-
-export interface BuildLoopBundleOptions {
-  /** The loop entry module exporting `activate` (typically via `defineAgentloop`). */
+export interface BuildAgentloopOptions {
   entry: string;
-  /**
-   * Skip the Unicode-property-escape gate. The pinned guest engine rejects `\p{…}` in regex
-   * literals at parse time, so a bundle carrying one fails at session create; only set this
-   * when every occurrence is provably inside a plain string.
-   */
-  allowUnicodePropertyEscapes?: boolean;
-  /**
-   * esbuild plugins applied while bundling — the hook for dependency compatibility rewrites
-   * (e.g. replacing a library's `\p{…}` regex literals with engine-parseable equivalents).
-   * Plugins shape the deterministic source bundle, so they are part of what the sealed
-   * digest covers.
-   */
-  plugins?: Plugin[];
-  /** Modules injected before the bundle's own top-level code (esbuild `inject`) — polyfills. */
-  inject?: string[];
+  out?: string;
+  wit?: string;
 }
 
-const SDK_ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+export interface AgentloopPackage {
+  manifest: {
+    contract_version: "agentloop/v1";
+    component_digest: string;
+    component_bytes: number;
+    toolchain: string;
+  };
+  component_base64: string;
+}
 
-export async function buildLoopBundle(options: BuildLoopBundleOptions): Promise<LoopBundle> {
-  const entryPath = resolve(options.entry);
-  // The virtual entry binds the real host import around the author's module, so authored
-  // loops never import the WIT host interface themselves and stay unit-testable in node.
-  const virtualEntry = [
-    'import { call, cancelled } from "aex:agentloop/context@1.0.0";',
-    'import { __bindHost } from "@aexhq/agentloop";',
-    "__bindHost(call, cancelled);",
-    `export { activate } from ${JSON.stringify(entryPath.replaceAll("\\", "/"))};`,
-    "",
-  ].join("\n");
+export async function buildAgentloop(options: BuildAgentloopOptions): Promise<AgentloopPackage> {
+  const entry = resolve(options.entry);
+  const source = wrapper(entry);
   const bundled = await build({
-    stdin: {
-      contents: virtualEntry,
-      resolveDir: dirname(entryPath),
-      loader: "js",
-      sourcefile: "agentloop-entry.js",
-    },
+    stdin: { contents: source, resolveDir: dirname(entry), sourcefile: "brain-agentloop-entry.js", loader: "js" },
     bundle: true,
     format: "esm",
     platform: "neutral",
-    external: ["aex:agentloop/context@1.0.0"],
-    alias: { "@aexhq/agentloop": SDK_ENTRY },
-    plugins: options.plugins ?? [],
-    inject: options.inject ?? [],
     write: false,
     legalComments: "none",
   });
   const output = bundled.outputFiles[0];
-  if (!output) {
-    throw new Error("esbuild produced no output for the loop bundle");
+  if (!output) throw new Error("esbuild produced no Agentloop output");
+  const wit = options.wit ?? await readFile(new URL(import.meta.resolve("@aexhq/brain/contracts/agentloop")), "utf8");
+  const work = await mkdtemp(join(tmpdir(), "brain-agentloop-"));
+  let component: Uint8Array;
+  try {
+    const sourcePath = join(work, "agentloop.js");
+    const witPath = join(work, "agentloop.wit");
+    await Promise.all([writeFile(sourcePath, output.text), writeFile(witPath, wit)]);
+    const compiled = await componentize({
+      sourcePath,
+      witPath,
+      worldName: "agentloop",
+      disableFeatures: ["stdio", "random", "clocks", "http", "fetch-event"],
+    });
+    component = new Uint8Array(compiled.component);
+  } finally {
+    await rm(work, { recursive: true, force: true });
   }
-  const source = output.text;
-  lintLoopBundle(source, options);
-  const bytes = Buffer.byteLength(source, "utf8");
-  if (bytes > MAX_LOOP_BUNDLE_BYTES) {
-    throw new Error(`the loop bundle is ${bytes} bytes; the upload bound is 8 MiB`);
-  }
-  const sha256 = createHash("sha256").update(source, "utf8").digest("hex");
-  return { source, sha256, bytes };
+  const componentDigest = createHash("sha256").update(component).digest("hex");
+  const packageValue: AgentloopPackage = {
+    manifest: { contract_version: "agentloop/v1", component_digest: componentDigest, component_bytes: component.byteLength, toolchain: LOOP_TOOLCHAIN },
+    component_base64: Buffer.from(component).toString("base64"),
+  };
+  if (options.out !== undefined) await writeFile(options.out, `${JSON.stringify(packageValue)}\n`);
+  return packageValue;
 }
 
-export async function buildAgentloopComponent(
-  options: BuildLoopBundleOptions,
-  compiler: AgentloopCompiler,
-): Promise<AgentloopComponent> {
-  if (typeof compiler !== "function") {
-    throw new TypeError("buildAgentloopComponent requires an explicit component compiler");
+function wrapper(entry: string): string {
+  const normalized = entry.replaceAll("\\", "/");
+  return `
+import agentloop from ${JSON.stringify(normalized)};
+
+const decodeObservation = (observation) => {
+  switch (observation.tag) {
+    case "session-started": return { type: "session_started" };
+    case "user-message": return { type: "user_message", content: JSON.parse(observation.val) };
+    case "model-completed": return { type: "model_completed", response: JSON.parse(observation.val) };
+    case "tools-completed": return { type: "tools_completed", results: JSON.parse(observation.val) };
+    case "emitted": return { type: "emitted", event: JSON.parse(observation.val) };
+    case "cancelled": return { type: "cancelled" };
+    default: throw new Error("unknown observation " + observation.tag);
   }
-  const bundle = await buildLoopBundle(options);
-  const wit = await readFile(
-    new URL(import.meta.resolve("@aexhq/brain/contracts/agentloop")),
-    "utf8",
-  );
-  const output = await compiler(bundle.source, wit, {
-    worldName: "agentloop",
-    disableFeatures: ["http", "fetch-event"],
+};
+
+const encodeDecision = (decision) => {
+  switch (decision.type) {
+    case "model": return { tag: "model", val: JSON.stringify(decision.request) };
+    case "tools": return { tag: "tools", val: decision.calls.map((call) => ({ callId: call.callId, name: call.name, inputJson: JSON.stringify(call.input) })) };
+    case "emit": return { tag: "emit", val: JSON.stringify(decision.event) };
+    case "finish": return { tag: "finish", val: decision.result === undefined ? undefined : JSON.stringify(decision.result) };
+    case "fail": return { tag: "fail", val: [decision.code, decision.message, decision.retryable ?? false] };
+    default: throw new Error("unknown decision " + decision.type);
+  }
+};
+
+export function step(input) {
+  const output = agentloop.step({
+    context: { protocolVersion: input.context.protocolVersion, items: JSON.parse(input.context.itemsJson), ...(input.context.stateJson === undefined ? {} : { state: JSON.parse(input.context.stateJson) }) },
+    observation: decodeObservation(input.observation),
+    presentation: input.presentation,
+    runtime: input.runtime,
   });
-  const component = new Uint8Array(output.component);
+  if (output && typeof output.then === "function") throw new Error("Agentloop step must be synchronous");
   return {
-    ...bundle,
-    component,
-    componentSha256: createHash("sha256").update(component).digest("hex"),
-    componentBytes: component.byteLength,
+    context: { protocolVersion: output.context.protocolVersion, itemsJson: JSON.stringify(output.context.items), stateJson: output.context.state === undefined ? undefined : JSON.stringify(output.context.state) },
+    decision: encodeDecision(output.decision),
   };
 }
-
-/**
- * Refuse bundles that would fail at guest parse time. `\p{…}`/`\P{…}` in a regex literal is a
- * SyntaxError in the pinned engine; occurrences inside plain strings are indistinguishable
- * without a full parse, so the gate is strict with an explicit override.
- */
-export function lintLoopBundle(
-  source: string,
-  options?: Pick<BuildLoopBundleOptions, "allowUnicodePropertyEscapes">,
-): void {
-  if (options?.allowUnicodePropertyEscapes) {
-    return;
-  }
-  const offenders: number[] = [];
-  const lines = source.split("\n");
-  for (let index = 0; index < lines.length; index += 1) {
-    if (/\\[pP]\{/.test(lines[index] ?? "")) {
-      offenders.push(index + 1);
-    }
-  }
-  if (offenders.length > 0) {
-    throw new Error(
-      `the bundle contains Unicode property escapes (\\p{…}) on line(s) ${offenders
-        .slice(0, 8)
-        .join(", ")}; the guest engine rejects them in regex literals at parse time. ` +
-        "Rewrite the pattern with explicit ranges, or pass allowUnicodePropertyEscapes: true " +
-        "if every occurrence is provably inside a plain string.",
-    );
-  }
+`;
 }

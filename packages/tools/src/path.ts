@@ -1,5 +1,5 @@
 import { resolve, sep } from "node:path";
-import type { ToolContext } from "@aexhq/brain";
+import type { ToolContext } from "./definition.js";
 
 export function workspaceOf(context: ToolContext): string {
   if (context.workspace === undefined) throw new Error("This Tool requires Aex-managed execution");

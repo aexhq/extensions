@@ -1,67 +1,39 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { MAX_SEALED_CONFIG_BYTES, prepareComponent, prepareComponents } from "@aexhq/brain";
-import { bash, edit, glob, grep, ls, read, subagents, task, todo, write } from "../index.mjs";
+import { definitions, handlers, read } from "../index.mjs";
 
-test("official tools are immutable Environment-routed components", async () => {
-  const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write()];
-  assert.deepEqual(
-    values.map((value) => value.config.definition.name),
-    ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"],
+test("publishes model definitions separately from Environment-side handlers", () => {
+  assert.deepEqual(Object.keys(definitions), ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"]);
+  assert.equal(read().definition.name, "read");
+  assert.equal(read().remoteToolId, "read");
+  assert.equal(typeof handlers.read, "function");
+  assert.equal("execute" in read(), false);
+});
+
+test("executes a Tool only when an Environment invokes its handler", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "aex-tools-"));
+  try {
+    await writeFile(join(workspace, "hello.txt"), "hello");
+    const output = await handlers.read(
+      { path: "hello.txt" },
+      { workspace, deadlineMs: Date.now() + 1_000, signal: new AbortController().signal, grant: {} },
+    );
+    assert.equal(output.content, "hello");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("rejects a path outside the Environment workspace", async () => {
+  await assert.rejects(
+    handlers.read(
+      { path: "../outside" },
+      { workspace: tmpdir(), deadlineMs: Date.now() + 1_000, signal: new AbortController().signal, grant: {} },
+    ),
+    /path escapes/u,
   );
-  for (const value of values) {
-    assert.equal(value.extension, "tool");
-    assert.deepEqual(value.grants, ["environment"]);
-    assert.match(value.config.definition.contract_digest, /^[0-9a-f]{64}$/u);
-    assert.match(value.config.descriptor.bundle_digest, /^[0-9a-f]{64}$/u);
-    assert.equal(value.config.descriptor.runtime, "node22");
-    assert.equal(Object.isFrozen(value.config), true);
-  }
-  const prepared = await prepareComponent(values[0]);
-  assert.ok(prepared.bytes > 0);
-  assert.equal(prepared.component_digest.length, 64);
-  assert.equal(prepared.bundle.checksum, values[0].config.descriptor.bundle_digest);
-});
-
-// Brain seals every component config into one CONFIG journal record and refuses the session when
-// that record exceeds MAX_SEALED_CONFIG_BYTES. Inlining the ~283 KB Node bundle in each config took
-// the full official set to about 3 MB, which only a live create could reveal. The budget is a
-// quarter of the ceiling because the same record also carries the prompt, model and environment
-// seals of whatever session selects these tools.
-test("the full official Tool set seals far below Brain's CONFIG journal ceiling", async () => {
-  const values = [bash(), edit(), glob(), grep(), ls(), read(), todo(), write()];
-  const sealed = values.reduce((total, value) => total + JSON.stringify(value.config).length, 0);
-  assert.ok(
-    sealed < MAX_SEALED_CONFIG_BYTES / 4,
-    `the official Tool configs seal ${sealed} bytes against a ${MAX_SEALED_CONFIG_BYTES}-byte ceiling`,
-  );
-
-  const { bindings, toolArtifactLayers } = await prepareComponents(values);
-  for (const [index, binding] of bindings.entries()) {
-    const expected = values[index].config.descriptor?.bundle_digest;
-    assert.equal(binding.bundle_digest, expected);
-  }
-  assert.equal(toolArtifactLayers.length, 8);
-  for (const layer of toolArtifactLayers) {
-    assert.equal(layer.media_type, "application/javascript+esm");
-    assert.ok(layer.bytes > 0);
-  }
-});
-
-// Spawning reaches parent and child session data, so subagents is a builtin a customer turns
-// on, not a sandboxed extension: it ships no component and never crosses the component host.
-test("subagents declares Brain's builtin capability rather than a component", () => {
-  const value = subagents();
-  assert.equal(value.kind, "brain.tool");
-  assert.equal(value.name, "subagents");
-  assert.deepEqual(value.executor, { kind: "engine", capability: "brain.subagents" });
-  assert.equal(value.artifact, undefined);
-  assert.deepEqual(task(), value);
-});
-
-test("each factory reuses one executable component and seals distinct configuration", () => {
-  assert.deepEqual(bash().asset, read().asset);
-  assert.notEqual(bash().config.definition.contract_digest, read().config.definition.contract_digest);
-  assert.deepEqual(bash(), bash());
 });

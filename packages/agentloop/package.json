@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/agentloop",
-  "version": "0.3.3",
-  "description": "Author precompiled Agentloop components for Brain sessions against the canonical typed context",
+  "version": "0.4.0",
+  "description": "Author capability-pure Agentloop Components for Brain without handling WIT or Wasm",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -15,20 +15,22 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./build": { "types": "./dist/build.d.ts", "import": "./dist/build.js" },
+    "./testing": { "types": "./dist/testing.d.ts", "import": "./dist/testing.js" },
     "./package.json": "./package.json"
   },
+  "bin": { "brain-loop": "./dist/cli.js" },
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.json && node --test",
+    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.5.0",
+    "@aexhq/brain": "0.6.0",
+    "@bytecodealliance/componentize-js": "0.19.3",
     "esbuild": "0.25.9"
   },
   "devDependencies": {
-    "@bytecodealliance/componentize-js": "0.22.0",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"
   }

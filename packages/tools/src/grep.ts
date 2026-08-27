@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "@aexhq/brain";
+import { tool } from "./definition.js";
 import { z } from "zod";
 
 const grepInput = z.object({ pattern: z.string().min(1), path: z.string().default("."), limit: z.number().int().positive().max(10_000).default(1_000) });
