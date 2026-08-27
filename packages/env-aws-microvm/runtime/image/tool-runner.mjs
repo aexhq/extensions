@@ -76,11 +76,8 @@ try {
   if (tool === null || typeof tool !== "object" || tool.kind !== "brain.tool-runtime") {
     throw new TypeError("bundle default export is not a Tool runtime");
   }
-  const description = tool.description ?? null;
-  const sealedDescription = request.seal.description ?? null;
   if (
     tool.name !== request.seal.name
-    || description !== sealedDescription
     || tool.contractDigest !== request.seal.contract_digest
   ) {
     throw new TypeError("bundle Tool runtime does not match the sealed contract");
