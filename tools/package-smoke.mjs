@@ -29,27 +29,41 @@ try {
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
     name: "extensions-clean-consumer", private: true, type: "module",
   }, null, 2)}\n`);
-  runNpm(["install", "--no-package-lock", "--no-audit", "--no-fund", ...packages], { cwd: consumer });
+  runNpm(["install", "--no-package-lock", "--no-audit", "--no-fund", ...packages, "typescript@5.9.2"], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
-import { BrainClient } from "@aexhq/brain";
+import { Brain } from "@aexhq/brain";
 import { defineAgentloop } from "@aexhq/agentloop";
 import { createEnvironment } from "@aexhq/env-app";
-import { awsMicrovm } from "@aexhq/env-aws-microvm";
-import { packageUrl as codexPackage } from "@aexhq/loop-codex";
-import { packageUrl as piPackage } from "@aexhq/loop-pi";
-import { definitions, handlers } from "@aexhq/tools";
+import { awsMicroVm } from "@aexhq/env-aws-microvm";
+import { codex } from "@aexhq/loop-codex";
+import { pi } from "@aexhq/loop-pi";
+import { handlers, read } from "@aexhq/tools";
 
-assert.equal(typeof new BrainClient({ baseUrl: "http://127.0.0.1:8080" }).listSessions, "function");
+assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).createSession, "function");
 assert.equal(typeof defineAgentloop({ step: (input) => ({ context: input.context, decision: { type: "finish" } }) }).step, "function");
 assert.equal(typeof createEnvironment({ tools: handlers }), "function");
-assert.equal(awsMicrovm({ id: "smoke" }).environment_id, "smoke");
-assert.equal(codexPackage.protocol, "file:");
-assert.equal(piPackage.protocol, "file:");
-assert.equal(definitions.bash.remoteToolId, "bash");
+const workspace = awsMicroVm({ lifecycle: "shared", id: "smoke" });
+assert.equal(read().runIn(workspace).kind, "bound-tool");
+assert.equal(codex().kind, "agent-loop");
+assert.equal(pi().kind, "agent-loop");
 console.log("packed extension packages compose through the public Brain contracts");
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
   assert.match(output, /public Brain contracts/u);
+  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain } from "@aexhq/brain";
+import { awsMicroVm } from "@aexhq/env-aws-microvm";
+import { pi } from "@aexhq/loop-pi";
+import { bash, read, write } from "@aexhq/tools";
+
+const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
+const workspace = awsMicroVm({ region: "eu-west-2" });
+void brain.createSession({
+  model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
+  agentLoop: pi(),
+  tools: [read().runIn(workspace), write().runIn(workspace), bash().runIn(workspace)],
+});
+`);
+  runNpm(["exec", "--", "tsc", "--noEmit", "--strict", "--target", "ES2023", "--module", "NodeNext", "--moduleResolution", "NodeNext", "smoke.ts"], { cwd: consumer });
   process.stdout.write(`${output}\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });

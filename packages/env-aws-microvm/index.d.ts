@@ -1,20 +1,14 @@
-export interface AwsMicrovmOptions {
-  readonly id: string;
+import type { Environment } from "@aexhq/brain";
+
+export type AwsMicroVmOptions = {
   readonly region?: string;
   readonly idleSeconds?: number;
   readonly maximumSeconds?: number;
-  readonly lifecyclePolicy?: "session" | "shared" | "external";
-}
+} & (
+  | { readonly lifecycle?: "session"; readonly id?: never }
+  | { readonly lifecycle: "shared" | "external"; readonly id: string }
+);
 
-export interface AwsMicrovmEnvironment {
-  readonly environment_id: string;
-  readonly configuration: {
-    readonly driver: "aws-microvm";
-    readonly region?: string;
-    readonly idle_seconds?: number;
-    readonly maximum_seconds?: number;
-  };
-  readonly lifecycle_policy: "session" | "shared" | "external";
-}
+export type AwsMicroVmEnvironment = Environment<"workspace">;
 
-export declare function awsMicrovm(options: AwsMicrovmOptions): AwsMicrovmEnvironment;
+export declare function awsMicroVm(options?: AwsMicroVmOptions): AwsMicroVmEnvironment;

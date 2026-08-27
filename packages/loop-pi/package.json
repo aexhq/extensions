@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/loop-pi",
-  "version": "0.88.0",
+  "version": "0.89.0",
   "description": "Pi-style parallel-Tool Agentloop for Brain, built through the universal Component pipeline",
   "license": "Apache-2.0",
   "repository": {
@@ -39,9 +39,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/agentloop": "0.4.0"
+    "@aexhq/agentloop": "0.4.1",
+    "@aexhq/brain": "0.7.0"
   },
-  "devDependencies": {
-    "@aexhq/brain": "0.6.0"
-  }
+  "devDependencies": {}
 }

@@ -7,14 +7,9 @@ execution, credentials and journaling; pi owns loop policy.
 ```js
 import { pi } from "@aexhq/loop-pi";
 
-const agentloop = pi({
-  instructions: "Work carefully and verify changes.",
-  reasoningEffort: "high",
-});
+const agentLoop = pi();
 ```
 
-`pi(options)` returns an immutable Brain component declaration. The npm package contains
-`dist/loop.component.wasm`, compiled before publication through the public
-`@aexhq/agentloop/build` API. Options remain configuration data and do not alter executable
-bytes. The StarlingMonkey compatibility transforms live in `src/compat.mjs` and affect build
+`pi()` returns an immutable AgentLoop value. Its package is admitted automatically when a session
+is created. The StarlingMonkey compatibility transforms live in `src/compat.mjs` and affect build
 provenance only.

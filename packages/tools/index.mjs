@@ -1,3 +1,4 @@
+import { defineTool } from "@aexhq/brain";
 import bashTool from "./dist/bash.js";
 import editTool from "./dist/edit.js";
 import globTool from "./dist/glob.js";
@@ -9,7 +10,16 @@ import writeTool from "./dist/write.js";
 
 const tools = { bash: bashTool, edit: editTool, glob: globTool, grep: grepTool, ls: lsTool, read: readTool, todo: todoTool, write: writeTool };
 
-export const definitions = Object.freeze(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, Object.freeze({ definition: tool.definition, remoteToolId: name })])));
+export const definitions = Object.freeze(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, defineTool({
+  environmentCapability: "workspace",
+  definition: {
+    name: tool.definition.name,
+    description: tool.definition.description,
+    inputSchema: tool.definition.input_schema,
+    ...(tool.definition.output_schema === undefined ? {} : { outputSchema: tool.definition.output_schema }),
+  },
+  remoteToolId: name,
+})])));
 export const handlers = Object.freeze(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, tool.execute.bind(tool)])));
 
 export const bash = () => definitions.bash;

@@ -36,6 +36,7 @@
     "test": "npm run build && node --test"
   },
   "dependencies": {
+    "@aexhq/brain": "0.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

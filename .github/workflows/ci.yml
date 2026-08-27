@@ -24,7 +24,7 @@ jobs:
         with:
           repository: aexhq/brain
           path: brain-source
-          ref: 6081ebbf94f4dd38a7dfbd97c641c18f58efb187
+          ref: 6009a5b6fb73e11e8920cdd01fec53818563a048
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
@@ -33,6 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm ci --prefix brain-source
           brain_archive=$(npm pack --silent --workspace @aexhq/brain --pack-destination "$RUNNER_TEMP" --prefix brain-source)
           npm install --ignore-scripts --no-audit --no-fund --no-save --package-lock=false "$RUNNER_TEMP/$brain_archive"
           echo "BRAIN_PACKAGE_ARCHIVE=$RUNNER_TEMP/$brain_archive" >> "$GITHUB_ENV"

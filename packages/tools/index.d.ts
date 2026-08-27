@@ -1,12 +1,7 @@
-export interface RemoteTool {
-  readonly definition: {
-    readonly name: string;
-    readonly description: string;
-    readonly input_schema: Record<string, unknown>;
-    readonly output_schema?: Record<string, unknown>;
-  };
-  readonly remoteToolId: string;
-}
+import type { Environment, Tool } from "@aexhq/brain";
+
+export type WorkspaceEnvironment = Environment<"workspace">;
+export type RemoteTool = Tool<unknown, unknown, WorkspaceEnvironment>;
 
 export declare const definitions: Readonly<Record<string, RemoteTool>>;
 export declare const handlers: Readonly<Record<string, (input: unknown, context: unknown) => Promise<unknown>>>;

@@ -1,19 +1,28 @@
-export function awsMicrovm(options = {}) {
+import { defineEnvironment } from "@aexhq/brain";
+
+export function awsMicroVm(options = {}) {
   if (options === null || typeof options !== "object" || Array.isArray(options)) {
-    throw new TypeError("awsMicrovm options must be an object");
+    throw new TypeError("awsMicroVm options must be an object");
   }
   for (const name of Object.keys(options)) {
-    if (!["id", "region", "idleSeconds", "maximumSeconds", "lifecyclePolicy"].includes(name)) {
-      throw new TypeError(`unknown awsMicrovm option: ${name}`);
+    if (!["id", "region", "idleSeconds", "maximumSeconds", "lifecycle"].includes(name)) {
+      throw new TypeError(`unknown awsMicroVm option: ${name}`);
     }
   }
-  const configuration = {};
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(options.id ?? "")) {
-    throw new TypeError("awsMicrovm id must be a stable Environment identifier");
+  const lifecycle = options.lifecycle ?? "session";
+  if (!["session", "shared", "external"].includes(lifecycle)) {
+    throw new TypeError("awsMicroVm lifecycle must be session, shared, or external");
   }
+  if (lifecycle === "session" && options.id !== undefined) {
+    throw new TypeError("a session awsMicroVm cannot declare an id");
+  }
+  if (lifecycle !== "session" && !validIdentifier(options.id)) {
+    throw new TypeError("a shared or external awsMicroVm requires a stable id");
+  }
+  const configuration = { driver: "aws-microvm" };
   if (options.region !== undefined) {
     if (typeof options.region !== "string" || options.region.trim() === "") {
-      throw new TypeError("awsMicrovm region must be a non-empty string");
+      throw new TypeError("awsMicroVm region must be a non-empty string");
     }
     configuration.region = options.region;
   }
@@ -25,22 +34,22 @@ export function awsMicrovm(options = {}) {
     assertPositiveInteger(options.maximumSeconds, "maximumSeconds");
     configuration.maximum_seconds = options.maximumSeconds;
   }
-  if (
-    options.idleSeconds !== undefined &&
-    options.maximumSeconds !== undefined &&
-    options.idleSeconds > options.maximumSeconds
-  ) {
-    throw new TypeError("awsMicrovm idleSeconds cannot exceed maximumSeconds");
+  if (options.idleSeconds !== undefined && options.maximumSeconds !== undefined && options.idleSeconds > options.maximumSeconds) {
+    throw new TypeError("awsMicroVm idleSeconds cannot exceed maximumSeconds");
   }
-  const lifecyclePolicy = options.lifecyclePolicy ?? "session";
-  if (!["session", "shared", "external"].includes(lifecyclePolicy)) {
-    throw new TypeError("awsMicrovm lifecyclePolicy must be session, shared, or external");
-  }
-  return Object.freeze({ environment_id: options.id, configuration: { driver: "aws-microvm", ...configuration }, lifecycle_policy: lifecyclePolicy });
+  return defineEnvironment({
+    capability: "workspace",
+    configuration,
+    lifecycle: lifecycle === "session" ? {} : { type: lifecycle, id: options.id },
+  });
 }
 
 function assertPositiveInteger(value, name) {
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new TypeError(`awsMicrovm ${name} must be a positive safe integer`);
+    throw new TypeError(`awsMicroVm ${name} must be a positive safe integer`);
   }
+}
+
+function validIdentifier(value) {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value);
 }
