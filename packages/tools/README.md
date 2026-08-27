@@ -1,7 +1,6 @@
 # @aexhq/tools
 
-Official Tool components for Brain. Nothing is granted by default; applications select only the
-tools a session needs.
+Official Tool extensions for Brain.
 
 ```js
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
@@ -9,14 +8,12 @@ import { bash, edit, read, write } from "@aexhq/tools";
 
 const workspace = awsMicroVm({ region: "eu-west-2" });
 const tools = [
-  read().runIn(workspace),
-  edit().runIn(workspace),
-  write().runIn(workspace),
-  bash().runIn(workspace),
+  read().useIn(workspace),
+  edit().useIn(workspace),
+  write().useIn(workspace),
+  bash().useIn(workspace),
 ];
 ```
 
-Every factory returns an immutable model-visible Tool definition. `runIn` selects the Environment
-that executes it; Brain stores only the remote binding and never evaluates the Tool implementation.
-The package separately exports `handlers` for Environment implementations that run the official
-Node 22 handlers.
+Each factory returns an immutable Tool. `useIn` selects its exact Environment; the Tool's bundled
+Node implementation and npm dependencies execute there, never in Brain.

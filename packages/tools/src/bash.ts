@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "./definition.js";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const MAX_CAPTURE_BYTES = 1024 * 1024;
@@ -18,10 +18,11 @@ const bashOutput = z.object({
     truncated: z.boolean(),
   });
 
-const bash = tool(bashInput, async function bash(input, context) {
+export const bash = tool({ description: "Run a Bash command in the session Environment workspace.", input: bashInput, output: bashOutput }, (author) => {
+  author.run(async (input, context) => {
     const deadline = input.timeout_ms === undefined
-      ? context.deadlineMs
-      : Math.min(context.deadlineMs, Date.now() + input.timeout_ms);
+      ? context.deadline.getTime()
+      : Math.min(context.deadline.getTime(), Date.now() + input.timeout_ms);
     return await new Promise((resolve, reject) => {
       const child = spawn("/bin/bash", ["-lc", input.command], {
         cwd: input.cwd ?? context.workspace,
@@ -58,10 +59,5 @@ const bash = tool(bashInput, async function bash(input, context) {
       const timer = setTimeout(() => child.kill("SIGTERM"), delay);
       timer.unref();
     });
-  })
-  .named("bash")
-  .describe("Run a Bash command in the session Environment workspace.")
-  .returns(bashOutput)
-  .server(import.meta.url);
-
-export default bash;
+  });
+});

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
+import { app } from "./dist/index.mjs";
 import { createEnvironment, serveEnvironment } from "./index.mjs";
+
+test("publishes the application target as an ordinary Environment", () => {
+  assert.deepEqual(Object.keys(app()), []);
+});
 
 test("runs the complete lifecycle with separate session authority", async () => {
   const calls = [];
@@ -15,10 +20,12 @@ test("runs the complete lifecycle with separate session authority", async () => 
     type: "execute",
     tool: { call_id: "call_one", name: "echo", input: { value: 1 } },
     remote_tool_id: "echo",
+    tool_configuration: { prefix: "test" },
     grant: { echo: true },
   }, "att_one"));
   assert.deepEqual(executed.receipt.result.output, { value: 1 });
   assert.equal(calls[0].sessionId, "ses_one");
+  assert.deepEqual(calls[0].options, { prefix: "test" });
   assert.equal((await handle(operation("op_detach", { type: "detach" }, "att_one"))).receipt.type, "accepted");
   assert.equal((await handle(operation("op_teardown", { type: "teardown" }))).receipt.type, "accepted");
 });

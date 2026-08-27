@@ -380,7 +380,7 @@ const managedEnvelope = (operationId, bindingRef, capability, input) => {
     deadline_at_ms: Date.now() + 60_000,
     fence: 1,
     generation: "generation-ci",
-    input: { kind: "inline", value: input },
+    input: { kind: "inline", value: { input, options: {} } },
     network: { kind: "none" },
     operation_id: operationId,
     phase: "execute",

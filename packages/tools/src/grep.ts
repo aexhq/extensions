@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 
-import { tool } from "./definition.js";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const grepInput = z.object({ pattern: z.string().min(1), path: z.string().default("."), limit: z.number().int().positive().max(10_000).default(1_000) });
 const grepOutput = z.object({ matches: z.array(z.string()), truncated: z.boolean() });
 
-const grep = tool(grepInput, async function grep({ pattern, path, limit }, context) {
+export const grep = tool({ description: "Search text files in the Environment workspace with ripgrep.", input: grepInput, output: grepOutput }, (author) => {
+  author.run(async ({ pattern, path, limit }, context) => {
     return await new Promise((resolve, reject) => {
       const child = spawn("rg", ["--line-number", "--no-heading", "--color", "never", "--", pattern, path], {
         cwd: context.workspace,
@@ -26,10 +27,5 @@ const grep = tool(grepInput, async function grep({ pattern, path, limit }, conte
         resolve({ matches: lines.slice(0, limit), truncated: lines.length > limit });
       });
     });
-  })
-  .named("grep")
-  .describe("Search text files in the Environment workspace with ripgrep.")
-  .returns(grepOutput)
-  .server(import.meta.url);
-
-export default grep;
+  });
+});

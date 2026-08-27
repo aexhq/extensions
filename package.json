@@ -1,7 +1,7 @@
 {
   "name": "aex-extension",
   "private": true,
-  "description": "Official Aex Agentloop, Tool, and Environment extensions built against public Brain contracts",
+  "description": "Official Aex Brain, Tool, and Environment extensions built against public Brain contracts",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -16,7 +16,7 @@
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.7.2",
+    "@aexhq/brain": "0.8.2",
     "@bytecodealliance/jco": "1.17.9",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"

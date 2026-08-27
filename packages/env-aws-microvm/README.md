@@ -16,11 +16,12 @@ const environment = awsMicroVm({
 });
 ```
 
-The default lifecycle is session-scoped. A shared Environment requires an explicit stable identity:
+Every returned Environment reference is session-scoped and can expose provider-specific methods:
 
 ```js
-const shared = awsMicroVm({ lifecycle: "shared", id: "team-workspace" });
+await environment.suspend();
 ```
 
-Both lifetimes are finite. The Environment driver rejects values above its deployment maxima;
-omitted values use those finite maxima.
+`suspend()` releases the current AWS incarnation; a later Tool call materializes a fresh one. The
+Environment driver rejects lifetimes above its deployment maxima; omitted values use those finite
+maxima.

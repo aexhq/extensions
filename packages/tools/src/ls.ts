@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 
-import { tool } from "./definition.js";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 import { workspaceOf, workspacePath } from "./path.js";
@@ -8,7 +8,8 @@ import { workspaceOf, workspacePath } from "./path.js";
 const lsInput = z.object({ path: z.string().default("."), limit: z.number().int().positive().max(10_000).default(1_000) });
 const lsOutput = z.object({ entries: z.array(z.object({ name: z.string(), kind: z.enum(["file", "directory", "symlink", "other"]) })), truncated: z.boolean() });
 
-const ls = tool(lsInput, async function ls({ path, limit }, context) {
+export const ls = tool({ description: "List entries in an Environment workspace directory.", input: lsInput, output: lsOutput }, (author) => {
+  author.run(async ({ path, limit }, context) => {
     const values = await readdir(workspacePath(workspaceOf(context), path), { withFileTypes: true });
     values.sort((left, right) => left.name.localeCompare(right.name));
     const kind = (value: (typeof values)[number]): "file" | "directory" | "symlink" | "other" =>
@@ -17,10 +18,5 @@ const ls = tool(lsInput, async function ls({ path, limit }, context) {
       entries: values.slice(0, limit).map((value) => ({ name: value.name, kind: kind(value) })),
       truncated: values.length > limit,
     };
-  })
-  .named("ls")
-  .describe("List entries in an Environment workspace directory.")
-  .returns(lsOutput)
-  .server(import.meta.url);
-
-export default ls;
+  });
+});

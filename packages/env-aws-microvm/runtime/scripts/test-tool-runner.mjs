@@ -7,8 +7,6 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { definitions } from "@aexhq/tools";
-
 const environmentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runner = join(environmentRoot, "image", "tool-runner.mjs");
 const runtime = resolve(environmentRoot, "../../tools/dist/runtime/write.mjs");
@@ -32,12 +30,11 @@ function request(prepared, directory, operationId, content = "AEX_RUNNER_OK") {
     phase: "execute",
     seal: {
       name: "write",
-      description: definitions.write.definition.description,
       contract_digest: prepared.contractDigest,
       execute_digest: prepared.executeDigest,
       required_env: [],
     },
-    input: { path: `${operationId}.txt`, content },
+    input: { input: { path: `${operationId}.txt`, content }, options: {} },
     workspace: directory,
     deadline_ms: Date.now() + 60_000,
     max_output_bytes: 65_536,

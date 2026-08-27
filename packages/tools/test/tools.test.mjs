@@ -5,16 +5,20 @@ import { join } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { defineEnvironment } from "@aexhq/brain";
-import { definitions, handlers, read } from "../index.mjs";
+import { environment, installExtensionIdentity } from "@aexhq/brain";
+import { read } from "../dist/index.mjs";
 
-test("publishes model definitions separately from Environment-side handlers", () => {
-  assert.deepEqual(Object.keys(definitions), ["bash", "edit", "glob", "grep", "ls", "read", "todo", "write"]);
-  assert.equal(read().definition.name, "read");
-  assert.equal(read().remoteToolId, "read");
-  const workspace = defineEnvironment({ capability: "workspace", configuration: {} });
-  assert.equal(read().runIn(workspace).kind, "bound-tool");
-  assert.equal(typeof handlers.read, "function");
+const workspace = environment((author) => {
+  const instance = author.open(async () => ({}));
+  instance.run(async () => undefined);
+  instance.close(async () => undefined);
+  return {};
+});
+installExtensionIdentity(workspace, "workspace");
+
+test("publishes generated model factories without Environment-side handlers", () => {
+  assert.deepEqual(Object.keys(read()), ["useIn"]);
+  assert.deepEqual(Object.keys(read().useIn(workspace())), []);
   assert.equal("execute" in read(), false);
 });
 
@@ -25,12 +29,13 @@ test("keeps model-visible descriptions out of the Environment runtime", async ()
 });
 
 test("executes a Tool only when an Environment invokes its handler", async () => {
+  const runtime = (await import(pathToFileURL(join(import.meta.dirname, "../dist/runtime/read.mjs")))).default;
   const workspace = await mkdtemp(join(tmpdir(), "aex-tools-"));
   try {
     await writeFile(join(workspace, "hello.txt"), "hello");
-    const output = await handlers.read(
+    const output = await runtime.execute(
       { path: "hello.txt" },
-      { workspace, deadlineMs: Date.now() + 1_000, signal: new AbortController().signal, grant: {} },
+      { workspace, deadlineMs: Date.now() + 1_000, signal: new AbortController().signal },
     );
     assert.equal(output.content, "hello");
   } finally {
@@ -39,10 +44,11 @@ test("executes a Tool only when an Environment invokes its handler", async () =>
 });
 
 test("rejects a path outside the Environment workspace", async () => {
+  const runtime = (await import(pathToFileURL(join(import.meta.dirname, "../dist/runtime/read.mjs")))).default;
   await assert.rejects(
-    handlers.read(
+    runtime.execute(
       { path: "../outside" },
-      { workspace: tmpdir(), deadlineMs: Date.now() + 1_000, signal: new AbortController().signal, grant: {} },
+      { workspace: tmpdir(), deadlineMs: Date.now() + 1_000, signal: new AbortController().signal },
     ),
     /path escapes/u,
   );

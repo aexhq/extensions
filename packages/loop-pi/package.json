@@ -1,7 +1,7 @@
 {
-  "name": "@aexhq/loop-pi",
-  "version": "0.89.1",
-  "description": "Pi-style parallel-Tool Agentloop for Brain, built through the universal Component pipeline",
+  "name": "@aexhq/brain-pi",
+  "version": "1.0.0",
+  "description": "Pi-style parallel-Tool Brain extension",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -18,29 +18,24 @@
     "provenance": true,
     "tag": "next"
   },
-  "agentloop": {
-    "name": "pi"
-  },
   "exports": {
-    ".": { "types": "./index.d.ts", "import": "./index.mjs" },
-    "./package": "./dist/loop.brain.json",
+    ".": { "types": "./index.d.ts", "import": "./dist/index.mjs" },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src",
-    "index.mjs",
     "index.d.ts",
     "README.md"
   ],
   "scripts": {
-    "build": "node build.mjs",
+    "build": "brain build src/index.mjs --out dist",
     "test": "npm run build && node --test",
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/agentloop": "0.4.2",
-    "@aexhq/brain": "0.7.2"
+    "@aexhq/brain": "0.8.2",
+    "zod": "4.4.3"
   },
   "devDependencies": {}
 }
