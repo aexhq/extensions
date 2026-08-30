@@ -9,7 +9,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use brain_protocol_current::{EnvironmentBinding, EnvironmentRequest, ToolInvocation};
+use brain_protocol_current::{EnvironmentBinding, EnvironmentRequest, Identity, ToolInvocation};
 use futures_util::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -179,7 +179,7 @@ struct DriverState {
     bearer_digest: [u8; 32],
     drivers: Arc<HashMap<String, Arc<dyn Driver>>>,
     tools: Arc<HashMap<String, ToolBundle>>,
-    operation_digests: Arc<Mutex<OperationIdentityBook>>,
+    operation_identities: Arc<Mutex<OperationIdentityBook>>,
 }
 
 #[derive(Clone)]
@@ -241,7 +241,7 @@ pub fn router(
         bearer_digest: Sha256::digest(bearer.as_bytes()).into(),
         drivers: Arc::new(by_name),
         tools: Arc::new(tools),
-        operation_digests: Arc::new(Mutex::new(OperationIdentityBook::default())),
+        operation_identities: Arc::new(Mutex::new(OperationIdentityBook::default())),
     };
     Ok(Router::new()
         .route("/v1/operations", post(operation))
@@ -313,22 +313,22 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
     {
         return failure(StatusCode::BAD_REQUEST, "invalid Environment command");
     }
-    let actual_digest = match canonical_digest(&command.operation.request) {
-        Ok(digest) => digest,
+    let actual_identity = match Identity::of(&command.operation.request) {
+        Ok(identity) => identity,
         Err(_) => return failure(StatusCode::BAD_REQUEST, "invalid Environment request"),
     };
-    if actual_digest != command.operation.request_digest {
+    if actual_identity != command.operation.request_identity {
         return failure(
             StatusCode::BAD_REQUEST,
-            "Environment request digest does not match its canonical request",
+            "Environment request identity does not match its canonical request",
         );
     }
     let operation_id = command.operation.operation_id.clone();
-    let request_digest = command.operation.request_digest.clone();
+    let request_identity = command.operation.request_identity.to_string();
     if let Some(receipt) =
-        record_operation_identity(&state, operation_id.as_str(), &request_digest).await
+        record_operation_identity(&state, operation_id.as_str(), &request_identity).await
     {
-        return environment_response(operation_id.as_str(), &request_digest, receipt);
+        return environment_response(operation_id.as_str(), &request_identity, receipt);
     }
     let receipt = match handle_operation(&state, command.binding, command.operation).await {
         Ok(receipt) => receipt,
@@ -347,21 +347,21 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
             })
         }
     };
-    environment_response(operation_id.as_str(), &request_digest, receipt)
+    environment_response(operation_id.as_str(), &request_identity, receipt)
 }
 
 async fn record_operation_identity(
     state: &DriverState,
     operation_id: &str,
-    request_digest: &str,
+    request_identity: &str,
 ) -> Option<Value> {
-    let mut operations = state.operation_digests.lock().await;
+    let mut operations = state.operation_identities.lock().await;
     if let Some(expected) = operations.by_id.get(operation_id) {
-        return (expected != request_digest).then(|| {
+        return (expected != request_identity).then(|| {
             serde_json::json!({
                 "type":"conflict",
-                "expected_digest":expected,
-                "actual_digest":request_digest
+                "expected_identity":expected,
+                "actual_identity":request_identity
             })
         });
     }
@@ -372,7 +372,7 @@ async fn record_operation_identity(
     }
     operations
         .by_id
-        .insert(operation_id.to_owned(), request_digest.to_owned());
+        .insert(operation_id.to_owned(), request_identity.to_owned());
     operations.order.push_back(operation_id.to_owned());
     None
 }
@@ -467,8 +467,8 @@ fn setup(environment: &ActiveEnvironment, configuration: &Value) -> Result<Value
     if actual != environment.configuration_digest {
         return Ok(serde_json::json!({
             "type":"conflict",
-            "expected_digest":environment.configuration_digest,
-            "actual_digest":actual
+            "expected_identity":environment.configuration_digest,
+            "actual_identity":actual
         }));
     }
     Ok(serde_json::json!({"type":"accepted"}))
@@ -525,7 +525,7 @@ async fn execute(
                 "binding":binding,
                 "operation":{
                     "operation_id":operation.operation_id,
-                    "request_digest":operation.request_digest,
+                    "request_digest":operation.request_identity,
                     "kind":"invoke",
                     "descriptor_json":serde_json::to_string(&serde_json::json!({
                         "runtime":"node22",
@@ -641,10 +641,11 @@ fn environment_from_binding(
 ) -> Result<ActiveEnvironment, DriverError> {
     let configuration: Value = serde_json::from_str(&binding.adapter_binding)
         .map_err(|_| DriverError::invalid("Environment adapter binding is invalid"))?;
-    let configuration_digest = canonical_digest(&configuration)?;
-    if configuration_digest != binding.configuration_digest {
+    let configuration_identity = Identity::of(&configuration)
+        .map_err(|_| DriverError::invalid("Environment adapter binding cannot be identified"))?;
+    if configuration_identity != binding.configuration_identity {
         return Err(DriverError::invalid(
-            "Environment adapter binding does not match its digest",
+            "Environment adapter binding does not match its identity",
         ));
     }
     let driver = configuration
@@ -665,7 +666,7 @@ fn environment_from_binding(
     Ok(ActiveEnvironment {
         driver: driver.to_owned(),
         provider_configuration,
-        configuration_digest,
+        configuration_digest: configuration_identity.to_string(),
     })
 }
 
@@ -705,11 +706,6 @@ fn canonical_digest(value: &impl Serialize) -> Result<String, DriverError> {
 
 fn valid_operation(operation: &EnvironmentOperation) -> bool {
     valid_identifier(operation.operation_id.as_str())
-        && operation.request_digest.len() == 64
-        && operation
-            .request_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
         && valid_identifier(operation.environment_id.as_str())
         && valid_identifier(operation.session_id.as_str())
         && operation
@@ -721,11 +717,6 @@ fn valid_operation(operation: &EnvironmentOperation) -> bool {
 
 fn valid_binding(binding: &EnvironmentBinding, operation: &EnvironmentOperation) -> bool {
     binding.environment_id == operation.environment_id
-        && binding.configuration_digest.len() == 64
-        && binding
-            .configuration_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
         && !binding.adapter_binding.is_empty()
         && binding.adapter_binding.len() <= 65_536
         && binding.directory_generation > 0
@@ -757,11 +748,11 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn environment_response(operation_id: &str, request_digest: &str, receipt: Value) -> Response {
+fn environment_response(operation_id: &str, request_identity: &str, receipt: Value) -> Response {
     Json(serde_json::json!({
         "contract":ENVIRONMENT_CONTRACT,
         "operation_id":operation_id,
-        "request_digest":request_digest,
+        "request_identity":request_identity,
         "receipt":receipt
     }))
     .into_response()
@@ -853,14 +844,14 @@ mod tests {
                     "contract":"environment/v1",
                     "binding":{
                         "environment_id":"environment-1",
-                        "configuration_digest":configuration_digest,
+                        "configuration_identity":configuration_digest,
                         "adapter_binding":serde_jcs::to_string(&configuration).unwrap(),
                         "directory_generation":1,
                         "lifecycle_policy":"session"
                     },
                     "operation":{
                         "operation_id":operation_id,
-                        "request_digest":request_digest,
+                        "request_identity":request_digest,
                         "environment_id":"environment-1",
                         "session_id":"session-1",
                         "attachment_id":attachment_id,
@@ -979,7 +970,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authentication_and_operation_digest_conflicts_are_enforced() {
+    async fn authentication_and_operation_identity_conflicts_are_enforced() {
         let directory = tool_directory();
         let app = router(
             "secret",

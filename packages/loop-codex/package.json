@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/brain-codex",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Codex-style sequential-Tool Brain extension",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.8.4",
+    "@aexhq/brain": "0.9.1",
     "zod": "4.4.3"
   },
   "devDependencies": {}

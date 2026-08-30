@@ -4,44 +4,46 @@ import { z } from "zod";
 const stateSchema = z.object({
   messages: z.array(z.unknown()),
   pending: z.array(z.object({ callId: z.string(), name: z.string(), input: z.unknown() })),
+  results: z.array(z.unknown()),
 });
 
 export const codex = brain((author) => {
-  const state = author.state(stateSchema, () => ({ messages: [], pending: [] }));
+  const state = author.state(stateSchema, () => ({ messages: [], pending: [], results: [] }));
 
   author.on.message((message, turn) => {
-    state.messages.push({ role: "user", content: message.content });
+    const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
+    state.messages.push({ role: "user", content: [{ type: "text", text }] });
     return turn.model({ messages: state.messages });
   });
 
   author.on.model((completed, turn) => {
-    const response = completed.response?.response ?? completed.response ?? {};
-    const text = typeof response.text === "string" ? response.text : "";
-    const calls = normalizeCalls(response.tool_calls);
-    state.messages.push({ role: "assistant", content: text, tool_calls: calls });
+    const { message } = completed.response;
+    const text = message.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+    const calls = message.content
+      .filter((block) => block.type === "tool_use")
+      .map((block) => ({ callId: block.id, name: block.name, input: block.input }));
+    state.messages.push(message);
     if (calls.length === 0) return turn.reply(text);
     state.pending = calls;
+    state.results = [];
     return turn.tools([calls[0]]);
   });
 
   author.on.tools((completed, turn) => {
     const result = completed.results[0];
-    if (result !== undefined) state.messages.push({ role: "tool", tool_call_id: result.call_id, content: result.output, is_error: result.is_error });
+    if (result !== undefined) state.results.push({
+      type: "tool_result",
+      tool_use_id: result.call_id,
+      content: result.output,
+      is_error: result.is_error,
+    });
     state.pending.shift();
-    return state.pending.length > 0 ? turn.tools([state.pending[0]]) : turn.model({ messages: state.messages });
+    if (state.pending.length > 0) return turn.tools([state.pending[0]]);
+    state.messages.push({ role: "user", content: state.results });
+    state.results = [];
+    return turn.model({ messages: state.messages });
   });
 });
-
-function normalizeCalls(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((call, index) => ({
-    callId: String(call.id ?? call.call_id ?? `call_${index}`),
-    name: String(call.name ?? call.function?.name ?? ""),
-    input: parseArguments(call.input ?? call.function?.arguments),
-  })).filter((call) => call.name.length > 0);
-}
-
-function parseArguments(value) {
-  if (typeof value !== "string") return value ?? {};
-  try { return JSON.parse(value); } catch { return { value }; }
-}
