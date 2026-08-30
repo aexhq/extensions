@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-app",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Language-neutral HTTP Environment adapter for Brain sessions",
   "license": "MIT",
   "repository": {
@@ -18,6 +18,6 @@
   },
   "files": ["dist", "index.mjs", "index.d.ts", "README.md"],
   "scripts": { "build": "brain build", "test": "npm run build && node --check index.mjs && node --test" },
-  "dependencies": { "@aexhq/brain": "0.8.4" },
+  "dependencies": { "@aexhq/brain": "0.9.1" },
   "devDependencies": { "@types/node": "^24.3.0", "typescript": "^5.9.2" }
 }
