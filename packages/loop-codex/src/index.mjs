@@ -116,9 +116,8 @@ export const codex = agentloop({ options: optionsSchema }, (author) => {
 
   const advance = (turn) => (shouldCompact() ? compact(turn) : turn.model({ messages: state.messages }));
 
-  author.on.message((message, turn) => {
-    const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-    state.messages.push({ role: "user", content: [{ type: "text", text }] });
+  author.on.message(({ input }, turn) => {
+    state.messages.push({ role: "user", content: [{ type: "text", text: input.message }] });
     // run_pre_sampling_compact: the threshold is checked before the first
     // sampling request of every turn.
     return advance(turn);
