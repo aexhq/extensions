@@ -1,12 +1,30 @@
-# @aexhq/brain-pi
+# @aexhq/agentloop-pi
 
-The official Pi-style Brain extension. It owns conversation context and dispatches independent Tool
-calls in parallel while Brain owns durable execution, provider calls, and journaling.
+A pi-style agent loop for Brain: a semantic port of the pi coding agent's loop,
+pinned against [earendil-works/pi](https://github.com/earendil-works/pi) tag
+`v0.84.4` (`@earendil-works/pi-agent-core@0.84.4`). The published pi loop is an
+async driver that performs LLM and tool calls inside one invocation, so it
+cannot run in Brain's deterministic WebAssembly sandbox; this package
+reproduces its per-turn contract instead:
 
-```js
-import { pi } from "@aexhq/brain-pi";
+- tool calls are issued as one **parallel batch**, and results return in
+  assistant source order;
+- a `length`-stopped response that carries tool calls **fails the whole batch
+  without executing it** and re-asks the model;
+- **automatic compaction**: when the estimated context exceeds
+  `contextWindow - reserveTokens` (default 16384), history older than
+  ~`keepRecentTokens` (default 20000) is summarized into pi's structured
+  context checkpoint (`## Goal` … `## Critical Context`) that replaces it.
 
-const extension = pi();
+pi's steering and follow-up queues and per-tool `executionMode` are host-app
+seams with no Brain equivalent and are not ported.
+
+```ts
+import { pi } from "@aexhq/agentloop-pi";
+
+const session = await brain.sessions.create({
+  agentloop: pi({ contextWindow: 200_000 }),
+  model,
+  tools: [read().useIn(workspace)],
+});
 ```
-
-The built Brain artifact is admitted automatically when a session is created.
