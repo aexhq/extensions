@@ -1,19 +1,17 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
-
-import { workspaceOf, workspacePath } from "./path.js";
 
 const writeInput = z.object({ path: z.string().min(1), content: z.string() });
 const writeOutput = z.object({ path: z.string(), bytes: z.number().int().nonnegative() });
 
-export const write = tool({ description: "Write UTF-8 text to a file in the Environment workspace, creating parent directories.", input: writeInput, output: writeOutput }, (author) => {
+export const write = tool({
+  description: "Write UTF-8 text to a file in the Environment workspace, creating parent directories.",
+  input: writeInput,
+  output: writeOutput,
+  requires: ["fs"],
+}, (author) => {
   author.run(async ({ path, content }, context) => {
-    const target = workspacePath(workspaceOf(context), path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content, "utf8");
-    return { path, bytes: Buffer.byteLength(content) };
+    await context.fs.write(path, content);
+    return { path, bytes: new TextEncoder().encode(content).byteLength };
   });
 });

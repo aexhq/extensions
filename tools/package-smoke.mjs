@@ -29,18 +29,20 @@ try {
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
     name: "extensions-clean-consumer", private: true, type: "module",
   }, null, 2)}\n`);
-  runNpm(["install", "--no-audit", "--no-fund", ...packages, "typescript@5.9.2"], { cwd: consumer });
+  runNpm(["install", "--no-audit", "--no-fund", ...packages, "typescript@5.9.2", "@types/node@24.3.0"], { cwd: consumer });
   runNpm(["audit", "--audit-level=high"], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
-import { Brain } from "@aexhq/brain";
-import { createEnvironment } from "@aexhq/env-app/provider";
+import { appTool, Brain } from "@aexhq/brain";
+import { app } from "@aexhq/env-app";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
 import { read } from "@aexhq/tools";
+import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
-assert.equal(typeof createEnvironment(), "function");
+const channel = app({ channelToken: "smoke-token" });
+assert.doesNotThrow(() => appTool({ name: "create_invoice", description: "Create an invoice.", input: z.object({}) }).useIn(channel));
 const workspace = awsMicroVm({ region: "eu-west-2" });
 assert.doesNotThrow(() => read().useIn(workspace));
 assert.doesNotThrow(() => codex());

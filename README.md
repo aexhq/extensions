@@ -8,8 +8,8 @@ privileged runtime path.
 | --- | --- |
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
-| `@aexhq/tools` | Model-visible Tool definitions and bundled Node implementations |
-| `@aexhq/env-app` | Application-process Environment and HTTP provider adapter |
+| `@aexhq/tools` | Model-visible Tool definitions with provisioned ESM implementations |
+| `@aexhq/env-app` | Application-process Environment routing callback Tools to the author's app |
 | `@aexhq/env-aws-microvm` | AWS MicroVM Environment and provider runtime |
 
 All three roles have the same authoring shape:
@@ -26,6 +26,25 @@ export const support = agentloop((author) => {
 brain build
 ```
 
-Agent loop handlers synchronously choose the next durable action. Tool and Environment handlers may be
-async and use normal libraries supported by their runtime. Applications place a Tool explicitly
-with `tool().useIn(environment)` and can call extension-owned methods on the same Environment object.
+Agent loop handlers synchronously choose the next durable action.
+
+Tools and Environments meet through the capability contract. A Tool declares `requires` and
+programs against typed handles (`context.exec`, `context.fs`, …); an Environment implements
+capability providers (`provide.exec`, `provide.fs`, …), enforces grant policy behind them, and
+opts in to hosting provisioned ESM artifacts with `host.esm()`. Brain checks
+`requires ⊆ provides` at session create and never sees inside either half:
+
+```ts
+export const bash = tool({
+  description: "Run a shell command.",
+  input, output,
+  requires: ["exec"],
+}, (author) => {
+  author.run((input, context) => context.exec.run(input.command));
+});
+```
+
+Applications place a Tool explicitly with `tool().useIn(environment)` and can call
+extension-owned methods on the same Environment object. Callback Tools stay in the application's
+own process: declare their schemas with `appTool(...)`, register the functions with `appTools`,
+and bind them to `@aexhq/env-app`, which routes each invocation down the app's channel.

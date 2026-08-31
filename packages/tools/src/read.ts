@@ -1,9 +1,5 @@
-import { open } from "node:fs/promises";
-
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
-
-import { workspaceOf, workspacePath } from "./path.js";
 
 const readInput = z.object({
     path: z.string().min(1),
@@ -12,17 +8,16 @@ const readInput = z.object({
   });
 const readOutput = z.object({ content: z.string(), bytes: z.number().int().nonnegative(), truncated: z.boolean() });
 
-export const read = tool({ description: "Read UTF-8 text from a file in the Environment workspace.", input: readInput, output: readOutput }, (author) => {
+export const read = tool({
+  description: "Read UTF-8 text from a file in the Environment workspace.",
+  input: readInput,
+  output: readOutput,
+  requires: ["fs"],
+}, (author) => {
   author.run(async ({ path, offset, limit }, context) => {
-    const file = await open(workspacePath(workspaceOf(context), path), "r");
-    try {
-      const buffer = Buffer.alloc(limit + 1);
-      const { bytesRead } = await file.read(buffer, 0, buffer.byteLength, offset);
-      const data = buffer.subarray(0, Math.min(bytesRead, limit));
-      if (data.includes(0)) throw new Error(`${path} is binary`);
-      return { content: data.toString("utf8"), bytes: data.byteLength, truncated: bytesRead > limit };
-    } finally {
-      await file.close();
-    }
+    const file = await context.fs.read(path);
+    const data = file.subarray(offset, offset + limit);
+    if (data.includes(0)) throw new Error(`${path} is binary`);
+    return { content: new TextDecoder().decode(data), bytes: data.byteLength, truncated: file.byteLength > offset + limit };
   });
 });
