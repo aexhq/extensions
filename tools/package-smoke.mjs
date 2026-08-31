@@ -35,8 +35,8 @@ try {
 import { Brain } from "@aexhq/brain";
 import { createEnvironment } from "@aexhq/env-app/provider";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
-import { codex } from "@aexhq/brain-codex";
-import { pi } from "@aexhq/brain-pi";
+import { codex } from "@aexhq/agentloop-codex";
+import { pi } from "@aexhq/agentloop-pi";
 import { read } from "@aexhq/tools";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
@@ -51,14 +51,14 @@ console.log("packed extension packages compose through the public Brain contract
   assert.match(output, /public Brain contracts/u);
   await writeFile(path.join(consumer, "smoke.ts"), `import { Brain } from "@aexhq/brain";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
-import { pi } from "@aexhq/brain-pi";
+import { pi } from "@aexhq/agentloop-pi";
 import { bash, read, write } from "@aexhq/tools";
 
 const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const workspace = awsMicroVm({ region: "eu-west-2" });
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
-  brain: pi(),
+  agentloop: pi(),
   tools: [read().useIn(workspace), write().useIn(workspace), bash().useIn(workspace)],
 });
 `);
