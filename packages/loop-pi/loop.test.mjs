@@ -26,7 +26,7 @@ const assistant = (content, stop_reason = "end_turn", usage = {}) => ({
 
 test("issues tool calls as one parallel batch and returns results in source order", () => {
   const step = drive();
-  const first = step({ type: "user_message", content: "list and read" });
+  const first = step({ type: "user_message", input: { message: "list and read" } });
   assert.equal(first.type, "model");
   assert.deepEqual(first.request.messages.at(-1), { role: "user", content: [{ type: "text", text: "list and read" }] });
 
@@ -55,7 +55,7 @@ test("issues tool calls as one parallel batch and returns results in source orde
 
 test("fails a truncated tool batch without executing it", () => {
   const step = drive();
-  step({ type: "user_message", content: "go" });
+  step({ type: "user_message", input: { message: "go" } });
   const decision = step(assistant([
     { type: "tool_use", id: "c1", name: "write", input: { partial: true } },
   ], "max_tokens"));
@@ -70,10 +70,10 @@ test("fails a truncated tool batch without executing it", () => {
 test("compacts older history into a structured checkpoint and keeps the recent tail", () => {
   // Tiny budgets so two messages cross the threshold.
   const step = drive({ contextWindow: 300, reserveTokens: 100, keepRecentTokens: 40 });
-  step({ type: "user_message", content: "old task ".repeat(60) });
+  step({ type: "user_message", input: { message: "old task ".repeat(60) } });
   step(assistant([{ type: "text", text: "old answer ".repeat(60) }]));
 
-  const compaction = step({ type: "user_message", content: "new question" });
+  const compaction = step({ type: "user_message", input: { message: "new question" } });
   assert.equal(compaction.type, "model");
   const prompt = compaction.request.messages.at(-1).content[0].text;
   assert.match(prompt, /## Goal/u);

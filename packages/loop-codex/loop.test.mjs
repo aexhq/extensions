@@ -26,7 +26,7 @@ const assistant = (content, usage = {}) => ({
 
 test("executes tool calls one at a time and feeds all outputs back in call order", () => {
   const step = drive();
-  step({ type: "user_message", content: "build it" });
+  step({ type: "user_message", input: { message: "build it" } });
   const first = step(assistant([
     { type: "tool_use", id: "c1", name: "bash", input: { command: "make" } },
     { type: "tool_use", id: "c2", name: "read", input: { path: "log" } },
@@ -46,7 +46,7 @@ test("executes tool calls one at a time and feeds all outputs back in call order
 
 test("compacts at the 90% token threshold using reported usage, keeping user messages plus a bridge", () => {
   const step = drive({ contextWindow: 1000 });
-  step({ type: "user_message", content: "the original task" });
+  step({ type: "user_message", input: { message: "the original task" } });
   // The provider reports 950 tokens used: past 90% of 1000.
   const calls = step(assistant([
     { type: "tool_use", id: "c1", name: "bash", input: {} },
@@ -72,7 +72,7 @@ test("compacts at the 90% token threshold using reported usage, keeping user mes
 
 test("replies when a response carries no tool calls", () => {
   const step = drive();
-  step({ type: "user_message", content: "hello" });
+  step({ type: "user_message", input: { message: "hello" } });
   const reply = step({
     type: "model_completed",
     response: { message: { role: "assistant", content: [{ type: "text", text: "hi" }] }, stop_reason: "end_turn", usage: {} },
