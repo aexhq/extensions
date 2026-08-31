@@ -50,7 +50,7 @@ test("issues tool calls as one parallel batch and returns results in source orde
 
   const reply = step(assistant([{ type: "text", text: "done" }]));
   assert.equal(reply.type, "emit");
-  assert.equal(reply.event.content, "done");
+  assert.equal(reply.event.message, "done");
 });
 
 test("fails a truncated tool batch without executing it", () => {

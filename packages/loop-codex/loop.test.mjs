@@ -78,5 +78,5 @@ test("replies when a response carries no tool calls", () => {
     response: { message: { role: "assistant", content: [{ type: "text", text: "hi" }] }, stop_reason: "end_turn", usage: {} },
   });
   assert.equal(reply.type, "emit");
-  assert.equal(reply.event.content, "hi");
+  assert.equal(reply.event.message, "hi");
 });
