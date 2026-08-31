@@ -152,9 +152,8 @@ export const pi = agentloop({ options: optionsSchema }, (author) => {
 
   const advance = (turn) => (shouldCompact() ? compact(turn) : turn.model({ messages: context() }));
 
-  author.on.message((message, turn) => {
-    const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-    state.messages.push({ role: "user", content: [{ type: "text", text }] });
+  author.on.message(({ input }, turn) => {
+    state.messages.push({ role: "user", content: [{ type: "text", text: input.message }] });
     return advance(turn);
   });
 
