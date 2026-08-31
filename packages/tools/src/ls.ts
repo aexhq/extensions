@@ -1,21 +1,20 @@
-import { readdir } from "node:fs/promises";
-
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
-import { workspaceOf, workspacePath } from "./path.js";
-
 const lsInput = z.object({ path: z.string().default("."), limit: z.number().int().positive().max(10_000).default(1_000) });
-const lsOutput = z.object({ entries: z.array(z.object({ name: z.string(), kind: z.enum(["file", "directory", "symlink", "other"]) })), truncated: z.boolean() });
+const lsOutput = z.object({ entries: z.array(z.object({ name: z.string(), kind: z.enum(["file", "dir"]) })), truncated: z.boolean() });
 
-export const ls = tool({ description: "List entries in an Environment workspace directory.", input: lsInput, output: lsOutput }, (author) => {
+export const ls = tool({
+  description: "List entries in an Environment workspace directory.",
+  input: lsInput,
+  output: lsOutput,
+  requires: ["fs"],
+}, (author) => {
   author.run(async ({ path, limit }, context) => {
-    const values = await readdir(workspacePath(workspaceOf(context), path), { withFileTypes: true });
+    const values = [...await context.fs.list(path)];
     values.sort((left, right) => left.name.localeCompare(right.name));
-    const kind = (value: (typeof values)[number]): "file" | "directory" | "symlink" | "other" =>
-      value.isFile() ? "file" : value.isDirectory() ? "directory" : value.isSymbolicLink() ? "symlink" : "other";
     return {
-      entries: values.slice(0, limit).map((value) => ({ name: value.name, kind: kind(value) })),
+      entries: values.slice(0, limit).map((value) => ({ name: value.name, kind: value.kind })),
       truncated: values.length > limit,
     };
   });

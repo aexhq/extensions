@@ -1,23 +1,64 @@
-import { glob as fsGlob } from "node:fs/promises";
-import { relative } from "node:path";
-
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
-
-import { workspaceOf } from "./path.js";
 
 const globInput = z.object({ pattern: z.string().min(1), limit: z.number().int().positive().max(10_000).default(1_000) });
 const globOutput = z.object({ paths: z.array(z.string()), truncated: z.boolean() });
 
-export const glob = tool({ description: "List Environment workspace paths matching a glob pattern.", input: globInput, output: globOutput }, (author) => {
-  author.run(async ({ pattern, limit }, context) => {
-    const paths: string[] = [];
-    const workspace = workspaceOf(context);
-    for await (const entry of fsGlob(pattern, { cwd: workspace, withFileTypes: true })) {
-      paths.push(relative(workspace, entry.parentPath === workspace ? entry.name : `${entry.parentPath}/${entry.name}`).replaceAll("\\", "/"));
-      if (paths.length > limit) break;
+/** Compile a glob into a full-path regular expression: `**` crosses directory
+ * separators, `*` and `?` stay within one segment. */
+function globPattern(pattern: string): RegExp {
+  const normalized = pattern.replaceAll("\\", "/").replace(/^\.\//u, "");
+  let source = "^";
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index] as string;
+    if (character === "*") {
+      if (normalized[index + 1] === "*") {
+        index += 1;
+        if (normalized[index + 1] === "/") index += 1;
+        source += "(?:[^/]+/)*[^/]*";
+      } else {
+        source += "[^/]*";
+      }
+    } else if (character === "?") {
+      source += "[^/]";
+    } else {
+      source += ".+^${}()|[]\\".includes(character) ? `\\${character}` : character;
     }
+  }
+  return new RegExp(`${source}$`, "u");
+}
+
+const MAX_VISITED_DIRECTORIES = 10_000;
+
+export const glob = tool({
+  description: "List Environment workspace paths matching a glob pattern.",
+  input: globInput,
+  output: globOutput,
+  requires: ["fs"],
+}, (author) => {
+  author.run(async ({ pattern, limit }, context) => {
+    const matches = globPattern(pattern);
+    const maximumDepth = pattern.includes("**") ? Number.POSITIVE_INFINITY : pattern.replaceAll("\\", "/").split("/").length;
+    const paths: string[] = [];
+    let truncated = false;
+    let visited = 0;
+    const walk = async (directory: string, depth: number): Promise<void> => {
+      if (truncated || depth > maximumDepth || (visited += 1) > MAX_VISITED_DIRECTORIES) return;
+      for (const entry of await context.fs.list(directory)) {
+        if (truncated) return;
+        const path = directory === "." ? entry.name : `${directory}/${entry.name}`;
+        if (matches.test(path)) {
+          if (paths.length >= limit) {
+            truncated = true;
+            return;
+          }
+          paths.push(path);
+        }
+        if (entry.kind === "dir") await walk(path, depth + 1);
+      }
+    };
+    await walk(".", 1);
     paths.sort();
-    return { paths: paths.slice(0, limit), truncated: paths.length > limit };
+    return { paths, truncated };
   });
 });
