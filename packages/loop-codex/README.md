@@ -27,6 +27,6 @@ import { codex } from "@aexhq/agentloop-codex";
 const session = await brain.sessions.create({
   agentloop: codex({ contextWindow: 200_000 }),
   model,
-  tools: [bash().useIn(workspace)],
+  tools: [bash({ env: workspace })],
 });
 ```

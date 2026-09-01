@@ -23,7 +23,7 @@ const pack = (directory) => {
 try {
   await mkdir(artifacts);
   await mkdir(consumer);
-  const packages = ["env-app", "env-aws-microvm", "loop-codex", "loop-pi", "tools"]
+  const packages = ["env-aws-microvm", "loop-codex", "loop-pi", "tools"]
     .map((name) => pack(path.join(root, "packages", name)));
   if (process.env.BRAIN_PACKAGE_ARCHIVE !== undefined) packages.unshift(path.resolve(process.env.BRAIN_PACKAGE_ARCHIVE));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
@@ -32,8 +32,7 @@ try {
   runNpm(["install", "--no-audit", "--no-fund", ...packages, "typescript@5.9.2", "@types/node@24.3.0"], { cwd: consumer });
   runNpm(["audit", "--audit-level=high"], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
-import { appTool, Brain } from "@aexhq/brain";
-import { app } from "@aexhq/env-app";
+import { Brain, inspectServedTool, tool } from "@aexhq/brain";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
@@ -41,10 +40,9 @@ import { read } from "@aexhq/tools";
 import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
-const channel = app({ channelToken: "smoke-token" });
-assert.doesNotThrow(() => appTool({ name: "create_invoice", description: "Create an invoice.", input: z.object({}) }).useIn(channel));
+assert.ok(inspectServedTool(tool({ name: "create_invoice", description: "Create an invoice.", input: z.object({}) })));
 const workspace = awsMicroVm({ region: "eu-west-2" });
-assert.doesNotThrow(() => read().useIn(workspace));
+assert.doesNotThrow(() => read({ env: workspace }));
 assert.doesNotThrow(() => codex());
 assert.doesNotThrow(() => pi());
 console.log("packed extension packages compose through the public Brain contracts");
@@ -61,7 +59,7 @@ const workspace = awsMicroVm({ region: "eu-west-2" });
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
   agentloop: pi(),
-  tools: [read().useIn(workspace), write().useIn(workspace), bash().useIn(workspace)],
+  tools: [read({ env: workspace }), write({ env: workspace }), bash({ env: workspace })],
 });
 `);
   runNpm(["exec", "--", "tsc", "--noEmit", "--strict", "--target", "ES2023", "--module", "NodeNext", "--moduleResolution", "NodeNext", "smoke.ts"], { cwd: consumer });
