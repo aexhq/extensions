@@ -9,7 +9,6 @@ privileged runtime path.
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
 | `@aexhq/tools` | Model-visible Tool definitions with provisioned ESM implementations |
-| `@aexhq/env-app` | Application-process Environment routing callback Tools to the author's app |
 | `@aexhq/env-aws-microvm` | AWS MicroVM Environment and provider runtime |
 
 All three roles have the same authoring shape:
@@ -44,7 +43,9 @@ export const bash = tool({
 });
 ```
 
-Applications place a Tool explicitly with `tool().useIn(environment)` and can call
-extension-owned methods on the same Environment object. Callback Tools stay in the application's
-own process: declare their schemas with `appTool(...)`, register the functions with `appTools`,
-and bind them to `@aexhq/env-app`, which routes each invocation down the app's channel.
+Applications place a Tool explicitly with the factory's `env` option —
+`bash({ env: environment })` — and can call extension-owned methods on the same Environment
+object. A tool whose function lives in an application process needs no environment at all:
+declare it with `tool(...)` (with `execute` to run beside the session's creator, without one
+to be served by whatever process joins the session with its share key) — Brain routes those
+invocations itself.

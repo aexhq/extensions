@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { clamp, createEnvironmentHandler, environment } from "@aexhq/brain";
+import { clamp, createEnvironmentHandler, environment, installExtensionIdentity } from "@aexhq/brain";
 import { read } from "../dist/index.mjs";
 
 const REQUIRES = {
@@ -84,9 +84,17 @@ test("every manifest declares its honest capability requirements", () => {
   }
 });
 
-test("publishes generated model factories without Environment-side handlers", () => {
-  assert.deepEqual(Object.keys(read()), ["useIn"]);
-  assert.equal("execute" in read(), false);
+test("factories demand a placement and mint opaque bound instances", () => {
+  assert.throws(() => read(), /placed with \{ env \}/u);
+  const boxFactory = environment((author) => {
+    const instance = author.open(async () => ({}));
+    instance.run(async () => undefined);
+    instance.close(async () => undefined);
+    return {};
+  });
+  installExtensionIdentity(boxFactory, "box");
+  const box = boxFactory();
+  assert.deepEqual(Object.keys(read({ env: box })), [], "a bound tool exposes no surface");
 });
 
 test("file tools round-trip through the environment's fs provider", async () => {
