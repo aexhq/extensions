@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Application-process Environment routing callback Tools to the author's app",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,6 @@
   },
   "files": ["dist", "README.md"],
   "scripts": { "build": "brain build", "test": "npm run build && node --test" },
-  "dependencies": { "@aexhq/brain": "0.10.0", "zod": "4.4.3" },
+  "dependencies": { "@aexhq/brain": "0.11.0", "zod": "4.4.3" },
   "devDependencies": { "@types/node": "^24.3.0", "typescript": "^5.9.2" }
 }
