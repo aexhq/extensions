@@ -13,10 +13,10 @@ export const todo = tool({
   description: "Read or replace the session's to-do list.",
   input: todoInput,
   output: todoOutput,
-  requires: [],
+  needs: [],
 }, (author) => {
   // Pure tool: the list lives in the provisioned module for the life of its
-  // hosting Environment instance and touches no capability.
+  // hosting Environment instance and touches no resource.
   let items: { text: string; done: boolean }[] = [];
   author.run(async (input) => {
     if (input.action === "set") items = input.items;

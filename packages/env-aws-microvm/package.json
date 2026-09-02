@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-aws-microvm",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "AWS MicroVM remote Environment descriptor and provider runtime for Brain",
   "license": "MIT",
   "repository": {
@@ -21,6 +21,6 @@
     "test": "npm run build && node --test index.test.mjs",
     "test:runtime": "cargo test --manifest-path runtime/Cargo.toml --workspace --all-targets"
   },
-  "dependencies": { "@aexhq/brain": "0.12.0", "zod": "4.4.3" },
+  "dependencies": { "@aexhq/brain": "0.13.0", "zod": "4.4.3" },
   "devDependencies": { "@types/node": "^24.3.0", "typescript": "^5.9.2" }
 }

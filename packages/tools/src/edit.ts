@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
@@ -8,16 +10,16 @@ export const edit = tool({
   description: "Replace one exact occurrence of text in an Environment workspace file.",
   input: editInput,
   output: editOutput,
-  requires: ["fs"],
+  needs: ["fs"],
 }, (author) => {
-  author.run(async ({ path, old_text, new_text }, context) => {
-    const content = new TextDecoder().decode(await context.fs.read(path));
+  author.run(async ({ path, old_text, new_text }) => {
+    const content = await readFile(path, "utf8");
     const first = content.indexOf(old_text);
     if (first < 0) throw new Error("old_text was not found");
     if (content.indexOf(old_text, first + old_text.length) >= 0) {
       throw new Error("old_text occurs more than once; provide a more specific match");
     }
-    await context.fs.write(path, `${content.slice(0, first)}${new_text}${content.slice(first + old_text.length)}`);
+    await writeFile(path, `${content.slice(0, first)}${new_text}${content.slice(first + old_text.length)}`);
     return { path, replacements: 1 as const };
   });
 });

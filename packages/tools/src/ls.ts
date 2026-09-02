@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
@@ -8,14 +10,11 @@ export const ls = tool({
   description: "List entries in an Environment workspace directory.",
   input: lsInput,
   output: lsOutput,
-  requires: ["fs"],
+  needs: ["fs"],
 }, (author) => {
-  author.run(async ({ path, limit }, context) => {
-    const values = [...await context.fs.list(path)];
+  author.run(async ({ path, limit }) => {
+    const values = (await readdir(path, { withFileTypes: true })).map((entry) => ({ name: entry.name, kind: entry.isDirectory() ? ("dir" as const) : ("file" as const) }));
     values.sort((left, right) => left.name.localeCompare(right.name));
-    return {
-      entries: values.slice(0, limit).map((value) => ({ name: value.name, kind: value.kind })),
-      truncated: values.length > limit,
-    };
+    return { entries: values.slice(0, limit), truncated: values.length > limit };
   });
 });

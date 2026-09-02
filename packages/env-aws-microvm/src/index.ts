@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-import { CapabilityError, clamp, environment } from "@aexhq/brain";
-import type { ExecOptions, ExecResult, FsHandle, ProvisionedToolArtifact } from "@aexhq/brain";
+import { environment } from "@aexhq/brain";
+import type { ProvisionedToolArtifact } from "@aexhq/brain";
 import { z } from "zod";
 
 const options = z.object({
@@ -19,18 +18,19 @@ const options = z.object({
   ...(value.maximumSeconds === undefined ? {} : { maximum_seconds: value.maximumSeconds }),
 }));
 
-const DEFAULT_OUTPUT_BYTES_MAX = 1024 * 1024;
+/** The workspace every program starts in. The guest mounts it at `/workspace`; a
+ * local test points the variable at a temporary directory. */
+const WORKSPACE_ROOT = process.env.AEX_WORKSPACE_ROOT ?? "/workspace";
+const OUTPUT_BYTES_MAX = 1024 * 1024;
 const KILL_GRACE_MS = 2_000;
 
-/** The VM-side exec path: `bash -lc` in the guest, bounded by the attachment's
- * exec grant (a clamped timeout enforced by kill, capped captured output). */
-function execute(command: string, opts: ExecOptions, outputBytesMax: number): Promise<ExecResult> {
+interface ShellResult { readonly exit_code: number; readonly stdout: string; readonly stderr: string }
+
+/** Run a shell program in the guest: `bash -lc` in the workspace, killed at the
+ * call's deadline or on cancellation, captured output capped. */
+function execute(script: string, call: { readonly cwd: string; readonly timeoutMs: number; readonly signal: AbortSignal }, outputBytesMax: number): Promise<ShellResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("bash", ["-lc", command], {
-      ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
-      env: opts.env === undefined ? process.env : { ...process.env, ...opts.env },
-      stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-    });
+    const child = spawn("bash", ["-lc", script], { cwd: call.cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
     const capture = (target: "stdout" | "stderr") => (chunk: Buffer): void => {
@@ -42,21 +42,22 @@ function execute(command: string, opts: ExecOptions, outputBytesMax: number): Pr
     child.stdout.on("data", capture("stdout"));
     child.stderr.on("data", capture("stderr"));
     const timers: ReturnType<typeof setTimeout>[] = [];
-    if (opts.timeoutMs !== undefined) {
-      const term = setTimeout(() => {
-        child.kill("SIGTERM");
-        const kill = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
-        kill.unref();
-        timers.push(kill);
-      }, opts.timeoutMs);
-      term.unref();
-      timers.push(term);
-    }
+    const kill = (): void => {
+      child.kill("SIGTERM");
+      const force = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+      force.unref();
+      timers.push(force);
+    };
+    const term = setTimeout(kill, call.timeoutMs);
+    term.unref();
+    timers.push(term);
+    call.signal.addEventListener("abort", kill, { once: true });
     let settled = false;
-    const settle = (value: () => ExecResult | undefined): void => {
+    const settle = (value: () => ShellResult | undefined): void => {
       if (settled) return;
       settled = true;
       for (const timer of timers) clearTimeout(timer);
+      call.signal.removeEventListener("abort", kill);
       // Release the pipes so an orphaned grandchild cannot hold this process open.
       child.stdout.destroy();
       child.stderr.destroy();
@@ -65,8 +66,8 @@ function execute(command: string, opts: ExecOptions, outputBytesMax: number): Pr
       if (result !== undefined) resolve(result);
     };
     child.once("error", (error) => settle(() => { reject(error); return undefined; }));
-    const finish = (code: number | null, signal: NodeJS.Signals | null) => (): ExecResult => ({
-      exitCode: code ?? (signal === null ? -1 : 128 + (signal === "SIGKILL" ? 9 : 15)),
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => (): ShellResult => ({
+      exit_code: code ?? (signal === null ? -1 : 128 + (signal === "SIGKILL" ? 9 : 15)),
       stdout: stdout.toString("utf8"),
       stderr: stderr.toString("utf8"),
     });
@@ -78,36 +79,13 @@ function execute(command: string, opts: ExecOptions, outputBytesMax: number): Pr
       flush.unref();
       timers.push(flush);
     });
-    if (opts.stdin !== undefined) child.stdin?.end(opts.stdin);
   });
 }
 
-/** The workspace-rooted fs provider. Every path is confined to the granted root
- * with `clamp.path`; writes create parent directories — dirty work stays here,
- * never in a Tool. */
-function workspaceFs(root: string | undefined): FsHandle {
-  const confined = (path: string): string => {
-    if (root === undefined) throw new CapabilityError("fs", "not_granted", "this attachment carries no fs grant");
-    return clamp.path(root, path);
-  };
-  return {
-    read: (path) => readFile(confined(path)),
-    async write(path, data) {
-      const target = confined(path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, data);
-    },
-    async list(path) {
-      const entries = await readdir(confined(path), { withFileTypes: true });
-      return entries.map((entry) => ({ name: entry.name, kind: entry.isDirectory() ? ("dir" as const) : ("file" as const) }));
-    },
-  };
-}
-
-/** Provisioned artifacts this process can serve by content identity. The
- * deployed image points AEX_TOOL_ARTIFACT_DIR at its installed `*.tool.json`
- * artifacts (`brain build` output); without it the host serves none and an
- * attach naming an unknown identity fails its receipt. */
+/** Built artifacts this process can serve by content identity. The deployed
+ * image points AEX_TOOL_ARTIFACT_DIR at its installed `*.tool.json` artifacts
+ * (`brain build` output); without it the host serves none and an attach naming
+ * an unknown esm identity fails its receipt. */
 function installedArtifacts(): ProvisionedToolArtifact[] {
   const directory = process.env.AEX_TOOL_ARTIFACT_DIR;
   if (directory === undefined) return [];
@@ -116,16 +94,28 @@ function installedArtifacts(): ProvisionedToolArtifact[] {
     .map((name) => JSON.parse(readFileSync(join(directory, name), "utf8")) as ProvisionedToolArtifact);
 }
 
-export const awsMicroVm = environment({ options }, (author) => {
-  const vm = author.open(async () => ({}));
-  vm.run(async () => { throw new Error("AWS MicroVM Tools execute in the Rust provider runtime"); });
-  vm.close(async () => undefined);
-  vm.provide.exec(({ grants }) => ({
-    run: (command, opts) => execute(command, { ...(grants.fs?.root === undefined ? {} : { cwd: grants.fs.root }), ...clamp(opts, grants.exec) }, grants.exec?.output_bytes_max ?? DEFAULT_OUTPUT_BYTES_MAX),
-  }));
-  vm.provide.fs(({ grants }) => workspaceFs(grants.fs?.root));
-  vm.host.esm({ artifacts: installedArtifacts() });
-  return {
-    suspend: vm.method(async () => undefined),
-  };
-});
+export const awsMicroVm = environment(
+  {
+    options,
+    // What a program finds on the VM. Enforcement is the guest's: the workspace
+    // mount, the tool user, and the egress gateway — never a wrapper here.
+    resources: {
+      fs: { root: WORKSPACE_ROOT },
+      process: { output_bytes_max: OUTPUT_BYTES_MAX },
+    },
+  },
+  (author) => {
+    const vm = author.open(async () => {
+      // Every program starts in the workspace. Esm programs run in this process,
+      // so the process itself moves there when the workspace is mounted.
+      try { process.chdir(WORKSPACE_ROOT); } catch { /* not mounted here: relative paths stay where the host runs */ }
+      return {};
+    });
+    vm.execute.esm({ artifacts: installedArtifacts() });
+    vm.execute.shell(({ deadline, signal }, script) => execute(script, { cwd: WORKSPACE_ROOT, timeoutMs: Math.max(1, deadline.getTime() - Date.now()), signal }, OUTPUT_BYTES_MAX));
+    vm.close(async () => undefined);
+    return {
+      suspend: vm.method(async () => undefined),
+    };
+  },
+);
