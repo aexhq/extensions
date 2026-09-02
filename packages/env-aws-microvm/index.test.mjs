@@ -52,11 +52,10 @@ const provisionOf = (manifest) => ({ manifest, payload_identity: manifest.progra
 let sequence = 0;
 const command = (request, attachmentId) => {
   sequence += 1;
-  const id = `op_${sequence}`;
   return {
     contract: "environment/v1",
     binding: {},
-    operation: { operation_id: id, request_identity: id.padEnd(64, "a"), environment_id: "env_vm", session_id: "ses_test", ...(attachmentId === undefined ? {} : { attachment_id: attachmentId }), request },
+    operation: { sequence, environment_id: "env_vm", session_id: "ses_test", ...(attachmentId === undefined ? {} : { attachment_id: attachmentId }), request },
   };
 };
 
