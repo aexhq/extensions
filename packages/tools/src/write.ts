@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
@@ -8,10 +11,11 @@ export const write = tool({
   description: "Write UTF-8 text to a file in the Environment workspace, creating parent directories.",
   input: writeInput,
   output: writeOutput,
-  requires: ["fs"],
+  needs: ["fs"],
 }, (author) => {
-  author.run(async ({ path, content }, context) => {
-    await context.fs.write(path, content);
+  author.run(async ({ path, content }) => {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content);
     return { path, bytes: new TextEncoder().encode(content).byteLength };
   });
 });

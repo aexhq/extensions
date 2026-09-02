@@ -27,19 +27,28 @@ brain build
 
 Agent loop handlers synchronously choose the next durable action.
 
-Tools and Environments meet through the capability contract. A Tool declares `requires` and
-programs against typed handles (`context.exec`, `context.fs`, …); an Environment implements
-capability providers (`provide.exec`, `provide.fs`, …), enforces grant policy behind them, and
-opts in to hosting provisioned ESM artifacts with `host.esm()`. Brain checks
-`requires ⊆ provides` at session create and never sees inside either half:
+Tools and Environments meet through the execution contract. A Tool is a program (an `esm`
+module, a `shell` script, or an `http` request) plus the resources it operates on (`fs`,
+`process`, `net`, `dom`, `secrets`). An Environment declares the resources a program finds there
+and registers an executor for each program kind it launches (`execute.esm()`,
+`execute.shell(...)`, `execute.http(...)`). Brain checks the tool's program kind and `needs`
+against the environment's declaration at session create and never sees inside either half.
+Inside, a Tool is plain code on the platform it runs on:
 
 ```ts
-export const bash = tool({
+export const test = tool({
+  description: "Run the test suite.",
+  input, output,
+  needs: ["process", "fs"],
+}, (author) => {
+  author.run(async (input, context) => runTests(input, { signal: context.signal }));
+});
+
+export const bash = tool.shell({
   description: "Run a shell command.",
   input, output,
-  requires: ["exec"],
-}, (author) => {
-  author.run((input, context) => context.exec.run(input.command));
+  needs: ["process"],
+  script: "$command",
 });
 ```
 

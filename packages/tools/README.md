@@ -8,26 +8,26 @@ import { bash, edit, read, write } from "@aexhq/tools";
 
 const workspace = awsMicroVm({ region: "eu-west-2" });
 const tools = [
-  read().useIn(workspace),
-  edit().useIn(workspace),
-  write().useIn(workspace),
-  bash().useIn(workspace),
+  read({ env: workspace }),
+  edit({ env: workspace }),
+  write({ env: workspace }),
+  bash({ env: workspace }),
 ];
 ```
 
-Each factory returns an immutable Tool. `useIn` selects its exact Environment; `brain build`
-produces a self-contained ESM artifact that the Environment provisions and executes — never Brain.
+Each factory returns an immutable Tool placed in the Environment named by `env`. `brain build`
+produces one artifact per tool that the Environment launches, never Brain.
 
-Every Tool declares the capabilities it needs, and the declaration is the whole contract: Brain
-binds a Tool only to an Environment whose `provides` covers its `requires`, and the run context
-exposes typed handles for exactly the declared set. Grant policy (fs root confinement, exec
-timeout ceilings) is enforced behind the handles by the Environment's providers; a Tool can only
-hit it as an error.
+Every Tool is a program plus a declaration of the resources it operates on, and the declaration
+is the whole contract. Brain binds a Tool only to an Environment that launches its program kind
+and declares every resource it needs. Inside, a Tool is plain code on the platform it runs on:
+`node:fs`, `child_process`, `fetch`. Nothing is wrapped, and the working directory is the
+Environment's workspace root.
 
-| Tool | requires | capability use |
-| --- | --- | --- |
-| `bash` | `exec` | `exec.run` in the workspace |
-| `read`, `write`, `edit`, `ls` | `fs` | `fs.read` / `fs.write` / `fs.list` |
-| `glob` | `fs` | walks `fs.list` with a local matcher |
-| `grep` | `exec` | drives ripgrep; gitignore awareness and binary detection are not expressible over the v1 `fs` handle |
-| `todo` | none | pure; the list lives in the hosted module |
+| Tool | Program | Needs | How |
+| --- | --- | --- | --- |
+| `bash` | `shell` | `process` | the command is the script; the Environment runs it in the workspace |
+| `read`, `write`, `edit`, `ls` | `esm` | `fs` | `node:fs/promises` on paths relative to the workspace |
+| `glob` | `esm` | `fs` | walks `readdir` with a local matcher |
+| `grep` | `esm` | `process` | drives ripgrep through `child_process`; gitignore awareness and binary detection come from the binary the image ships |
+| `todo` | `esm` | none | pure; the list lives in the hosted module |

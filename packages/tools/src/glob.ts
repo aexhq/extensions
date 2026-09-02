@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
@@ -34,9 +36,9 @@ export const glob = tool({
   description: "List Environment workspace paths matching a glob pattern.",
   input: globInput,
   output: globOutput,
-  requires: ["fs"],
+  needs: ["fs"],
 }, (author) => {
-  author.run(async ({ pattern, limit }, context) => {
+  author.run(async ({ pattern, limit }) => {
     const matches = globPattern(pattern);
     const maximumDepth = pattern.includes("**") ? Number.POSITIVE_INFINITY : pattern.replaceAll("\\", "/").split("/").length;
     const paths: string[] = [];
@@ -44,7 +46,9 @@ export const glob = tool({
     let visited = 0;
     const walk = async (directory: string, depth: number): Promise<void> => {
       if (truncated || depth > maximumDepth || (visited += 1) > MAX_VISITED_DIRECTORIES) return;
-      for (const entry of await context.fs.list(directory)) {
+      const entries = await readdir(directory, { withFileTypes: true });
+      entries.sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
         if (truncated) return;
         const path = directory === "." ? entry.name : `${directory}/${entry.name}`;
         if (matches.test(path)) {
@@ -54,7 +58,7 @@ export const glob = tool({
           }
           paths.push(path);
         }
-        if (entry.kind === "dir") await walk(path, depth + 1);
+        if (entry.isDirectory()) await walk(path, depth + 1);
       }
     };
     await walk(".", 1);

@@ -1,24 +1,27 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 
-import { clamp, createEnvironmentHandler, environment, installExtensionIdentity } from "@aexhq/brain";
+import { createEnvironmentHandler, environment, installExtensionIdentity } from "@aexhq/brain";
 import { read } from "../dist/index.mjs";
 
-const REQUIRES = {
-  bash: ["exec"],
-  edit: ["fs"],
-  glob: ["fs"],
-  grep: ["exec"],
-  ls: ["fs"],
-  read: ["fs"],
-  todo: [],
-  write: ["fs"],
+/** Each official tool's honest declaration: what it operates on, and which kind
+ * of program it is. */
+const DECLARATIONS = {
+  bash: { needs: ["process"], program: "shell" },
+  edit: { needs: ["fs"], program: "esm" },
+  glob: { needs: ["fs"], program: "esm" },
+  grep: { needs: ["process"], program: "esm" },
+  ls: { needs: ["fs"], program: "esm" },
+  read: { needs: ["fs"], program: "esm" },
+  todo: { needs: [], program: "esm" },
+  write: { needs: ["fs"], program: "esm" },
 };
 
-const artifacts = Object.fromEntries(await Promise.all(Object.keys(REQUIRES).map(async (name) => [
+const artifacts = Object.fromEntries(await Promise.all(Object.keys(DECLARATIONS).map(async (name) => [
   name,
   JSON.parse(await readFile(join(import.meta.dirname, "../dist", `${name}.tool.json`), "utf8")),
 ])));
@@ -28,43 +31,39 @@ const command = (request, attachmentId) => {
   sequence += 1;
   const id = `op_${sequence}`;
   return {
-    contract: "environment/v2",
+    contract: "environment/v1",
     binding: {},
     operation: { operation_id: id, request_identity: id.padEnd(64, "a"), environment_id: "env_1", session_id: "ses_test", ...(attachmentId === undefined ? {} : { attachment_id: attachmentId }), request },
   };
 };
 
-/** A hosting Environment with a real node-fs provider rooted in a directory and
- * a scripted exec provider, attaching every official tool artifact. */
-async function host({ root, exec }) {
-  const definition = environment((author) => {
-    const box = author.open(async () => ({}));
-    box.run(async () => { throw new Error("every official tool is hosted; nothing reaches the legacy run handler"); });
+const originalCwd = process.cwd();
+
+/** A hosting Environment rooted in a directory: esm programs run in this
+ * process with the root as the working directory, shell programs go to a
+ * scripted executor, and every official artifact is attached. */
+async function host({ root, shell }) {
+  const definition = environment({ resources: { fs: { root }, process: {} } }, (author) => {
+    const box = author.open(async () => {
+      process.chdir(root);
+      return {};
+    });
+    box.execute.esm({ artifacts: Object.values(artifacts) });
+    box.execute.shell(shell ?? (async () => { throw new Error("no shell program expected in this test"); }));
     box.close(async () => undefined);
-    box.provide.exec(({ grants }) => ({ run: (cmd, opts) => exec(cmd, clamp(opts, grants.exec)) }));
-    box.provide.fs(({ grants }) => ({
-      read: (path) => readFile(clamp.path(grants.fs.root, path)),
-      write: async (path, data) => {
-        const target = clamp.path(grants.fs.root, path);
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, data);
-      },
-      list: async (path) => (await readdir(clamp.path(grants.fs.root, path), { withFileTypes: true }))
-        .map((entry) => ({ name: entry.name, kind: entry.isDirectory() ? "dir" : "file" })),
-    }));
-    box.host.esm({ artifacts: Object.values(artifacts) });
     return {};
   });
   const handle = createEnvironmentHandler(definition);
-  assert.equal((await handle(command({ type: "setup", configuration: {} }))).receipt.type, "accepted");
+  const setup = await handle(command({ type: "setup", configuration: {} }));
+  assert.equal(setup.receipt.type, "accepted");
+  assert.deepEqual(setup.receipt.runtimes, ["esm", "shell"]);
   const attached = await handle(command({
     type: "attach",
-    grants: { exec: { timeout_ms_max: 60_000 }, fs: { root } },
-    provisions: Object.values(artifacts).map((artifact) => ({ manifest: artifact.manifest, payload_identity: artifact.manifest.payload.identity })),
+    provisions: Object.values(artifacts).map((artifact) => ({ manifest: artifact.manifest, payload_identity: artifact.manifest.program.identity })),
     bindings: {},
   }, "att_1"));
   assert.equal(attached.receipt.type, "accepted", JSON.stringify(attached.receipt));
-  assert.deepEqual(attached.receipt.provides, ["exec", "fs"]);
+  assert.deepEqual(attached.receipt.resources, { fs: { root }, process: {} });
   return async (tool, input) => {
     sequence += 1;
     const invoked = await handle(command({ type: "invoke", call_id: `call_${sequence}`, tool, input, deadline_ms: 30_000 }, "att_1"));
@@ -74,21 +73,25 @@ async function host({ root, exec }) {
 }
 
 const workspace = () => mkdtemp(join(tmpdir(), "aex-tools-"));
-const noExec = () => { throw new Error("no exec expected in this test"); };
+const release = async (root) => {
+  process.chdir(originalCwd);
+  await rm(root, { recursive: true, force: true });
+};
 
-test("every manifest declares its honest capability requirements", () => {
-  for (const [name, requires] of Object.entries(REQUIRES)) {
-    assert.deepEqual(artifacts[name].manifest.requires, requires, name);
-    assert.equal(artifacts[name].manifest.hosting, "provisioned");
-    assert.equal(artifacts[name].manifest.payload.kind, "esm");
+test("every manifest declares its honest needs and program kind", () => {
+  for (const [name, { needs, program }] of Object.entries(DECLARATIONS)) {
+    assert.deepEqual(artifacts[name].manifest.needs, needs, name);
+    assert.equal(artifacts[name].manifest.program.kind, program, name);
+    assert.equal(artifacts[name].manifest.hosting, undefined, "hosting is not a manifest field");
   }
+  assert.equal(artifacts.bash.manifest.program.script, "$command");
+  assert.equal(artifacts.bash.payload, "$command", "a shell tool's payload is its script");
 });
 
 test("factories demand a placement and mint opaque bound instances", () => {
   assert.throws(() => read(), /placed with \{ env \}/u);
   const boxFactory = environment((author) => {
     const instance = author.open(async () => ({}));
-    instance.run(async () => undefined);
     instance.close(async () => undefined);
     return {};
   });
@@ -97,14 +100,15 @@ test("factories demand a placement and mint opaque bound instances", () => {
   assert.deepEqual(Object.keys(read({ env: box })), [], "a bound tool exposes no surface");
 });
 
-test("file tools round-trip through the environment's fs provider", async () => {
+test("file tools work on the workspace through node's own fs", async () => {
   const root = await workspace();
   try {
-    const invoke = await host({ root, exec: noExec });
+    const invoke = await host({ root });
     assert.deepEqual(await invoke("write", { path: "notes/hello.txt", content: "hello world" }), {
       status: "ok",
       value: { path: "notes/hello.txt", bytes: 11 },
     });
+    assert.equal(await readFile(join(root, "notes/hello.txt"), "utf8"), "hello world", "relative paths land in the workspace");
     const first = await invoke("read", { path: "notes/hello.txt" });
     assert.equal(first.value.content, "hello world");
     assert.equal(first.value.truncated, false);
@@ -115,28 +119,18 @@ test("file tools round-trip through the environment's fs provider", async () => 
     assert.deepEqual((await invoke("glob", { pattern: "**/*.txt" })).value, { paths: ["notes/hello.txt"], truncated: false });
     assert.deepEqual((await invoke("glob", { pattern: "*.txt" })).value.paths, [], "a single-segment glob stays at the top level");
     assert.deepEqual((await invoke("glob", { pattern: "notes/h?llo.txt" })).value.paths, ["notes/hello.txt"]);
+    const missing = await invoke("read", { path: "nope.txt" });
+    assert.equal(missing.status, "error", "a platform error is an ordinary tool error");
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await release(root);
   }
 });
 
-test("path escapes stop at the provider, not in the tool", async () => {
-  const root = await workspace();
-  try {
-    const invoke = await host({ root, exec: noExec });
-    const escaped = await invoke("read", { path: "../outside" });
-    assert.equal(escaped.status, "error");
-    assert.equal(escaped.error.code, "path_escape");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("read applies offset and limit after the fs handle returns the file", async () => {
+test("read applies offset and limit after node returns the file", async () => {
   const root = await workspace();
   try {
     await writeFile(join(root, "data.txt"), "0123456789");
-    const invoke = await host({ root, exec: noExec });
+    const invoke = await host({ root });
     const windowed = await invoke("read", { path: "data.txt", offset: 2, limit: 3 });
     assert.deepEqual(windowed.value, { content: "234", bytes: 3, truncated: true });
     await writeFile(join(root, "binary.bin"), Buffer.from([104, 105, 0, 106]));
@@ -144,60 +138,56 @@ test("read applies offset and limit after the fs handle returns the file", async
     assert.equal(binary.status, "error");
     assert.match(binary.error.message, /is binary/u);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await release(root);
   }
 });
 
-test("bash runs through the exec handle with the granted timeout clamp", async () => {
+test("bash is a shell program: the command reaches the executor as the script", async () => {
   const root = await workspace();
-  const calls = [];
+  const scripts = [];
   try {
     const invoke = await host({
       root,
-      exec: async (cmd, opts) => {
-        calls.push({ cmd, opts });
-        return { exitCode: 0, stdout: `ran: ${cmd}`, stderr: "" };
+      shell: async (context, script) => {
+        scripts.push({ script, callId: context.callId });
+        return { exit_code: 0, stdout: `ran: ${script}`, stderr: "" };
       },
     });
-    const ran = await invoke("bash", { command: "echo hi", timeout_ms: 999_999_999 });
+    const ran = await invoke("bash", { command: "echo hi" });
     assert.deepEqual(ran.value, { exit_code: 0, stdout: "ran: echo hi", stderr: "" });
-    assert.equal(calls[0].opts.timeoutMs, 60_000, "the grant clamps the requested timeout");
-    await invoke("bash", { command: "pwd", cwd: "/elsewhere" });
-    assert.equal(calls[1].opts.cwd, "/elsewhere");
-    assert.equal(calls[1].opts.timeoutMs, 60_000, "an absent request still gets the granted maximum");
+    assert.equal(scripts[0].script, "echo hi");
+    const rejected = await invoke("bash", { command: "" });
+    assert.equal(rejected.status, "ok", "shell input is substituted, not schema-validated in the host");
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await release(root);
   }
 });
 
-test("grep drives ripgrep over exec and keeps no-match and failure semantics", async () => {
+const ripgrep = (() => { try { execFileSync("rg", ["--version"], { stdio: "ignore" }); return true; } catch { return false; } })();
+
+test("grep drives ripgrep through a process and keeps no-match and failure semantics", { skip: ripgrep ? false : "ripgrep is not installed here" }, async () => {
   const root = await workspace();
   try {
-    let scripted;
-    const invoke = await host({ root, exec: async (cmd) => scripted(cmd) });
-    scripted = (cmd) => {
-      assert.match(cmd, /^rg --line-number --no-heading --color never --regexp 'needle'\\''s' -- '\.'$/u);
-      return { exitCode: 0, stdout: "a.txt:1:x\nb.txt:2:y\n", stderr: "" };
-    };
-    assert.deepEqual((await invoke("grep", { pattern: "needle's" })).value, { matches: ["a.txt:1:x", "b.txt:2:y"], truncated: false });
-    scripted = () => ({ exitCode: 1, stdout: "", stderr: "" });
-    assert.deepEqual((await invoke("grep", { pattern: "nothing" })).value, { matches: [], truncated: false });
-    scripted = () => ({ exitCode: 2, stdout: "", stderr: "rg: bad pattern" });
+    await writeFile(join(root, "a.txt"), "needle's here\nnothing\n");
+    await writeFile(join(root, "b.txt"), "another needle's\n");
+    const invoke = await host({ root });
+    assert.deepEqual((await invoke("grep", { pattern: "needle's" })).value, { matches: ["a.txt:1:needle's here", "b.txt:1:another needle's"], truncated: false });
+    assert.deepEqual((await invoke("grep", { pattern: "absent" })).value, { matches: [], truncated: false });
     const failed = await invoke("grep", { pattern: "(" });
     assert.equal(failed.status, "error");
-    assert.match(failed.error.message, /bad pattern/u);
+    assert.match(failed.error.message, /regex|parse|unclosed/iu);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await release(root);
   }
 });
 
-test("todo is pure: no capability, list kept in the hosted module", async () => {
+test("todo is pure: no resource, list kept in the hosted module", async () => {
   const root = await workspace();
   try {
-    const invoke = await host({ root, exec: noExec });
+    const invoke = await host({ root });
     await invoke("todo", { action: "set", items: [{ text: "ship it", done: false }] });
     assert.deepEqual((await invoke("todo", { action: "get" })).value, { items: [{ text: "ship it", done: false }] });
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await release(root);
   }
 });

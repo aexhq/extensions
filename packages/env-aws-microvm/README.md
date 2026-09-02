@@ -16,20 +16,24 @@ const environment = awsMicroVm({
 });
 ```
 
-## Capabilities
+## What it executes and declares
 
-The Environment provides `exec` and `fs`, reported on its setup and attach receipts, and hosts
-provisioned ESM Tool artifacts (`host.esm`):
+The Environment launches `esm` and `shell` programs and declares `fs` and `process`, all
+reported on its setup and attach receipts:
 
-- `exec` runs `bash -lc` on the VM, with the attachment's exec grant enforced behind the handle —
-  the granted `timeout_ms_max` clamps every requested timeout (enforced by kill) and
-  `output_bytes_max` caps captured output.
-- `fs` is rooted at the attachment's granted `fs.root`: every path is confined with `clamp.path`,
-  writes create parent directories, and an attachment without an fs grant is denied by default.
+- `esm` programs (`brain build` artifacts) are imported once at attach and run in the guest's
+  host process, in the workspace, on node's own APIs.
+- `shell` programs run as `bash -lc` in the workspace, killed at the call's deadline, with
+  captured output capped at the declared `output_bytes_max`.
+- `fs` is rooted at the workspace (`/workspace` in the guest; `AEX_WORKSPACE_ROOT` in a local
+  test), and every program starts there. `process` declares that programs can start processes.
+
+Enforcement is the guest's, not a wrapper's: the workspace mount, the tool user, and the egress
+gateway bound what a program can reach.
 
 The deployed image points `AEX_TOOL_ARTIFACT_DIR` at its installed `*.tool.json` artifacts
 (`brain build` output) so attach provisions can be served by content identity; an attach naming an
-identity the host cannot serve fails its receipt.
+`esm` identity the host cannot serve fails its receipt.
 
 Every returned Environment reference is session-scoped and can expose provider-specific methods:
 
