@@ -16,7 +16,7 @@
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.15.1",
+    "@aexhq/brain": "0.15.3",
     "@bytecodealliance/jco": "1.17.9",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"
