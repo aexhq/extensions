@@ -2,10 +2,9 @@
 
 A pi-style agent loop for Brain: a semantic port of the pi coding agent's loop,
 pinned against [earendil-works/pi](https://github.com/earendil-works/pi) tag
-`v0.84.4` (`@earendil-works/pi-agent-core@0.84.4`). The published pi loop is an
-async driver that performs LLM and tool calls inside one invocation, so it
-cannot run in Brain's deterministic WebAssembly sandbox; this package
-reproduces its per-turn contract instead:
+`v0.84.4` (`@earendil-works/pi-agent-core@0.84.4`). The loop drives each turn
+through Brain's services from inside its WebAssembly component and reproduces
+pi's per-turn contract:
 
 - tool calls are issued as one **parallel batch**, and results return in
   assistant source order;

@@ -1,82 +1,98 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { activateAgentloop } from "@aexhq/brain";
+import { runTurn } from "@aexhq/brain";
 
 import { codex } from "./src/index.mjs";
 
-const drive = (configuration = {}) => {
-  let state;
-  return (observation) => {
-    const output = activateAgentloop(codex, {
-      context: { state },
-      observation,
-      configuration,
-      runtime: { logicalTimeMs: 1n },
-    });
-    state = output.context.state;
-    return output.decision;
+// A fake Brain: model answers come off a script, dispatches are recorded and
+// answered from a table, appends are recorded.
+const host = (responses, { results = {} } = {}) => {
+  const record = { requests: [], dispatches: [], appended: [] };
+  return {
+    record,
+    model(requestJson) {
+      record.requests.push(JSON.parse(requestJson));
+      const response = responses.shift();
+      assert.ok(response, "the loop called the model more often than the script allows");
+      return JSON.stringify(response);
+    },
+    dispatch(callsJson) {
+      const calls = JSON.parse(callsJson);
+      record.dispatches.push(calls.map((call) => call.call_id));
+      return JSON.stringify(calls.map((call) => ({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false })));
+    },
+    append(kind, payloadJson) {
+      record.appended.push({ kind, payload: JSON.parse(payloadJson) });
+      return record.appended.length;
+    },
+    telemetry() {},
   };
 };
 
-const assistant = (content, usage = {}) => ({
-  type: "model_completed",
-  response: { message: { role: "assistant", content }, stop_reason: "tool_use", usage },
+const turn = (message, fake, { transcript = [], slots = {}, configuration = {} } = {}) =>
+  runTurn(codex, {
+    input: { message },
+    transcript,
+    slots,
+    events: [],
+    configuration,
+    system: "",
+    tools: [],
+    runtime: { logicalTimeMs: 1n },
+  }, fake);
+
+const assistant = (content, usage = {}, stop_reason = "tool_use") => ({
+  message: { role: "assistant", content },
+  stop_reason,
+  usage,
 });
 
-test("executes tool calls one at a time and feeds all outputs back in call order", () => {
-  const step = drive();
-  step({ type: "user_message", input: { message: "build it" } });
-  const first = step(assistant([
-    { type: "tool_use", id: "c1", name: "bash", input: { command: "make" } },
-    { type: "tool_use", id: "c2", name: "read", input: { path: "log" } },
-  ]));
-  assert.equal(first.type, "tools");
-  assert.deepEqual(first.calls.map((call) => call.callId), ["c1"]);
+test("executes tool calls one at a time and feeds all outputs back in call order", async () => {
+  const fake = host(
+    [
+      assistant([
+        { type: "tool_use", id: "c1", name: "bash", input: { command: "make" } },
+        { type: "tool_use", id: "c2", name: "read", input: { path: "log" } },
+      ]),
+      assistant([{ type: "text", text: "built" }], {}, "end_turn"),
+    ],
+    { results: { c1: "ok", c2: "clean" } },
+  );
+  await turn("build it", fake);
 
-  const second = step({ type: "tools_completed", results: [{ call_id: "c1", output: "ok", is_error: false }] });
-  assert.equal(second.type, "tools");
-  assert.deepEqual(second.calls.map((call) => call.callId), ["c2"]);
-
-  const next = step({ type: "tools_completed", results: [{ call_id: "c2", output: "clean", is_error: false }] });
-  assert.equal(next.type, "model");
-  const results = next.request.messages.at(-1);
+  assert.deepEqual(fake.record.dispatches, [["c1"], ["c2"]]);
+  const results = fake.record.requests[1].messages.at(-1);
   assert.deepEqual(results.content.map((block) => [block.tool_use_id, block.content]), [["c1", "ok"], ["c2", "clean"]]);
 });
 
-test("compacts at the 90% token threshold using reported usage, keeping user messages plus a bridge", () => {
-  const step = drive({ contextWindow: 1000 });
-  step({ type: "user_message", input: { message: "the original task" } });
-  // The provider reports 950 tokens used: past 90% of 1000.
-  const calls = step(assistant([
-    { type: "tool_use", id: "c1", name: "bash", input: {} },
-  ], { input_tokens: 900, output_tokens: 50 }));
-  assert.equal(calls.type, "tools");
+test("compacts at the 90% token threshold using reported usage, keeping user messages plus a bridge", async () => {
+  const fake = host(
+    [
+      // The provider reports 950 tokens used: past 90% of 1000.
+      assistant([{ type: "tool_use", id: "c1", name: "bash", input: {} }], { input_tokens: 900, output_tokens: 50 }),
+      assistant([{ type: "text", text: "progress so far" }], {}, "end_turn"),
+      assistant([{ type: "text", text: "continuing" }], {}, "end_turn"),
+    ],
+    { results: { c1: "big output" } },
+  );
+  const output = await turn("the original task", fake, { configuration: { contextWindow: 1000 } });
 
-  const compaction = step({ type: "tools_completed", results: [{ call_id: "c1", output: "big output", is_error: false }] });
-  assert.equal(compaction.type, "model");
-  assert.match(compaction.request.messages.at(-1).content[0].text, /CONTEXT CHECKPOINT COMPACTION/u);
-
-  const resumed = step({
-    type: "model_completed",
-    response: { message: { role: "assistant", content: [{ type: "text", text: "progress so far" }] }, stop_reason: "end_turn", usage: {} },
-  });
-  assert.equal(resumed.type, "model");
-  const rebuilt = resumed.request.messages;
+  assert.match(fake.record.requests[1].messages.at(-1).content[0].text, /CONTEXT CHECKPOINT COMPACTION/u);
+  const rebuilt = fake.record.requests[2].messages;
   // Prior plain user messages survive; assistant messages and tool results do not.
   assert.deepEqual(rebuilt[0], { role: "user", content: [{ type: "text", text: "the original task" }] });
   assert.equal(rebuilt.length, 2);
   assert.match(rebuilt.at(-1).content[0].text, /^Another language model started to solve this problem/u);
   assert.match(rebuilt.at(-1).content[0].text, /progress so far/u);
+  assert.equal(output.slots.usage.lastTokens, 0);
 });
 
-test("replies when a response carries no tool calls", () => {
-  const step = drive();
-  step({ type: "user_message", input: { message: "hello" } });
-  const reply = step({
-    type: "model_completed",
-    response: { message: { role: "assistant", content: [{ type: "text", text: "hi" }] }, stop_reason: "end_turn", usage: {} },
-  });
-  assert.equal(reply.type, "emit");
-  assert.equal(reply.event.message, "hi");
+test("replies when a response carries no tool calls", async () => {
+  const fake = host([assistant([{ type: "text", text: "hi" }], { input_tokens: 10, output_tokens: 2 }, "end_turn")]);
+  const output = await turn("hello", fake);
+
+  assert.deepEqual(fake.record.dispatches, []);
+  assert.deepEqual(fake.record.appended, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "hi" } }]);
+  assert.equal(output.slots.usage.lastTokens, 12);
 });

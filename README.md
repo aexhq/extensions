@@ -17,7 +17,13 @@ All three roles have the same authoring shape:
 import { agentloop } from "@aexhq/brain";
 
 export const support = agentloop((author) => {
-  author.on.message((_message, turn) => turn.reply("Hello"));
+  author.turn(async (turn) => {
+    turn.transcript.push({ role: "user", content: [{ type: "text", text: turn.input.message }] });
+    const { message } = await turn.model({ messages: turn.transcript });
+    turn.transcript.push(message);
+    await turn.reply(message.content.map((block) => block.text ?? "").join(""));
+    return turn.done();
+  });
 });
 ```
 
@@ -25,7 +31,8 @@ export const support = agentloop((author) => {
 brain build
 ```
 
-Agent loop handlers synchronously choose the next durable action.
+An agent loop drives one whole turn: it calls the model and dispatches tools through the
+`turn` object, and Brain journals every call before it happens.
 
 Tools and Environments meet through the execution contract. A Tool is a program (an `esm`
 module, a `shell` script, or an `http` request) plus the resources it operates on (`fs`,

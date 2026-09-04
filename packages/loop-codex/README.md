@@ -5,11 +5,12 @@ pinned against [openai/codex](https://github.com/openai/codex) tag
 `rust-v0.151.0` (= npm `@openai/codex@0.151.0`). The published packages cannot
 be imported here — `@openai/codex` ships a precompiled Rust binary and
 `@openai/codex-sdk` spawns it as a subprocess — so this package reproduces the
-loop's contract inside Brain's deterministic WebAssembly sandbox:
+loop's contract, driving each turn through Brain's services from inside its
+WebAssembly component:
 
-- each step re-sends the full history; tool calls execute **one at a time**
-  (Codex's default per-tool gate is exclusive) and all outputs are appended in
-  the **original call order** before the next sampling step;
+- each sampling step re-sends the full history; tool calls execute **one at a
+  time** (Codex's default per-tool gate is exclusive) and all outputs are
+  appended in the **original call order** before the next sampling step;
 - the turn ends when a response carries no tool calls;
 - **automatic compaction at 90% of the context window**, following Codex's
   local path: a summarization model call (Codex's own compaction prompt), then

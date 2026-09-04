@@ -24,7 +24,7 @@ jobs:
         with:
           repository: aexhq/brain
           path: brain-source
-          ref: 30440c8537e533e2459709e0d993fb307093bf24
+          ref: c93ea287ea9df8df8bbdf9985f64150c037a488e
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
@@ -39,6 +39,15 @@ jobs:
           echo "BRAIN_PACKAGE_ARCHIVE=$RUNNER_TEMP/$brain_archive" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run package-smoke
+
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.2"
+      # Reads package-lock.json; no install, so a slow registry costs this job alone.
       - run: npm audit --audit-level=high
 
   runtime-format-clippy:
@@ -91,17 +100,19 @@ jobs:
 
   build-test:
     if: always()
-    needs: [packages, runtime-format-clippy, runtime-test, linux-environment-image]
+    needs: [packages, audit, runtime-format-clippy, runtime-test, linux-environment-image]
     runs-on: ubuntu-24.04
     steps:
       - name: Every release gate passed
         env:
           PACKAGES: ${{ needs.packages.result }}
+          AUDIT: ${{ needs.audit.result }}
           LINT: ${{ needs.runtime-format-clippy.result }}
           TEST: ${{ needs.runtime-test.result }}
           IMAGE: ${{ needs.linux-environment-image.result }}
         run: |
           test "$PACKAGES" = success
+          test "$AUDIT" = success
           test "$LINT" = success
           test "$TEST" = success
           test "$IMAGE" = success
