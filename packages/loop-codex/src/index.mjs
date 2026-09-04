@@ -7,12 +7,12 @@ import { z } from "zod";
 // under codex-rs/prompts/templates/compact/.
 //
 // The published packages cannot be imported here: @openai/codex ships only the
-// precompiled Rust binary and @openai/codex-sdk spawns it as a subprocess, so
-// nothing runs inside Brain's deterministic synchronous sandbox. This port
-// reproduces the loop's contract instead:
-// - each step re-sends the full history; tool outputs are appended in the
-//   original call order before the next sampling step, and calls execute one
-//   at a time (codex's default per-tool gate is exclusive)
+// precompiled Rust binary and @openai/codex-sdk spawns it as a subprocess. This
+// loop drives one whole turn through Brain's services instead and reproduces
+// the loop's contract:
+// - each sampling step re-sends the full history; tool calls execute one at
+//   a time (codex's default per-tool gate is exclusive) and every output is
+//   appended in the original call order before the next sampling step
 // - the turn ends when a response carries no tool calls
 // - automatic compaction at ~90% of the context window, using codex's local
 //   path: summarize via a model call, then replace history with the prior
@@ -47,13 +47,10 @@ Be concise, structured, and focused on helping the next LLM seamlessly continue 
 // codex-rs/prompts/templates/compact/summary_prefix.md, verbatim.
 const SUMMARY_PREFIX = `Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:`;
 
-const stateSchema = z.object({
-  messages: z.array(z.unknown()),
-  pending: z.array(z.object({ callId: z.string(), name: z.string(), input: z.unknown() })),
-  results: z.array(z.unknown()),
-  compacting: z.boolean(),
-  lastTokens: z.number().nonnegative(),
-});
+// Codex counts the tokens the provider reported for the last response; the
+// threshold is checked before the first sampling request of a turn, so the
+// count carries over between turns.
+const usageSchema = z.object({ lastTokens: z.number().nonnegative() });
 
 const messageText = (message) =>
   message.content
@@ -68,95 +65,66 @@ const isPlainUserMessage = (message) =>
 
 export const codex = agentloop({ options: optionsSchema }, (author) => {
   const options = author.options;
-  const state = author.state(stateSchema, () => ({
-    messages: [],
-    pending: [],
-    results: [],
-    compacting: false,
-    lastTokens: 0,
-  }));
+  const usage = author.slot("usage", usageSchema, () => ({ lastTokens: 0 }));
 
-  // Codex counts the tokens the provider reported for the last response, not a
-  // client-side estimate; the estimate is only the fallback for providers that
-  // report nothing.
-  const usedTokens = () =>
-    state.lastTokens > 0 ? state.lastTokens : author.context.estimateTokens(state.messages);
+  // The client-side estimate is only the fallback for providers that report
+  // nothing.
+  const usedTokens = (transcript) =>
+    usage.lastTokens > 0 ? usage.lastTokens : author.context.estimateTokens(transcript);
 
-  const shouldCompact = () =>
-    options.compaction && usedTokens() >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
-
-  const compact = (turn) => {
-    state.compacting = true;
-    return turn.model({
-      messages: [
-        ...state.messages,
-        { role: "user", content: [{ type: "text", text: SUMMARIZATION_PROMPT }] },
-      ],
-    });
-  };
+  const shouldCompact = (transcript) =>
+    options.compaction && usedTokens(transcript) >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
 
   // codex-rs/core/src/compact.rs build_compacted_history: prior plain user
   // messages, most recent kept within the token budget (the oldest kept one is
   // truncated to fit in codex; dropped whole here), then one bridge user
   // message carrying the summary, last.
-  const rebuild = (summary) => {
+  const compact = async (turn) => {
+    const { message } = await turn.model({
+      messages: [...turn.transcript, { role: "user", content: [{ type: "text", text: SUMMARIZATION_PROMPT }] }],
+    });
     const kept = [];
     let budget = COMPACT_USER_MESSAGE_MAX_TOKENS;
-    for (let index = state.messages.length - 1; index >= 0; index -= 1) {
-      const message = state.messages[index];
-      if (!isPlainUserMessage(message)) continue;
-      const cost = author.context.estimateTokens([message]);
+    for (let index = turn.transcript.length - 1; index >= 0; index -= 1) {
+      const candidate = turn.transcript[index];
+      if (!isPlainUserMessage(candidate)) continue;
+      const cost = author.context.estimateTokens([candidate]);
       if (cost > budget) break;
       budget -= cost;
-      kept.unshift(message);
+      kept.unshift(candidate);
     }
-    kept.push({ role: "user", content: [{ type: "text", text: `${SUMMARY_PREFIX}\n${summary}` }] });
-    state.messages = kept;
+    kept.push({ role: "user", content: [{ type: "text", text: `${SUMMARY_PREFIX}\n${messageText(message)}` }] });
+    turn.transcript.splice(0, turn.transcript.length, ...kept);
+    usage.lastTokens = 0;
   };
 
-  const advance = (turn) => (shouldCompact() ? compact(turn) : turn.model({ messages: state.messages }));
-
-  author.on.message(({ input }, turn) => {
-    state.messages.push({ role: "user", content: [{ type: "text", text: input.message }] });
-    // run_pre_sampling_compact: the threshold is checked before the first
-    // sampling request of every turn.
-    return advance(turn);
-  });
-
-  author.on.model((completed, turn) => {
-    const { message, usage } = completed.response;
-    if (state.compacting) {
-      state.compacting = false;
-      rebuild(messageText(message));
-      state.lastTokens = 0;
-      return turn.model({ messages: state.messages });
+  author.turn(async (turn) => {
+    turn.transcript.push({ role: "user", content: [{ type: "text", text: turn.input.message }] });
+    for (;;) {
+      // run_pre_sampling_compact before the first request of the turn, and the
+      // mid-turn check after each step's tools have completed.
+      if (shouldCompact(turn.transcript)) await compact(turn);
+      const response = await turn.model({ messages: turn.transcript });
+      usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
+      turn.transcript.push(response.message);
+      const calls = response.message.content
+        .filter((block) => block.type === "tool_use")
+        .map((block) => ({ callId: block.id, name: block.name, input: block.input }));
+      if (calls.length === 0) {
+        await turn.reply(messageText(response.message));
+        return turn.done();
+      }
+      const results = [];
+      for (const call of calls) {
+        const [result] = await turn.dispatch([call]);
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.callId,
+          content: result === undefined ? "Tool produced no result." : result.output,
+          is_error: result === undefined ? true : result.isError,
+        });
+      }
+      turn.transcript.push({ role: "user", content: results });
     }
-    state.lastTokens = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
-    const calls = message.content
-      .filter((block) => block.type === "tool_use")
-      .map((block) => ({ callId: block.id, name: block.name, input: block.input }));
-    state.messages.push(message);
-    if (calls.length === 0) return turn.reply(messageText(message));
-    state.pending = calls;
-    state.results = [];
-    return turn.tools([calls[0]]);
-  });
-
-  author.on.tools((completed, turn) => {
-    const call = state.pending.shift();
-    const result = completed.results[0];
-    state.results.push({
-      type: "tool_result",
-      tool_use_id: call?.callId ?? result?.call_id ?? "unknown",
-      content: result === undefined ? "Tool produced no result." : result.output,
-      is_error: result === undefined ? true : result.is_error,
-    });
-    if (state.pending.length > 0) return turn.tools([state.pending[0]]);
-    // Outputs land in the original call order before the next sampling step.
-    state.messages.push({ role: "user", content: state.results });
-    state.results = [];
-    // The mid-turn threshold check: after a step whose tools have completed,
-    // before the next sampling request.
-    return advance(turn);
   });
 });
