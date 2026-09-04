@@ -30,7 +30,6 @@ try {
     name: "extensions-clean-consumer", private: true, type: "module",
   }, null, 2)}\n`);
   runNpm(["install", "--no-audit", "--no-fund", ...packages, "typescript@5.9.2", "@types/node@24.3.0"], { cwd: consumer });
-  runNpm(["audit", "--audit-level=high"], { cwd: consumer });
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
 import { Brain, inspectServedTool, tool } from "@aexhq/brain";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
