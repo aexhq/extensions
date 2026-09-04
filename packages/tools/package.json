@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tools",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Official remote Tool definitions and Environment-side implementations for Brain sessions",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -34,7 +34,7 @@
     "test": "npm run build && node --test"
   },
   "dependencies": {
-    "@aexhq/brain": "0.15.1",
+    "@aexhq/brain": "0.15.2",
     "zod": "4.4.3"
   },
   "devDependencies": {
