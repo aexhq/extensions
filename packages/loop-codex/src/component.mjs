@@ -25,6 +25,7 @@ export async function turn(input) {
       system: input.system,
       tools: JSON.parse(input.toolsJson),
     }, {
+      events: (after) => JSON.parse(hosted(() => host.events(BigInt(after)))),
       model: (request) => JSON.parse(hosted(() => host.model(JSON.stringify(request)))),
       dispatch: (calls) => JSON.parse(hosted(() => host.dispatch(JSON.stringify(calls)))),
       emit: (kind, data) => hosted(() => host.emit(kind, JSON.stringify(data ?? null))),

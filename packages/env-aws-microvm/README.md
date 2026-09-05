@@ -28,3 +28,8 @@ runtime registry before invoking a bundle.
 
 `idleSeconds` cannot exceed `maximumSeconds`. The deployed driver may impose stricter finite
 limits and rejects unsupported configuration rather than silently weakening it.
+
+Physical expiry belongs to this provider, including while a session is suspended or logically
+attached. Brain stores the binding and records failures; it does not restore an expired MicroVM
+or retry its tool effects. A different Environment may choose lazy allocation on first invocation
+or attach to an externally owned resource. These are provider policies, not Brain lifecycle flags.
