@@ -77,7 +77,6 @@ const publishHoldPlaceholder = async (item) => {
     "public",
     "--tag",
     "latest",
-    "--provenance",
     "--force",
   ], "inherit");
   await waitFor(
@@ -118,7 +117,6 @@ if (operation === "bootstrap") {
       "public",
       "--tag",
       "next",
-      "--provenance",
     ], "inherit");
     await waitFor(() => registryValue(`${item.name}@next`, "version"), item.version, `${item.name}@next`);
     process.stdout.write(`bootstrapped ${spec} (${item.integrity})\n`);
@@ -154,7 +152,7 @@ if (operation === "bootstrap") {
   for (const item of manifest.packages) {
     const spec = `${item.name}@${item.version}`;
     if (existing.get(spec) === undefined) {
-      run(["publish", path.join(directory, item.filename), "--access", "public", "--tag", "next", "--provenance"], "inherit");
+      run(["publish", path.join(directory, item.filename), "--access", "public", "--tag", "next"], "inherit");
       await waitFor(() => registryValue(spec, "dist.integrity"), item.integrity, `${spec} integrity`);
     }
     await waitFor(() => registryValue(`${item.name}@next`, "version"), item.version, `${item.name}@next`);

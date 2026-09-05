@@ -8,7 +8,7 @@
     "url": "git+https://github.com/aexhq/extensions.git",
     "directory": "packages/env-aws-microvm"
   },
-  "publishConfig": { "access": "public", "provenance": true, "tag": "next" },
+  "publishConfig": { "access": "public", "provenance": false, "tag": "next" },
   "type": "module",
   "engines": { "node": ">=22.0.0" },
   "exports": {

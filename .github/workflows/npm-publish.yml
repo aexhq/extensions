@@ -173,7 +173,7 @@ jobs:
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
       - run: node "$RUNNER_TEMP/extensions-npm-release/verify-dependencies.mjs" "$RUNNER_TEMP/extensions-npm-release/manifest.json"
-      - name: Publish once with provenance under next
+      - name: Publish once under next
         env:
           EXPECTED_COMMIT: ${{ inputs.expected_commit }}
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" stage
