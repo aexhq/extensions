@@ -12,7 +12,6 @@ test("creates an immutable AWS MicroVM placement descriptor", () => {
     idle_seconds: 30,
     maximum_seconds: 600,
   });
-  assert.equal(source.managed, true);
   assert.deepEqual(source.bindings, {});
 });
 

@@ -53,3 +53,11 @@ const notify = tool({
 
 const tools = [notify()];
 ```
+
+## Brain runtime boundary
+
+These packages consume Brain's public SDK and contracts. Brain is independently usable without
+this repository or Aex. The loops run in fresh Wasm stores, keep transcript and policy state in
+returned slots, and read interruption/environment Events before asking the model to continue.
+Environment providers own physical expiry and resource recovery. The entire `tool-env` tool,
+mutable bindings, and unbound-tool placement are post-MVP.

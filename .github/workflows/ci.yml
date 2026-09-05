@@ -24,7 +24,7 @@ jobs:
         with:
           repository: aexhq/brain
           path: brain-source
-          ref: 57caae4f1a0cfc4689462272d7659fd75f60c988
+          ref: 682ce03104991f5815de0655165509510f07dbb6
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"

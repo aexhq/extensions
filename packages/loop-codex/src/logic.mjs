@@ -1,3 +1,5 @@
+import { observeEvents } from "../../../shared/loop-events.mjs";
+
 const AUTO_COMPACT_RATIO = 0.9;
 const COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000;
 
@@ -21,6 +23,7 @@ const isPlainUserMessage = (message) =>
 export async function runCodex(input, context) {
   const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
   const transcript = cloneJson(input.transcript);
+  const observed_sequence = await observeEvents(context, transcript, input.slots.observed_sequence ?? 0);
   const saved = input.slots.usage;
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
@@ -55,7 +58,7 @@ export async function runCodex(input, context) {
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
-      return { transcript, slots: { usage } };
+      return { transcript, slots: { usage, observed_sequence } };
     }
     const results = [];
     for (const call of calls) {

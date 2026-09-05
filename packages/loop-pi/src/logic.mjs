@@ -1,3 +1,5 @@
+import { observeEvents } from "../../../shared/loop-events.mjs";
+
 const CHECKPOINT_PREFIX = "Context checkpoint from earlier in this conversation:\n\n";
 
 const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
@@ -58,6 +60,7 @@ export async function runPi(input, context) {
     ...input.configuration,
   };
   const transcript = cloneJson(input.transcript);
+  const observed_sequence = await observeEvents(context, transcript, input.slots.observed_sequence ?? 0);
   const saved = input.slots.checkpoint;
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
@@ -101,7 +104,7 @@ export async function runPi(input, context) {
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: text(message) });
-      return { transcript, slots: { checkpoint } };
+      return { transcript, slots: { checkpoint, observed_sequence } };
     }
     if (stop_reason === "max_tokens") {
       transcript.push({

@@ -30,3 +30,10 @@ const session = await brain.sessions.create({
 
 The component is built by this package's publisher. Brain consumes the resulting Component and
 does not compile its JavaScript source.
+
+The loop reads paginated session Events before each turn and saves its observation cursor in
+slots. Interrupted turns and environment failures enter the transcript as runtime observations.
+A failed tool result goes back to the model with `is_error`; the loop does not retry it automatically.
+Brain can release execution between turns without losing this transcript or cursor. Physical
+browser and sandbox state follows the Environment provider's TTL and may be lost. The official
+`tool-env` inspection and lifecycle tool is planned after the MVP.

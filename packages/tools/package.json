@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tools",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Official placed Tool definitions for Brain sessions",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -35,7 +35,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.16.1",
+    "@aexhq/brain": "0.17.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

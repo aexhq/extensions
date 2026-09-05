@@ -9,6 +9,7 @@ const host = (responses, { results = {} } = {}) => {
   const record = { requests: [], dispatches: [], emitted: [] };
   return {
     record,
+    events: (after) => ({ events: [], next_cursor: after }),
     model(request) {
       record.requests.push(structuredClone(request));
       const response = responses.shift();
@@ -106,4 +107,25 @@ test("compacts older history into a structured checkpoint and keeps the recent t
   assert.deepEqual(rebuilt.at(-1), { role: "user", content: [{ type: "text", text: "new question" }] });
   assert.equal(second.slots.checkpoint.summary, "## Goal\nfinish the task");
   assert.equal(second.transcript[0].content[0].text.startsWith("Context checkpoint"), true);
+});
+
+test("pages runtime failures into context and preserves the observation cursor across turns", async () => {
+  const fake = host([assistant([{ type: "text", text: "acknowledged" }])]);
+  const pages = [];
+  fake.events = (after) => {
+    pages.push(after);
+    if (after === 0) return { events: [{ sequence: 1, event_type: "turn_failed", data: { code: "interrupted" } }], next_cursor: 1 };
+    if (after === 1) return { events: [{ sequence: 2, event_type: "environment_unreachable", data: { environment_id: "env_browser" } }], next_cursor: 2 };
+    return { events: [], next_cursor: after };
+  };
+  const first = await turn("continue", fake);
+  assert.deepEqual(pages, [0, 1, 2]);
+  assert.match(fake.record.requests[0].messages[0].content[0].text, /interrupted/u);
+  assert.match(fake.record.requests[0].messages[1].content[0].text, /env_browser/u);
+  assert.deepEqual(fake.record.dispatches, []);
+  assert.equal(first.slots.observed_sequence, 2);
+  const next = host([assistant([{ type: "text", text: "still here" }])]);
+  next.events = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
+  const second = await turn("next", next, first);
+  assert.equal(second.transcript.filter((message) => message.content.some((block) => block.text?.includes("Runtime observation"))).length, 2);
 });
