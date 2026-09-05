@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop-pi",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Pi-style parallel-Tool Brain extension",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.16.0",
+    "@aexhq/brain": "0.16.1",
     "zod": "4.4.3"
   },
   "devDependencies": {}

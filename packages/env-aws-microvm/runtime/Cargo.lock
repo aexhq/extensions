@@ -816,7 +816,7 @@ dependencies = [
 [[package]]
 name = "brain"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45#a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45"
+source = "git+https://github.com/aexhq/brain.git?rev=57caae4f1a0cfc4689462272d7659fd75f60c988#57caae4f1a0cfc4689462272d7659fd75f60c988"
 dependencies = [
  "async-trait",
  "brain-protocol",
@@ -838,7 +838,7 @@ dependencies = [
 [[package]]
 name = "brain-protocol"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45#a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45"
+source = "git+https://github.com/aexhq/brain.git?rev=57caae4f1a0cfc4689462272d7659fd75f60c988#57caae4f1a0cfc4689462272d7659fd75f60c988"
 dependencies = [
  "hex",
  "schemars",
@@ -851,7 +851,7 @@ dependencies = [
 [[package]]
 name = "brain-telemetry"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45#a21ae6e5c46ea2bffd9fe96aebb45471f6f1ac45"
+source = "git+https://github.com/aexhq/brain.git?rev=57caae4f1a0cfc4689462272d7659fd75f60c988#57caae4f1a0cfc4689462272d7659fd75f60c988"
 dependencies = [
  "async-trait",
  "brain-protocol",
