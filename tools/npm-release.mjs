@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -26,58 +26,24 @@ const run = (args) => execFileSync(process.execPath, [npmCli, ...args], {
   stdio: ["ignore", "pipe", "pipe"],
 }).trim();
 
-const git = (args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-
 const releasedIntegrity = (spec) => {
+  let output;
   try {
-    const output = run(["view", spec, "dist.integrity", "--json"]);
-    return output === "" ? undefined : JSON.parse(output);
+    output = run(["view", spec, "dist.integrity", "--json"]);
   } catch {
     return undefined;
   }
+  const integrity = output === "" ? undefined : JSON.parse(output);
+  if (integrity !== undefined &&
+      (typeof integrity !== "string" || !integrity.startsWith("sha512-"))) {
+    throw new Error(`${spec} has no sha512 integrity on the public registry`);
+  }
+  return integrity;
 };
 
-export const releasedSourceCommit = (document) => {
-  const provenance = document.attestations?.find(
-    ({ predicateType }) => predicateType === "https://slsa.dev/provenance/v1",
-  );
-  const payload = provenance?.bundle?.dsseEnvelope?.payload;
-  if (typeof payload !== "string") throw new Error("published package has no SLSA provenance");
-  const statement = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
-  const dependency = statement.predicate?.buildDefinition?.resolvedDependencies?.find(
-    ({ uri }) => uri?.startsWith("git+https://github.com/aexhq/extensions@"),
-  );
-  const commit = dependency?.digest?.gitCommit;
-  if (typeof commit !== "string" || !/^[0-9a-f]{40}$/u.test(commit)) {
-    throw new Error("published package provenance has no Extensions source commit");
-  }
-  return commit;
-};
-
-const releasedAttestations = async (spec) => {
-  const output = run(["view", spec, "dist.attestations.url", "--json"]);
-  const url = JSON.parse(output);
-  if (typeof url !== "string" || !url.startsWith("https://registry.npmjs.org/-/npm/v1/attestations/")) {
-    throw new Error(`${spec} has no registry attestations`);
-  }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`could not read ${spec} provenance: HTTP ${response.status}`);
-  return response.json();
-};
-
-/**
- * Rebuilding a component is not byte-for-byte deterministic. The registry provenance identifies
- * the source that produced the immutable package, so compare source rather than rebuilt archives.
- */
-const assertReleasedVersionIsCurrent = async (workspace, spec) => {
-  const directory = `packages/${workspace}`;
-  const commit = releasedSourceCommit(await releasedAttestations(spec));
-  git(["merge-base", "--is-ancestor", commit, "HEAD"]);
-  try {
-    git(["diff", "--quiet", `${commit}..HEAD`, "--", directory]);
-  } catch {
-    throw new Error(`${directory} changed after ${spec} was published; release it under a new version`);
-  }
+export const releasePlan = (name, version, integrity) => {
+  const filename = `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
+  return { filename, integrity, shouldPack: integrity === undefined };
 };
 
 const document = async (workspace) =>
@@ -108,8 +74,25 @@ async function pack(directory) {
   const packages = [];
   for (const workspace of workspaces) {
     const packageDocument = await document(workspace);
-    if (packageDocument.publishConfig?.access !== "public" || packageDocument.publishConfig?.tag !== "next") {
-      throw new Error(`${packageDocument.name} must publish publicly under the next dist-tag`);
+    if (packageDocument.publishConfig?.access !== "public" ||
+        packageDocument.publishConfig?.tag !== "next" ||
+        packageDocument.publishConfig?.provenance !== false) {
+      throw new Error(`${packageDocument.name} must publish publicly without provenance under the next dist-tag`);
+    }
+    const spec = `${packageDocument.name}@${packageDocument.version}`;
+    const released = releasedIntegrity(spec);
+    const plan = releasePlan(packageDocument.name, packageDocument.version, released);
+    if (!plan.shouldPack) {
+      packages.push({
+        workspace,
+        name: packageDocument.name,
+        version: packageDocument.version,
+        filename: plan.filename,
+        integrity: plan.integrity,
+        dependencies: packageDocument.dependencies ?? {},
+        peerDependencies: packageDocument.peerDependencies ?? {},
+      });
+      continue;
     }
     const result = packResult(run([
       "pack", "--silent", "--json", "--workspace", packageDocument.name,
@@ -127,20 +110,12 @@ async function pack(directory) {
     if (integrity !== item.integrity) {
       throw new Error(`npm reported the wrong integrity for ${packageDocument.name}`);
     }
-    // An exact version already on the registry is the released object. Keep it, prove the package
-    // has not changed since, and drop the unusable rebuild so nothing can publish it.
-    const spec = `${packageDocument.name}@${packageDocument.version}`;
-    const released = releasedIntegrity(spec);
-    if (released !== undefined) {
-      await assertReleasedVersionIsCurrent(workspace, spec);
-      await rm(archive);
-    }
     packages.push({
       workspace,
       name: packageDocument.name,
       version: packageDocument.version,
       filename: item.filename,
-      integrity: released ?? integrity,
+      integrity,
       dependencies: packageDocument.dependencies ?? {},
       peerDependencies: packageDocument.peerDependencies ?? {},
     });

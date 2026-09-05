@@ -12,7 +12,11 @@ publish = false
 workspace = true
 
 [dependencies]
-brain.workspace = true
-brain-protocol.workspace = true
+async-trait.workspace = true
 environment-policy = { path = "../environment-policy" }
+hex.workspace = true
+regress.workspace = true
 serde.workspace = true
+serde_jcs.workspace = true
+serde_json.workspace = true
+sha2.workspace = true

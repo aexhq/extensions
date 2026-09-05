@@ -6,12 +6,12 @@ use aws_microvm_controller::{
 };
 use aws_sdk_dynamodb::{Client as DynamoClient, types::AttributeValue};
 use base64::Engine as _;
-use brain::environment::{EnvironmentPort as _, SessionPreparationPort as _};
-use brain_protocol::contract::{canonical_digest, operation_request_digest};
-use brain_protocol::environment::{
+use environment_wire::{
     AcknowledgeTerminalRequest, CancelRequest, EnvironmentError, ObserveRequest, OperationEnvelope,
     OperationRef, OperationState, SealedBinding, TerminalOutcome,
 };
+use environment_wire::{EnvironmentPort as _, SessionPreparationPort as _};
+use environment_wire::{canonical_digest, operation_request_digest};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
@@ -307,7 +307,7 @@ impl AwsDriver {
             "phase": "execute",
             "request_digest": "0".repeat(64),
             "resources": {
-                "max_output_bytes": brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES,
+                "max_output_bytes": environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES,
                 "timeout_ms": deadline_at_ms.saturating_sub(now_ms()).max(1)
             },
             "root_id": body.binding.root_id,
@@ -544,7 +544,7 @@ impl Driver for AwsDriver {
 }
 
 fn observation_value(
-    observation: brain_protocol::environment::OperationObservation,
+    observation: environment_wire::OperationObservation,
 ) -> Result<Value, DriverError> {
     let state = match observation.state {
         OperationState::Accepted => "pending",
@@ -556,8 +556,10 @@ fn observation_value(
             .map(|terminal| terminal.outcome)
         {
             Some(TerminalOutcome::Completed) => "completed",
-            Some(TerminalOutcome::Cancelled | TerminalOutcome::DeadlineExceeded) => "cancelled",
-            Some(TerminalOutcome::Failed | TerminalOutcome::Interrupted) => "failed",
+            Some(TerminalOutcome::Cancelled) => "cancelled",
+            Some(TerminalOutcome::DeadlineExceeded) => "deadline_exceeded",
+            Some(TerminalOutcome::Failed) => "failed",
+            Some(TerminalOutcome::Interrupted) => "interrupted",
             None => {
                 return Err(DriverError::unavailable(
                     "AWS terminal observation has no result",

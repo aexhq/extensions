@@ -12,13 +12,15 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "test": "npm test --workspaces --if-present && node --test tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
+    "test": "npm test --workspaces --if-present && node --test tools/npm-release.test.mjs tools/verify-dependencies.test.mjs packages/env-aws-microvm/runtime/scripts/test-tool-runner.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.15.3",
+    "@aexhq/brain": "0.16.0",
+    "@bytecodealliance/componentize-js": "0.19.3",
     "@bytecodealliance/jco": "1.17.9",
     "@types/node": "^24.3.0",
+    "esbuild": "0.25.9",
     "typescript": "^5.9.2"
   },
   "overrides": {

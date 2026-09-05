@@ -1,43 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { releasedSourceCommit } from "./npm-release.mjs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
-test("reads the Extensions commit from SLSA provenance", () => {
-  const commit = "0123456789abcdef0123456789abcdef01234567";
-  const payload = Buffer.from(JSON.stringify({
-    predicate: {
-      buildDefinition: {
-        resolvedDependencies: [{
-          uri: `git+https://github.com/aexhq/extensions@refs/tags/release/sha-${commit}`,
-          digest: { gitCommit: commit },
-        }],
-      },
+import { releasePlan } from "./npm-release.mjs";
+
+const root = path.join(import.meta.dirname, "..");
+
+test("an existing exact release trusts its immutable registry integrity without rebuilding", () => {
+  assert.deepEqual(
+    releasePlan("@aexhq/tools", "2.0.0", "sha512-registry"),
+    {
+      filename: "aexhq-tools-2.0.0.tgz",
+      integrity: "sha512-registry",
+      shouldPack: false,
     },
-  })).toString("base64");
-  assert.equal(releasedSourceCommit({
-    attestations: [{
-      predicateType: "https://slsa.dev/provenance/v1",
-      bundle: { dsseEnvelope: { payload } },
-    }],
-  }), commit);
+  );
 });
 
-test("rejects provenance from another repository", () => {
-  const payload = Buffer.from(JSON.stringify({
-    predicate: {
-      buildDefinition: {
-        resolvedDependencies: [{
-          uri: "git+https://github.com/example/extensions@refs/heads/main",
-          digest: { gitCommit: "0123456789abcdef0123456789abcdef01234567" },
-        }],
-      },
-    },
-  })).toString("base64");
-  assert.throws(() => releasedSourceCommit({
-    attestations: [{
-      predicateType: "https://slsa.dev/provenance/v1",
-      bundle: { dsseEnvelope: { payload } },
-    }],
-  }), /no Extensions source commit/u);
+test("an unpublished exact version requires a release archive", () => {
+  assert.equal(releasePlan("@aexhq/tools", "2.0.0", undefined).shouldPack, true);
+});
+
+test("every private-repository package explicitly disables npm provenance", async () => {
+  for (const workspace of ["env-aws-microvm", "loop-codex", "loop-pi", "tools"]) {
+    const document = JSON.parse(await readFile(
+      path.join(root, "packages", workspace, "package.json"),
+      "utf8",
+    ));
+    assert.equal(document.publishConfig.provenance, false, document.name);
+  }
+});
+
+test("the private-repository publisher never requests npm provenance", async () => {
+  const publisher = await readFile(path.join(root, "tools", "publish.mjs"), "utf8");
+  const workflow = await readFile(path.join(root, ".github", "workflows", "npm-publish.yml"), "utf8");
+  assert.doesNotMatch(publisher, /--provenance/u);
+  assert.doesNotMatch(workflow, /with provenance/u);
 });

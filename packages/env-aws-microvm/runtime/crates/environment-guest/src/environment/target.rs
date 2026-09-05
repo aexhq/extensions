@@ -74,9 +74,7 @@ impl Environment {
             .as_ref()
             .is_some_and(|id| {
                 !id.starts_with("image-canary-")
-                    || id
-                        .parse::<brain_protocol::environment::Identifier>()
-                        .is_err()
+                    || id.parse::<environment_wire::Identifier>().is_err()
             })
         {
             return Err(invalid("image canary operation id is invalid"));
@@ -187,7 +185,7 @@ impl Environment {
 
     pub(crate) async fn fence(
         &self,
-        target: &brain_protocol::environment::SandboxTarget,
+        target: &environment_wire::SandboxTarget,
         generation: &str,
     ) -> Result<TargetSnapshot, EnvironmentError> {
         let physical = self.require_target().await?;

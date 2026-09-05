@@ -379,11 +379,11 @@ fn sync(writer: &mut EffectWriter) -> Result<(), FileEffectStoreError> {
 fn validate_identity(identity: &FileEffectIdentity) -> Result<(), FileEffectStoreError> {
     identity
         .operation_id
-        .parse::<brain_protocol::environment::Identifier>()
+        .parse::<environment_wire::Identifier>()
         .map_err(|_| FileEffectStoreError::Invalid("operation_id"))?;
     identity
         .request_digest
-        .parse::<brain_protocol::environment::Digest>()
+        .parse::<environment_wire::Digest>()
         .map_err(|_| FileEffectStoreError::Invalid("request_digest"))?;
     Ok(())
 }

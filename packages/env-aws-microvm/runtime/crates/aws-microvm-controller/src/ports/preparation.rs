@@ -278,7 +278,7 @@ impl AwsMicrovmEnvironment {
                     )
                 })?;
                 if fetch.expires_at_ms.get() <= now_ms()
-                    || fetch.max_bytes.get() as usize > brain_protocol::MAX_TOOL_BUNDLE_BYTES
+                    || fetch.max_bytes.get() as usize > environment_wire::MAX_TOOL_BUNDLE_BYTES
                     || fetch.max_bytes.get() < seal.bytes
                 {
                     return Err(invalid(

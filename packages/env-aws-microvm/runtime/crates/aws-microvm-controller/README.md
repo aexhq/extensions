@@ -1,10 +1,12 @@
-# AWS Environment adapter
+# AWS MicroVM controller
 
-`environment-brain-aws` is the production, in-process implementation of Brain's canonical Environment ports.
-Aex owns the hosted service composition; this crate does not publish or start a second Brain
-server. Construct it with `AwsMicrovmEnvironment::from_env()`, attach the composition-owned
+`aws-microvm-controller` is the provider lifecycle implementation behind the loopback
+`environment-driver`; the driver owns Brain's public `environment/v1` boundary. Aex owns the
+hosted service composition, and this crate does not publish or start a second Brain server.
+Construct it with `AwsMicrovmEnvironment::from_env()`, attach the composition-owned
 `SecretDeliveryPort` once with `attach_secret_delivery`, and register the same `Arc<AwsMicrovmEnvironment>` as
-`EnvironmentPort`, `SessionPreparationPort`, `SandboxFilesPort`, and `SandboxControlPort`.
+the private provider `EnvironmentPort`, `SessionPreparationPort`, `SandboxFilesPort`, and
+`SandboxControlPort` used by the driver.
 
 Hosted MVP targets have one physical resource class: 0.5 baseline vCPU and exactly 1,024 MiB.
 The adapter's capacity charge and the image publisher use the same compile-time constant; there

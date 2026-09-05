@@ -1,9 +1,9 @@
 //! Production Aex-managed Environment implementation for AWS Lambda MicroVMs.
 //!
-//! Brain owns the public contract and commits operation intent before dispatch. This adapter owns
-//! physical target routing only: a first target reservation and the plane memory counter are one
-//! DynamoDB transaction, RunMicrovm remains effect-free, the target is durably installed before
-//! any guest request, and established submit calls use Brain's projected `target_ref` without a
+//! The driver owns the public Environment v1 boundary. This adapter owns the private provider
+//! protocol and physical target routing: a first target reservation and the plane memory counter
+//! are one DynamoDB transaction, RunMicrovm remains effect-free, the target is durably installed
+//! before any guest request, and established submit calls use the projected `target_ref` without a
 //! registry read or write. Observe/cancel/ack carry the exact rooted target and intentionally
 //! reconcile that target row so a lost supervisor can be terminated and its capacity refunded.
 
@@ -19,31 +19,6 @@ use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use brain::environment::{
-    EnvironmentPort, EnvironmentResult, SandboxControlPort, SandboxFileContent, SandboxFileList,
-    SandboxFileListRequest, SandboxFilesPort, SandboxSearchRequest, SecretDeliveryPort,
-    SessionPreparationPort,
-};
-use brain_protocol::contract::{
-    ENVIRONMENT_CONTRACT_DIGEST, canonical_digest, operation_request_digest,
-    sandbox_copy_request_digest, sandbox_execution_request_digest,
-    sandbox_file_write_request_digest, write_stdin_request_digest,
-};
-use brain_protocol::environment::{
-    AcknowledgeTerminalRequest, Acknowledgement, ArtifactTarget, BundleDescriptor, BundleFetch,
-    CancelRequest, CancellationReceipt, CreateSandboxRequest, EnvironmentCapability,
-    EnvironmentError, EnvironmentErrorCode, EnvironmentProfileKind, EnvironmentProfileNetwork,
-    EnvironmentProfilePlatform, EnvironmentProfileRecovery, FileEntry, NetworkCeiling,
-    NetworkCeilingDestinationsItem, ObjectReference, ObjectTransferAuthority,
-    ObjectTransferAuthorityMethod, ObserveRequest, OperationObservation, OperationRef,
-    PrepareSessionRequest, PreparedBindingBundles, PreparedSession, RecoveryClass, ResolvedBinding,
-    ResolvedBindingLimits, ResourceCeiling, SandboxCopyRequest, SandboxCopyRequestDirection,
-    SandboxCopyResult, SandboxExecutionRequest, SandboxFileRequest, SandboxFileWriteRequest,
-    SandboxFileWriteResult, SandboxFileWriteSource, SandboxState, SandboxStatus, SandboxTarget,
-    SealedBinding, SecretDeliveryRequest, SubmitReceipt, SubmitRequest, TargetKind,
-    WriteStdinReceipt, WriteStdinRequest,
-};
-use brain_protocol::network::network_ceiling_is_subset;
 use environment_core::connector::{ConnectorCatalog, ConnectorClass, GatewayAuthority};
 use environment_core::materialization::{
     AcquireTarget, ControlToken, Disposition, DurableLaunchRequest, DurableTargetState,
@@ -63,11 +38,36 @@ use environment_policy::MAX_OBJECT_BYTES;
 use environment_policy::guest_env::{
     environment_name_is_valid, reserved_tool_environment, secret_material_fits,
 };
+use environment_wire::network_ceiling_is_subset;
+use environment_wire::{
+    AcknowledgeTerminalRequest, Acknowledgement, ArtifactTarget, BundleDescriptor, BundleFetch,
+    CancelRequest, CancellationReceipt, CreateSandboxRequest, EnvironmentCapability,
+    EnvironmentError, EnvironmentErrorCode, EnvironmentProfileKind, EnvironmentProfileNetwork,
+    EnvironmentProfilePlatform, EnvironmentProfileRecovery, FileEntry, NetworkCeiling,
+    NetworkCeilingDestinationsItem, ObjectReference, ObjectTransferAuthority,
+    ObjectTransferAuthorityMethod, ObserveRequest, OperationObservation, OperationRef,
+    PrepareSessionRequest, PreparedBindingBundles, PreparedSession, RecoveryClass, ResolvedBinding,
+    ResolvedBindingLimits, ResourceCeiling, SandboxCopyRequest, SandboxCopyRequestDirection,
+    SandboxCopyResult, SandboxExecutionRequest, SandboxFileRequest, SandboxFileWriteRequest,
+    SandboxFileWriteResult, SandboxFileWriteSource, SandboxState, SandboxStatus, SandboxTarget,
+    SealedBinding, SecretDeliveryRequest, SubmitReceipt, SubmitRequest, TargetKind,
+    WriteStdinReceipt, WriteStdinRequest,
+};
 use environment_wire::{
     AllowlistProxy, FileEffectIdentity, FileEffectKind, FileEffectReservation,
     FileEffectStoredResult, GuestFileWriteRequest, GuestFileWriteSource, InstallBindingRequest,
     InstallBundleMetadata, InstallObjectMetadata, InstallSecretsRequest, RequestCall,
     ResponseReply, RunPayload,
+};
+use environment_wire::{
+    ENVIRONMENT_CONTRACT_DIGEST, canonical_digest, operation_request_digest,
+    sandbox_copy_request_digest, sandbox_execution_request_digest,
+    sandbox_file_write_request_digest, write_stdin_request_digest,
+};
+use environment_wire::{
+    EnvironmentPort, EnvironmentResult, SandboxControlPort, SandboxFileContent, SandboxFileList,
+    SandboxFileListRequest, SandboxFilesPort, SandboxSearchRequest, SecretDeliveryPort,
+    SessionPreparationPort,
 };
 use futures_util::StreamExt as _;
 use ipnet::Ipv4Net;
@@ -85,7 +85,7 @@ const ENVIRONMENT_ID: &str = "aex-aws-environment";
 const RESOURCE_CLASS: &str = "microvm-1gb";
 const MIB: usize = 1024 * 1024;
 const TARGET_MEMORY_MIB: u64 = environment_lambda::image::MVP_TARGET_MEMORY_MIB as u64;
-const MAX_PREPARED_BUNDLES: usize = brain_protocol::MAX_MODEL_TOOLS;
+const MAX_PREPARED_BUNDLES: usize = environment_wire::MAX_MODEL_TOOLS;
 const MAX_CACHED_BUNDLES: usize = 4_096;
 const MAX_CACHED_PREPARATIONS: usize = 16_384;
 const MAX_CACHED_PREPARATION_BYTES: usize = 64 * MIB;
@@ -667,7 +667,7 @@ mod tests {
         );
 
         let mut exact_limit = binding.clone();
-        let bytes = NonZeroU64::new(brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64).unwrap();
+        let bytes = NonZeroU64::new(environment_wire::MAX_TOOL_BUNDLE_BYTES as u64).unwrap();
         exact_limit.bundle.as_mut().unwrap().bytes = bytes;
         exact_limit.bundle.as_mut().unwrap().layers[0].bytes = bytes;
         exact_limit.bundle.as_mut().unwrap().layers[0].object.bytes = bytes.get();
@@ -813,7 +813,7 @@ mod tests {
         .unwrap();
         assert!(validate_inline_input(&small).is_ok());
 
-        let wrong_kind = brain_protocol::environment::OperationInput {
+        let wrong_kind = environment_wire::OperationInput {
             kind: serde_json::json!("object"),
             value: serde_json::json!({}),
         };
@@ -821,32 +821,32 @@ mod tests {
             validate_inline_input(&wrong_kind).unwrap_err().code,
             EnvironmentErrorCode::InvalidRequest
         );
-        let empty = brain_protocol::environment::OperationInput {
+        let empty = environment_wire::OperationInput {
             kind: serde_json::json!("inline"),
             value: serde_json::json!(""),
         };
         let framing = serde_jcs::to_vec(&empty).unwrap().len();
-        let exact = brain_protocol::environment::OperationInput {
+        let exact = environment_wire::OperationInput {
             kind: serde_json::json!("inline"),
             value: serde_json::json!(
-                "x".repeat(brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES - framing)
+                "x".repeat(environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES - framing)
             ),
         };
         assert_eq!(
             serde_jcs::to_vec(&exact).unwrap().len(),
-            brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES
+            environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES
         );
         assert!(validate_inline_input(&exact).is_ok());
 
-        let oversized = brain_protocol::environment::OperationInput {
+        let oversized = environment_wire::OperationInput {
             kind: serde_json::json!("inline"),
             value: serde_json::json!(
-                "x".repeat(brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES - framing + 1)
+                "x".repeat(environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES - framing + 1)
             ),
         };
         assert_eq!(
             serde_jcs::to_vec(&oversized).unwrap().len(),
-            brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES + 1
+            environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES + 1
         );
         assert_eq!(
             validate_inline_input(&oversized).unwrap_err().code,

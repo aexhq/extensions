@@ -2,8 +2,8 @@ use axum::http::StatusCode;
 
 use crate::acks::AckStoreError;
 use crate::file_effects::FileEffectStoreError;
-use brain_protocol::environment::{EnvironmentError, EnvironmentErrorCode};
 use environment_core::operation::OperationError;
+use environment_wire::{EnvironmentError, EnvironmentErrorCode};
 
 /// HTTP projection of a Environment error for the install routes. The code and `retryable` flag carry
 /// the real distinction; the status keeps plain HTTP clients from reading every failure as 409.

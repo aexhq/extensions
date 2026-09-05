@@ -69,10 +69,10 @@ impl SandboxControlPort for AwsMicrovmEnvironment {
         if write_stdin_request_digest(&request) != request.request_digest {
             return Err(invalid("write_stdin request_digest is not canonical"));
         }
-        if request.text.len() > brain_protocol::MAX_WRITE_STDIN_BYTES {
+        if request.text.len() > environment_wire::MAX_WRITE_STDIN_BYTES {
             return Err(invalid(format!(
                 "write_stdin text exceeds the {}-byte atomic bound",
-                brain_protocol::MAX_WRITE_STDIN_BYTES
+                environment_wire::MAX_WRITE_STDIN_BYTES
             )));
         }
         let installed = self

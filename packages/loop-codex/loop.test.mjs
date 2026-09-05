@@ -1,37 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runTurn } from "@aexhq/brain";
-
-import { codex } from "./src/index.mjs";
+import { runCodex } from "./src/logic.mjs";
 
 // A fake Brain: model answers come off a script, dispatches are recorded and
 // answered from a table, appends are recorded.
 const host = (responses, { results = {} } = {}) => {
-  const record = { requests: [], dispatches: [], appended: [] };
+  const record = { requests: [], dispatches: [], emitted: [] };
   return {
     record,
-    model(requestJson) {
-      record.requests.push(JSON.parse(requestJson));
+    model(request) {
+      record.requests.push(structuredClone(request));
       const response = responses.shift();
       assert.ok(response, "the loop called the model more often than the script allows");
-      return JSON.stringify(response);
+      return response;
     },
-    dispatch(callsJson) {
-      const calls = JSON.parse(callsJson);
+    dispatch(calls) {
       record.dispatches.push(calls.map((call) => call.call_id));
-      return JSON.stringify(calls.map((call) => ({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false })));
+      return calls.map((call) => ({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false }));
     },
-    append(kind, payloadJson) {
-      record.appended.push({ kind, payload: JSON.parse(payloadJson) });
-      return record.appended.length;
+    emit(kind, payload) {
+      record.emitted.push({ kind, payload });
+      return record.emitted.length;
     },
     telemetry() {},
   };
 };
 
 const turn = (message, fake, { transcript = [], slots = {}, configuration = {} } = {}) =>
-  runTurn(codex, {
+  runCodex({
     input: { message },
     transcript,
     slots,
@@ -39,7 +36,6 @@ const turn = (message, fake, { transcript = [], slots = {}, configuration = {} }
     configuration,
     system: "",
     tools: [],
-    runtime: { logicalTimeMs: 1n },
   }, fake);
 
 const assistant = (content, usage = {}, stop_reason = "tool_use") => ({
@@ -93,6 +89,6 @@ test("replies when a response carries no tool calls", async () => {
   const output = await turn("hello", fake);
 
   assert.deepEqual(fake.record.dispatches, []);
-  assert.deepEqual(fake.record.appended, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "hi" } }]);
+  assert.deepEqual(fake.record.emitted, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "hi" } }]);
   assert.equal(output.slots.usage.lastTokens, 12);
 });

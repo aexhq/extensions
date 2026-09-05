@@ -21,7 +21,7 @@ enum SubmitRoute<'a> {
 }
 
 fn submit_route(
-    envelope: &brain_protocol::environment::OperationEnvelope,
+    envelope: &environment_wire::OperationEnvelope,
 ) -> EnvironmentResult<SubmitRoute<'_>> {
     match (&envelope.target_ref, &envelope.generation) {
         (Some(target_ref), Some(generation)) => Ok(SubmitRoute::Established {
@@ -69,7 +69,7 @@ impl AwsMicrovmEnvironment {
     pub async fn submit_component(
         &self,
         binding: SealedBinding,
-        envelope: brain_protocol::environment::OperationEnvelope,
+        envelope: environment_wire::OperationEnvelope,
         bundle: Vec<u8>,
         wait_up_to_ms: u64,
         lifetime: TargetLifetime,
@@ -109,7 +109,7 @@ impl AwsMicrovmEnvironment {
             ));
         }
         self.resolve_binding(binding.clone()).await?;
-        let environment_ref = brain_protocol::contract::environment_binding_ref(
+        let environment_ref = environment_wire::environment_binding_ref(
             envelope.root_id.as_str(),
             binding.environment_name.as_str(),
         );
@@ -305,11 +305,8 @@ impl AwsMicrovmEnvironment {
             .ok_or_else(|| binding_error("preparation contains no environment bindings"))?;
         Ok((
             required,
-            brain_protocol::contract::environment_binding_ref(
-                request.root_id.as_str(),
-                &environment_name,
-            )
-            .to_string(),
+            environment_wire::environment_binding_ref(request.root_id.as_str(), &environment_name)
+                .to_string(),
         ))
     }
 
@@ -340,7 +337,7 @@ impl AwsMicrovmEnvironment {
         let binding = self
             .binding(envelope.root_id.as_str(), envelope.binding_ref.as_str())
             .await?;
-        let environment_ref = brain_protocol::contract::environment_binding_ref(
+        let environment_ref = environment_wire::environment_binding_ref(
             envelope.root_id.as_str(),
             binding.environment_name.as_str(),
         );
@@ -380,7 +377,7 @@ impl AwsMicrovmEnvironment {
                 self.materialize(
                     TargetKey::for_environment(
                         envelope.root_id.as_str(),
-                        brain_protocol::contract::environment_binding_ref(
+                        environment_wire::environment_binding_ref(
                             envelope.root_id.as_str(),
                             binding.environment_name.as_str(),
                         ),
@@ -642,7 +639,7 @@ impl AwsMicrovmEnvironment {
     async fn install_secrets(
         &self,
         route: &InstalledTarget,
-        envelope: &brain_protocol::environment::OperationEnvelope,
+        envelope: &environment_wire::OperationEnvelope,
         binding: &SealedBinding,
     ) -> EnvironmentResult<()> {
         let required = binding
@@ -685,7 +682,7 @@ impl AwsMicrovmEnvironment {
         let binding = self
             .binding(envelope.root_id.as_str(), envelope.binding_ref.as_str())
             .await?;
-        let environment_ref = brain_protocol::contract::environment_binding_ref(
+        let environment_ref = environment_wire::environment_binding_ref(
             envelope.root_id.as_str(),
             binding.environment_name.as_str(),
         );

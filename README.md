@@ -1,67 +1,55 @@
 # extensions
 
-Official agent loop, Tool, and Environment extensions for Aex. Every package uses the public
-`@aexhq/brain` authoring API and the same `brain build` pipeline; official extensions have no
-privileged runtime path.
+Official Agentloop, Tool, and Environment extensions for Aex. They use only the public
+`@aexhq/brain` extension API.
 
 | package | role |
 | --- | --- |
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
-| `@aexhq/tools` | Model-visible Tool definitions with provisioned ESM implementations |
-| `@aexhq/env-aws-microvm` | AWS MicroVM Environment and provider runtime |
+| `@aexhq/tools` | Model-visible Tool definitions with Environment-side implementations |
+| `@aexhq/env-aws-microvm` | AWS MicroVM Environment driver configuration |
 
-All three roles have the same authoring shape:
-
-```ts
-import { agentloop } from "@aexhq/brain";
-
-export const support = agentloop((author) => {
-  author.turn(async (turn) => {
-    turn.transcript.push({ role: "user", content: [{ type: "text", text: turn.input.message }] });
-    const { message } = await turn.model({ messages: turn.transcript });
-    turn.transcript.push(message);
-    await turn.reply(message.content.map((block) => block.text ?? "").join(""));
-    return turn.done();
-  });
-});
-```
-
-```sh
-brain build
-```
-
-An agent loop drives one whole turn: it calls the model and dispatches tools through the
-`turn` object, and Brain journals every call before it happens.
-
-Tools and Environments meet through the execution contract. A Tool is a program (an `esm`
-module, a `shell` script, or an `http` request) plus the resources it operates on (`fs`,
-`process`, `net`, `dom`, `secrets`). An Environment declares the resources a program finds there
-and registers an executor for each program kind it launches (`execute.esm()`,
-`execute.shell(...)`, `execute.http(...)`). Brain checks the tool's program kind and `needs`
-against the environment's declaration at session create and never sees inside either half.
-Inside, a Tool is plain code on the platform it runs on:
+Every placed Agentloop and Tool names its Environment explicitly. The loop packages ship
+precompiled WebAssembly Components and run in Brain's built-in Wasmtime Environment; workspace
+Tools are interpreted by the external Environment driver selected by the application.
 
 ```ts
-export const test = tool({
-  description: "Run the test suite.",
-  input, output,
-  needs: ["process", "fs"],
-}, (author) => {
-  author.run(async (input, context) => runTests(input, { signal: context.signal }));
-});
+import { brainWasm } from "@aexhq/brain";
+import { awsMicroVm } from "@aexhq/env-aws-microvm";
+import { pi } from "@aexhq/agentloop-pi";
+import { bash, read } from "@aexhq/tools";
 
-export const bash = tool.shell({
-  description: "Run a shell command.",
-  input, output,
-  needs: ["process"],
-  script: "$command",
+const loopRuntime = brainWasm();
+const workspace = awsMicroVm({ region: "eu-west-2" });
+
+const session = await brain.sessions.create({
+  agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
+  model,
+  tools: [read({ env: workspace }), bash({ env: workspace })],
 });
 ```
 
-Applications place a Tool explicitly with the factory's `env` option —
-`bash({ env: environment })` — and can call extension-owned methods on the same Environment
-object. A tool whose function lives in an application process needs no environment at all:
-declare it with `tool(...)` (with `execute` to run beside the session's creator, without one
-to be served by whatever process joins the session with its share key) — Brain routes those
-invocations itself.
+Brain accepts components and opaque driver implementations; it does not compile extension source
+or install language packages. Each extension publisher owns its build, while the chosen
+Environment owns execution and resource enforcement.
+
+Application-resident Tools use the same public factory with `run`. Their code executes in the
+application process, and `ctx.emit` records application-defined events in the session journal.
+
+```ts
+import { tool } from "@aexhq/brain";
+import { z } from "zod";
+
+const notify = tool({
+  name: "notify",
+  description: "Send a notification.",
+  input: z.object({ message: z.string() }),
+  run: async ({ message }, ctx) => {
+    await ctx.emit("notification_sent", { message });
+    return { delivered: true };
+  },
+});
+
+const tools = [notify()];
+```

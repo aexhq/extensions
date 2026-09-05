@@ -10,8 +10,8 @@ use std::os::fd::AsRawFd as _;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream as StdUnixStream;
 
-use brain_protocol::contract::terminal_inline_bytes;
-use brain_protocol::environment::{BundleDescriptor, OperationEnvelope, TerminalOutcome};
+use environment_wire::terminal_inline_bytes;
+use environment_wire::{BundleDescriptor, OperationEnvelope, TerminalOutcome};
 #[cfg(unix)]
 use serde::Deserialize;
 use tokio::io::AsyncReadExt as _;
@@ -105,7 +105,7 @@ impl InteractiveControl {
     /// retains the idempotency record before entering this method, so an exact retry never writes
     /// or closes the pipe twice after a lost response.
     pub async fn send_atomic(&self, bytes: &[u8], eof: bool) -> bool {
-        if bytes.len() > brain_protocol::MAX_WRITE_STDIN_BYTES {
+        if bytes.len() > environment_wire::MAX_WRITE_STDIN_BYTES {
             return false;
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
@@ -203,10 +203,10 @@ async fn execute_bundle_inner(request: &BundleExecution) -> Result<ExecutionResu
     }
     let canonical_input = serde_jcs::to_vec(&request.envelope.input)
         .map_err(|_| Failure::message("managed Tool input cannot be canonicalized"))?;
-    if canonical_input.len() > brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES {
+    if canonical_input.len() > environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES {
         return Err(Failure::message(format!(
             "managed Tool input exceeds the {}-byte canonical bound",
-            brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES
+            environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES
         )));
     }
     let input = request.envelope.input.value.clone();
@@ -495,7 +495,7 @@ fn enforce_inline_bound(
     let bytes = terminal_inline_bytes(value)
         .map_err(|_| Failure::message(format!("{executor} result cannot be canonicalized")))?;
     let sealed_max = usize::try_from(sealed_max_bytes).unwrap_or(usize::MAX);
-    let effective_max = sealed_max.min(brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES);
+    let effective_max = sealed_max.min(environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES);
     if bytes > effective_max {
         return Err(Failure::message(format!(
             "{executor} may have completed, but its inline result exceeds the sealed {effective_max}-byte output ceiling; store large data in session storage or the sandbox and return a key/path"
@@ -1034,7 +1034,7 @@ mod tests {
 
     #[test]
     fn canonical_terminal_inline_bound_accepts_exact_and_rejects_plus_one() {
-        let limit = brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES;
+        let limit = environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES;
         let exact = serde_json::Value::String("x".repeat(limit - 2));
         let too_large = serde_json::Value::String("x".repeat(limit - 1));
 

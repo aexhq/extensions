@@ -43,7 +43,7 @@ pub(crate) fn operation_receipt_ref(
     request_digest: &str,
     target_ref: &str,
     generation: &str,
-) -> Result<brain_protocol::environment::Identifier, EnvironmentError> {
+) -> Result<environment_wire::Identifier, EnvironmentError> {
     let mut hasher = Sha256::new();
     for part in [operation_id, request_digest, target_ref, generation] {
         hasher.update((part.len() as u64).to_be_bytes());

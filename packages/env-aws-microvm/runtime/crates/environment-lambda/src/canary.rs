@@ -11,18 +11,18 @@ use std::{
 
 use anyhow::{Context as _, bail, ensure};
 use aws_sdk_lambdamicrovms::types::MicrovmState;
-use brain_protocol::contract::{ENVIRONMENT_CONTRACT_DIGEST, sandbox_execution_request_digest};
-use brain_protocol::environment::{
-    AcknowledgeTerminalRequest, NetworkCeiling, ObserveRequest, OperationRef,
-    SandboxExecutionRequest, TerminalOutcome, TerminalResult,
-};
 use environment_core::connector::{
     ConnectorCatalog, ConnectorClass, ConnectorRef, GatewayAuthority,
 };
 use environment_core::materialization::ControlToken;
 use environment_wire::{
+    AcknowledgeTerminalRequest, NetworkCeiling, ObserveRequest, OperationRef,
+    SandboxExecutionRequest, TerminalOutcome, TerminalResult,
+};
+use environment_wire::{
     AllowlistProxy, RequestCall, RequestFrame, ResponseFrame, ResponseReply, RunPayload,
 };
+use environment_wire::{ENVIRONMENT_CONTRACT_DIGEST, sandbox_execution_request_digest};
 use futures_util::{SinkExt as _, StreamExt as _};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -556,7 +556,7 @@ fn canary_execution(
 /// loopback control listener requires its generation bearer, and `RunMicrovm` deliberately omits
 /// an execution role so the provider-local IMDS endpoint has no AWS credentials to return.
 fn connector_routed_special_use_ipv4_fixtures() -> Vec<&'static str> {
-    brain_protocol::network::SPECIAL_USE_FIXTURES
+    environment_wire::SPECIAL_USE_FIXTURES
         .iter()
         .filter_map(|&(address, _)| {
             address
@@ -595,7 +595,7 @@ fn restricted_network_execution(
         .into_iter()
         .filter(|address| *address != gateway.host())
         .collect();
-    let controls: Vec<&str> = brain_protocol::network::PUBLIC_UNICAST_FIXTURES
+    let controls: Vec<&str> = environment_wire::PUBLIC_UNICAST_FIXTURES
         .iter()
         .copied()
         .filter(|address| address.parse::<Ipv4Addr>().is_ok())
@@ -661,7 +661,7 @@ fn public_network_execution(
     session_id: &str,
 ) -> anyhow::Result<SandboxExecutionRequest> {
     let denied = connector_routed_special_use_ipv4_fixtures();
-    let controls: Vec<&str> = brain_protocol::network::PUBLIC_UNICAST_FIXTURES
+    let controls: Vec<&str> = environment_wire::PUBLIC_UNICAST_FIXTURES
         .iter()
         .copied()
         .filter(|address| address.parse::<Ipv4Addr>().is_ok())
@@ -974,7 +974,7 @@ mod tests {
         assert!(request.input.command.starts_with("set -euo pipefail"));
         assert!(!request.input.command.contains("bash <<"));
         let denied = connector_routed_special_use_ipv4_fixtures();
-        for &(address, _) in brain_protocol::network::SPECIAL_USE_FIXTURES {
+        for &(address, _) in environment_wire::SPECIAL_USE_FIXTURES {
             if address.parse::<Ipv4Addr>().is_ok() {
                 assert_eq!(
                     request.input.command.contains(address),
@@ -983,7 +983,7 @@ mod tests {
                 );
             }
         }
-        for &address in brain_protocol::network::PUBLIC_UNICAST_FIXTURES {
+        for &address in environment_wire::PUBLIC_UNICAST_FIXTURES {
             if address.parse::<Ipv4Addr>().is_ok() {
                 assert!(request.input.command.contains(address), "{address}");
             }
@@ -1026,7 +1026,7 @@ mod tests {
             assert!(!request.input.command.contains("mktemp"));
             assert!(request.input.command.contains("10.42.0.10"));
             let denied = connector_routed_special_use_ipv4_fixtures();
-            for &(address, _) in brain_protocol::network::SPECIAL_USE_FIXTURES {
+            for &(address, _) in environment_wire::SPECIAL_USE_FIXTURES {
                 if address.parse::<Ipv4Addr>().is_ok() {
                     assert_eq!(
                         request.input.command.contains(address),
@@ -1035,7 +1035,7 @@ mod tests {
                     );
                 }
             }
-            for &address in brain_protocol::network::PUBLIC_UNICAST_FIXTURES {
+            for &address in environment_wire::PUBLIC_UNICAST_FIXTURES {
                 if address.parse::<Ipv4Addr>().is_ok() {
                     assert!(request.input.command.contains(address), "{address}");
                 }

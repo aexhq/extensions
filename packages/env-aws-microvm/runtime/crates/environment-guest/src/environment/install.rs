@@ -133,7 +133,7 @@ impl Environment {
             .iter()
             .find(|layer| layer.digest.as_str() == metadata.layer_digest)
             .ok_or_else(|| invalid("artifact layer is absent from the immutable manifest"))?;
-        if layer.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
+        if layer.bytes.get() > environment_wire::MAX_TOOL_BUNDLE_BYTES as u64
             || layer.bytes.get() != bytes.len() as u64
             || layer.object.bytes != bytes.len() as u64
             || layer.object.sha256 != layer.digest
@@ -149,7 +149,7 @@ impl Environment {
             .iter()
             .map(|name| name.as_str())
             .collect::<BTreeSet<_>>();
-        if metadata.descriptor.required_env.len() > brain_protocol::MAX_SESSION_SECRET_NAMES
+        if metadata.descriptor.required_env.len() > environment_wire::MAX_SESSION_SECRET_NAMES
             || required_env.len() != metadata.descriptor.required_env.len()
             || metadata.descriptor.required_env.iter().any(|name| {
                 !environment_name_is_valid(name.as_str())
@@ -227,7 +227,7 @@ impl Environment {
             })?;
             let destination = artifact_path(&temporary, layer.mount_path.as_str())?;
             match layer.unpack {
-                brain_protocol::environment::ArtifactLayerDescriptorUnpack::File => {
+                environment_wire::ArtifactLayerDescriptorUnpack::File => {
                     if let Some(parent) = destination.parent() {
                         tokio::fs::create_dir_all(parent)
                             .await
@@ -237,7 +237,7 @@ impl Environment {
                         .await
                         .map_err(|_| unavailable("could not materialize an artifact file"))?;
                 }
-                brain_protocol::environment::ArtifactLayerDescriptorUnpack::TarXz => {
+                environment_wire::ArtifactLayerDescriptorUnpack::TarXz => {
                     return Err(invalid(
                         "the AWS Environment MVP accepts only immutable file layers",
                     ));
@@ -319,7 +319,7 @@ impl Environment {
         };
         let mut execute_layers = descriptor.layers.iter().filter(|layer| {
             layer.mount_path.as_str() == descriptor.execute_path.as_str()
-                && layer.unpack == brain_protocol::environment::ArtifactLayerDescriptorUnpack::File
+                && layer.unpack == environment_wire::ArtifactLayerDescriptorUnpack::File
         });
         let execute_layer = execute_layers.next().ok_or_else(|| {
             invalid("artifact entrypoint must resolve to exactly one immutable file layer")
