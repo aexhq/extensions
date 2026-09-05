@@ -1,10 +1,6 @@
 # @aexhq/env-aws-microvm
 
-Official AWS Lambda MicroVM Environment for Brain.
-
-The package contains a precompiled Environment component and the external driver, guest supervisor,
-image builder, and egress gateway in `runtime/`. Brain sees only the canonical Environment lifecycle
-and an opaque `aws-microvm` driver binding; no AWS SDK enters the Brain kernel.
+Official AWS MicroVM Environment configuration for Brain.
 
 ```js
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
@@ -16,31 +12,19 @@ const environment = awsMicroVm({
 });
 ```
 
-## What it executes and declares
+The public factory returns an immutable Environment descriptor for the `aws-microvm` driver. It
+contains deployment configuration only: no AWS SDK or provider runtime is loaded into the Brain
+process, and the Environment exposes no provider-specific lifecycle methods.
 
-The Environment launches `esm` and `shell` programs and declares `fs` and `process`, all
-reported on its setup and attach receipts:
+The external driver, guest supervisor, image builder, and egress gateway live in `runtime/` and
+must be deployed separately. That driver owns execution, workspaces, quotas, cancellation, and
+resource enforcement, and must explicitly support any opaque Tool implementation it accepts.
+Brain validates and transports the Environment and Tool contracts but does not compile programs or
+install language packages.
 
-- `esm` programs (`brain build` artifacts) are imported once at attach and run in the guest's
-  host process, in the workspace, on node's own APIs.
-- `shell` programs run as `bash -lc` in the workspace, killed at the call's deadline, with
-  captured output capped at the declared `output_bytes_max`.
-- `fs` is rooted at the workspace (`/workspace` in the guest; `AEX_WORKSPACE_ROOT` in a local
-  test), and every program starts there. `process` declares that programs can start processes.
+The supplied driver accepts version 1 `aex_official_tool` descriptors, binds them to the complete
+Tool manifests received during `attach`, and checks the manifests against its publisher-built
+runtime registry before invoking a bundle.
 
-Enforcement is the guest's, not a wrapper's: the workspace mount, the tool user, and the egress
-gateway bound what a program can reach.
-
-The deployed image points `AEX_TOOL_ARTIFACT_DIR` at its installed `*.tool.json` artifacts
-(`brain build` output) so attach provisions can be served by content identity; an attach naming an
-`esm` identity the host cannot serve fails its receipt.
-
-Every returned Environment reference is session-scoped and can expose provider-specific methods:
-
-```js
-await environment.suspend();
-```
-
-`suspend()` releases the current AWS incarnation; a later Tool call materializes a fresh one. The
-Environment driver rejects lifetimes above its deployment maxima; omitted values use those finite
-maxima.
+`idleSeconds` cannot exceed `maximumSeconds`. The deployed driver may impose stricter finite
+limits and rejects unsupported configuration rather than silently weakening it.

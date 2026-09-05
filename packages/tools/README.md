@@ -1,6 +1,6 @@
 # @aexhq/tools
 
-Official Tool extensions for Brain.
+Official placed Tool definitions for Brain.
 
 ```js
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
@@ -15,19 +15,20 @@ const tools = [
 ];
 ```
 
-Each factory returns an immutable Tool placed in the Environment named by `env`. `brain build`
-produces one artifact per tool that the Environment launches, never Brain.
+Each factory requires one placement object containing `env` and any Tool-specific options. It
+returns an immutable Tool binding. There is no implicit Environment and no `.useIn` step.
 
-Every Tool is a program plus a declaration of the resources it operates on, and the declaration
-is the whole contract. Brain binds a Tool only to an Environment that launches its program kind
-and declares every resource it needs. Inside, a Tool is plain code on the platform it runs on:
-`node:fs`, `child_process`, `fetch`. Nothing is wrapped, and the working directory is the
-Environment's workspace root.
+The package supplies schemas, resource needs, and an opaque official implementation descriptor.
+Brain validates and transports that contract; the selected Environment driver must understand the
+descriptor and perform the operation within its own workspace and resource limits. Brain neither
+installs Node packages nor compiles the implementation.
 
-| Tool | Program | Needs | How |
-| --- | --- | --- | --- |
-| `bash` | `shell` | `process` | the command is the script; the Environment runs it in the workspace |
-| `read`, `write`, `edit`, `ls` | `esm` | `fs` | `node:fs/promises` on paths relative to the workspace |
-| `glob` | `esm` | `fs` | walks `readdir` with a local matcher |
-| `grep` | `esm` | `process` | drives ripgrep through `child_process`; gitignore awareness and binary detection come from the binary the image ships |
-| `todo` | `esm` | none | pure; the list lives in the hosted module |
+This package's build also emits the publisher-owned Node 22 bundles and a manifest-digest registry
+used by the AWS MicroVM driver. Those deployment artifacts are not a Brain SDK compiler output and
+are never loaded into the Brain process.
+
+| Tool | Needs |
+| --- | --- |
+| `bash` | `process` |
+| `read`, `write`, `edit`, `ls`, `glob`, `todo` | `fs` |
+| `grep` | `process` |

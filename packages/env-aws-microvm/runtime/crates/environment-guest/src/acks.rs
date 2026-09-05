@@ -11,8 +11,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::{Mutex, RwLock};
 
-use brain_protocol::contract::canonical_digest;
-use brain_protocol::environment::{Digest, OperationRef};
+use environment_wire::canonical_digest;
+use environment_wire::{Digest, OperationRef};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_ACKNOWLEDGEMENT_LOG_BYTES: u64 = 64 * 1024 * 1024;

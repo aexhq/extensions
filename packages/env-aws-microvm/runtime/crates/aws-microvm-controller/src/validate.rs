@@ -8,7 +8,7 @@ pub(crate) fn target_spec(
     network: &NetworkCeiling,
     resource_class: &str,
 ) -> EnvironmentResult<TargetSpec> {
-    if resources.max_output_bytes.get() > brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES as u64
+    if resources.max_output_bytes.get() > environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES as u64
         || resources.timeout_ms.get() > TARGET_LIFETIME_MS
     {
         return Err(error(
@@ -49,7 +49,7 @@ pub(crate) fn validate_resource_ceiling_subset(
 }
 
 pub(crate) fn validate_operation_root_seal(
-    envelope: &brain_protocol::environment::OperationEnvelope,
+    envelope: &environment_wire::OperationEnvelope,
     preparation: &PrepareSessionRequest,
 ) -> EnvironmentResult<()> {
     validate_resource_ceiling_subset(&envelope.resources, &preparation.resources)?;
@@ -87,17 +87,17 @@ pub(crate) fn require_exact_root_seal(
 }
 
 pub(crate) fn validate_inline_input(
-    input: &brain_protocol::environment::OperationInput,
+    input: &environment_wire::OperationInput,
 ) -> EnvironmentResult<()> {
     if input.kind != serde_json::Value::String("inline".into()) {
         return Err(invalid("managed Tool input kind must be inline"));
     }
     let encoded = serde_jcs::to_vec(input)
         .map_err(|_| invalid("managed Tool input cannot be canonicalized"))?;
-    if encoded.len() > brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES {
+    if encoded.len() > environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES {
         return Err(invalid(format!(
             "managed Tool input exceeds the {}-byte canonical bound",
-            brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES
+            environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES
         )));
     }
     Ok(())
@@ -195,7 +195,7 @@ pub(crate) fn validate_managed_binding(
     let mut layer_digests = HashSet::with_capacity(descriptor.layers.len());
     for layer in &descriptor.layers {
         layer_bytes = layer_bytes.saturating_add(layer.bytes.get());
-        if layer.bytes.get() > brain_protocol::MAX_TOOL_BUNDLE_BYTES as u64
+        if layer.bytes.get() > environment_wire::MAX_TOOL_BUNDLE_BYTES as u64
             || layer.object.bytes != layer.bytes.get()
             || layer.object.sha256 != layer.digest
             || !layer_digests.insert(layer.digest.as_str())
@@ -206,13 +206,13 @@ pub(crate) fn validate_managed_binding(
         }
     }
     if layer_bytes != descriptor.bytes.get()
-        || descriptor.bytes.get() > brain_protocol::MAX_SESSION_BUNDLE_BYTES as u64
+        || descriptor.bytes.get() > environment_wire::MAX_SESSION_BUNDLE_BYTES as u64
     {
         return Err(binding_error(
             "artifact manifest size conflicts with its immutable layers",
         ));
     }
-    if descriptor.required_env.len() > brain_protocol::MAX_SESSION_SECRET_NAMES {
+    if descriptor.required_env.len() > environment_wire::MAX_SESSION_SECRET_NAMES {
         return Err(binding_error(
             "bundle descriptor exceeds the required environment-name bound",
         ));

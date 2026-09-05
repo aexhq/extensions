@@ -23,7 +23,7 @@ impl Environment {
         if write_stdin_request_digest(&request) != request.request_digest {
             return Err(invalid("write_stdin request_digest is not canonical"));
         }
-        if request.text.len() > brain_protocol::MAX_WRITE_STDIN_BYTES {
+        if request.text.len() > environment_wire::MAX_WRITE_STDIN_BYTES {
             return Err(invalid(
                 "stdin text exceeds the atomic 4096-byte pipe-write bound",
             ));

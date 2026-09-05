@@ -33,11 +33,11 @@ impl EnvironmentPort for AwsMicrovmEnvironment {
             environment_id: ENVIRONMENT_ID.parse().expect("environment id"),
             limits: ResolvedBindingLimits {
                 max_inline_input_bytes: NonZeroU64::new(
-                    brain_protocol::MAX_MANAGED_TOOL_INPUT_BYTES as u64,
+                    environment_wire::MAX_MANAGED_TOOL_INPUT_BYTES as u64,
                 )
                 .unwrap(),
                 max_inline_result_bytes: NonZeroU64::new(
-                    brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES as u64,
+                    environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES as u64,
                 )
                 .unwrap(),
                 max_wait_ms: 30_000,

@@ -1,9 +1,9 @@
 use super::*;
-#[cfg(unix)]
-use brain_protocol::contract::{sandbox_execution_request_digest, write_stdin_request_digest};
-#[cfg(unix)]
-use brain_protocol::environment::{ObserveRequest, SandboxExecutionRequest, WriteStdinRequest};
 use environment_wire::{AllowlistProxy, InstallBundleMetadata, RunPayload};
+#[cfg(unix)]
+use environment_wire::{ObserveRequest, SandboxExecutionRequest, WriteStdinRequest};
+#[cfg(unix)]
+use environment_wire::{sandbox_execution_request_digest, write_stdin_request_digest};
 
 fn run_payload(network: NetworkCeiling) -> RunPayload {
     RunPayload {
@@ -234,7 +234,7 @@ async fn file_write_intent_only_restart_is_unknown_and_never_mutates_workspace()
 #[test]
 fn exact_max_inline_terminal_fits_the_reserved_full_observation() {
     let inline =
-        serde_json::Value::String("x".repeat(brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES - 2));
+        serde_json::Value::String("x".repeat(environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES - 2));
     assert!(terminal_inline_fits(&inline));
     let mut terminal = TerminalResult {
         duration_ms: Some(u64::MAX),
@@ -432,7 +432,7 @@ async fn guest_repeats_the_exact_brain_secret_document_boundary() {
     };
     assert_eq!(
         serde_jcs::to_vec(&exact.values).unwrap().len(),
-        brain_protocol::MAX_SESSION_SECRET_DOCUMENT_BYTES
+        environment_wire::MAX_SESSION_SECRET_DOCUMENT_BYTES
     );
     exact_environment.install_secrets(exact).await.unwrap();
 
@@ -452,7 +452,7 @@ async fn guest_repeats_the_exact_brain_secret_document_boundary() {
     };
     assert_eq!(
         serde_jcs::to_vec(&oversized.values).unwrap().len(),
-        brain_protocol::MAX_SESSION_SECRET_DOCUMENT_BYTES + 1
+        environment_wire::MAX_SESSION_SECRET_DOCUMENT_BYTES + 1
     );
     assert_eq!(
         oversized_environment
@@ -650,7 +650,7 @@ async fn write_stdin_is_exact_pair_idempotent() {
     let mut oversized = write.clone();
     oversized.operation_id = "stdin-write-oversized".parse().unwrap();
     oversized.text = "é"
-        .repeat(brain_protocol::MAX_WRITE_STDIN_BYTES)
+        .repeat(environment_wire::MAX_WRITE_STDIN_BYTES)
         .parse()
         .unwrap();
     oversized.request_digest = write_stdin_request_digest(&oversized);

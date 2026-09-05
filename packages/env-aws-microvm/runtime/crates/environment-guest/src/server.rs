@@ -15,7 +15,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use base64::Engine as _;
-use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
+use environment_wire::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{
     CONTROL_AUTH_HEADER, FILE_ENTRY_HEADER, InstallBindingRequest, InstallBundleMetadata,
     InstallObjectMetadata, InstallSecretsRequest, MAX_INSTALL_BODY_BYTES, MAX_OBJECT_BYTES,
@@ -279,7 +279,7 @@ async fn serve_connection(environment: Arc<Environment>, mut socket: WebSocket) 
                 let refusal = ResponseFrame {
                     request_id: response.request_id,
                     result: Err(environment_error(
-                        brain_protocol::environment::EnvironmentErrorCode::ResourceExhausted,
+                        environment_wire::EnvironmentErrorCode::ResourceExhausted,
                         false,
                         "response exceeded the wire frame bound and was withheld",
                     )),
@@ -345,7 +345,7 @@ async fn commit_canary_terminal_receipt(
 async fn dispatch(
     environment: &Arc<Environment>,
     call: RequestCall,
-) -> Result<ResponseReply, brain_protocol::environment::EnvironmentError> {
+) -> Result<ResponseReply, environment_wire::EnvironmentError> {
     match call {
         RequestCall::Submit(request) => environment
             .submit(*request)
@@ -579,7 +579,7 @@ async fn install_object(
 
 async fn export_file(
     State(environment): State<Arc<Environment>>,
-    Json(request): Json<brain_protocol::environment::SandboxFileRequest>,
+    Json(request): Json<environment_wire::SandboxFileRequest>,
 ) -> axum::response::Response {
     let (entry, file) = match environment.open_file_export(request).await {
         Ok(value) => value,
@@ -615,7 +615,7 @@ async fn install_secrets(
 }
 
 fn reply<T: serde::Serialize>(
-    result: Result<T, brain_protocol::environment::EnvironmentError>,
+    result: Result<T, environment_wire::EnvironmentError>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     match result {
         Ok(value) => (

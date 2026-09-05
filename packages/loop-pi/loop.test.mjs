@@ -1,37 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runTurn } from "@aexhq/brain";
-
-import { pi } from "./src/index.mjs";
+import { runPi } from "./src/logic.mjs";
 
 // A fake Brain: model answers come off a script, dispatches are recorded and
 // answered from a table, appends are recorded.
 const host = (responses, { results = {} } = {}) => {
-  const record = { requests: [], dispatches: [], appended: [] };
+  const record = { requests: [], dispatches: [], emitted: [] };
   return {
     record,
-    model(requestJson) {
-      record.requests.push(JSON.parse(requestJson));
+    model(request) {
+      record.requests.push(structuredClone(request));
       const response = responses.shift();
       assert.ok(response, "the loop called the model more often than the script allows");
-      return JSON.stringify(response);
+      return response;
     },
-    dispatch(callsJson) {
-      const calls = JSON.parse(callsJson);
+    dispatch(calls) {
       record.dispatches.push(calls.map((call) => call.call_id));
-      return JSON.stringify(results[record.dispatches.length - 1] ?? calls.map((call) => ({ call_id: call.call_id, output: "", is_error: false })));
+      return results[record.dispatches.length - 1] ?? calls.map((call) => ({ call_id: call.call_id, output: "", is_error: false }));
     },
-    append(kind, payloadJson) {
-      record.appended.push({ kind, payload: JSON.parse(payloadJson) });
-      return record.appended.length;
+    emit(kind, payload) {
+      record.emitted.push({ kind, payload });
+      return record.emitted.length;
     },
     telemetry() {},
   };
 };
 
 const turn = (message, fake, { transcript = [], slots = {}, configuration = {} } = {}) =>
-  runTurn(pi, {
+  runPi({
     input: { message },
     transcript,
     slots,
@@ -39,7 +36,6 @@ const turn = (message, fake, { transcript = [], slots = {}, configuration = {} }
     configuration,
     system: "",
     tools: [],
-    runtime: { logicalTimeMs: 1n },
   }, fake);
 
 const assistant = (content, stop_reason = "end_turn", usage = {}) => ({
@@ -71,7 +67,7 @@ test("issues tool calls as one parallel batch and returns results in source orde
   const results = fake.record.requests[1].messages.at(-1);
   assert.equal(results.role, "user");
   assert.deepEqual(results.content.map((block) => [block.tool_use_id, block.content]), [["c1", "a b c"], ["c2", "contents"]]);
-  assert.deepEqual(fake.record.appended, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "done" } }]);
+  assert.deepEqual(fake.record.emitted, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "done" } }]);
   assert.equal(output.transcript.length, 4);
 });
 

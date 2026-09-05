@@ -402,7 +402,7 @@ pub(crate) fn preparation_public_projection(
         .map(|name| name.as_str().to_owned())
         .collect::<Vec<_>>();
     secret_env_names.sort_unstable();
-    if secret_env_names.len() > brain_protocol::MAX_SESSION_SECRET_NAMES
+    if secret_env_names.len() > environment_wire::MAX_SESSION_SECRET_NAMES
         || secret_env_names
             .iter()
             .any(|name| !environment_name_is_valid(name) || reserved_tool_environment(name))

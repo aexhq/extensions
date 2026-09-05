@@ -1,0 +1,112 @@
+//! Private ports between the AWS provider adapter and its guest.
+
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    AcknowledgeTerminalRequest, Acknowledgement, CancelRequest, CancellationReceipt,
+    CreateSandboxRequest, EnvironmentError, FileEntry, ObserveRequest, OperationObservation,
+    PrepareSessionRequest, PreparedSession, ResolvedBinding, SandboxCopyRequest, SandboxCopyResult,
+    SandboxExecutionRequest, SandboxFileRequest, SandboxFileWriteRequest, SandboxFileWriteResult,
+    SandboxStatus, SandboxTarget, SealedBinding, SecretDeliveryRequest, SubmitReceipt,
+    SubmitRequest, WriteStdinReceipt, WriteStdinRequest,
+};
+
+pub type EnvironmentResult<T> = Result<T, EnvironmentError>;
+
+#[async_trait]
+pub trait EnvironmentPort: Send + Sync {
+    async fn resolve_binding(&self, binding: SealedBinding) -> EnvironmentResult<ResolvedBinding>;
+    async fn submit(&self, request: SubmitRequest) -> EnvironmentResult<SubmitReceipt>;
+    async fn observe(&self, request: ObserveRequest) -> EnvironmentResult<OperationObservation>;
+    async fn cancel(&self, request: CancelRequest) -> EnvironmentResult<CancellationReceipt>;
+    async fn acknowledge_terminal(
+        &self,
+        request: AcknowledgeTerminalRequest,
+    ) -> EnvironmentResult<Acknowledgement>;
+}
+
+#[async_trait]
+pub trait SessionPreparationPort: Send + Sync {
+    async fn prepare(&self, request: PrepareSessionRequest) -> EnvironmentResult<PreparedSession>;
+    async fn materialize(&self, request: CreateSandboxRequest) -> EnvironmentResult<SandboxStatus>;
+    async fn dematerialize(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus>;
+    async fn purge_tree(&self, root_id: &str) -> EnvironmentResult<()>;
+}
+
+pub struct SecretMaterial(HashMap<String, String>);
+
+impl SecretMaterial {
+    #[must_use]
+    pub fn new(values: HashMap<String, String>) -> Self {
+        Self(values)
+    }
+
+    #[must_use]
+    pub fn into_env(self) -> HashMap<String, String> {
+        self.0
+    }
+}
+
+#[async_trait]
+pub trait SecretDeliveryPort: Send + Sync {
+    async fn redeem(&self, request: SecretDeliveryRequest) -> EnvironmentResult<SecretMaterial>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxFileListRequest {
+    pub target: SandboxTarget,
+    pub expected_generation: String,
+    pub path: String,
+    pub cursor: Option<String>,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxFileList {
+    pub entries: Vec<FileEntry>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxFileContent {
+    pub entry: FileEntry,
+    pub content_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxSearchRequest {
+    pub target: SandboxTarget,
+    pub expected_generation: String,
+    pub path: String,
+    pub expression: String,
+    pub cursor: Option<String>,
+    pub limit: u32,
+}
+
+#[async_trait]
+pub trait SandboxFilesPort: Send + Sync {
+    async fn status(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus>;
+    async fn list(&self, request: SandboxFileListRequest) -> EnvironmentResult<SandboxFileList>;
+    async fn stat(&self, request: SandboxFileRequest) -> EnvironmentResult<FileEntry>;
+    async fn read(&self, request: SandboxFileRequest) -> EnvironmentResult<SandboxFileContent>;
+    async fn write(
+        &self,
+        request: SandboxFileWriteRequest,
+    ) -> EnvironmentResult<SandboxFileWriteResult>;
+    async fn find(&self, request: SandboxSearchRequest) -> EnvironmentResult<SandboxFileList>;
+    async fn grep(&self, request: SandboxSearchRequest) -> EnvironmentResult<SandboxFileList>;
+    async fn transfer(&self, request: SandboxCopyRequest) -> EnvironmentResult<SandboxCopyResult>;
+}
+
+#[async_trait]
+pub trait SandboxControlPort: Send + Sync {
+    async fn create(&self, request: CreateSandboxRequest) -> EnvironmentResult<SandboxStatus>;
+    async fn inspect(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus>;
+    async fn execute(&self, request: SandboxExecutionRequest) -> EnvironmentResult<SubmitReceipt>;
+    async fn write_stdin(&self, request: WriteStdinRequest)
+    -> EnvironmentResult<WriteStdinReceipt>;
+    async fn terminate(&self, target: SandboxTarget) -> EnvironmentResult<SandboxStatus>;
+}

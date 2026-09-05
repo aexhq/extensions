@@ -22,7 +22,7 @@ pub(crate) fn target_key(target: &SandboxTarget) -> EnvironmentResult<TargetKey>
 }
 
 pub(crate) fn environment_target(
-    envelope: &brain_protocol::environment::OperationEnvelope,
+    envelope: &environment_wire::OperationEnvelope,
     binding: &SealedBinding,
 ) -> EnvironmentResult<SandboxTarget> {
     logical_environment_target(
@@ -33,15 +33,12 @@ pub(crate) fn environment_target(
 }
 
 pub(crate) fn logical_environment_target(
-    root_id: brain_protocol::environment::Identifier,
-    session_id: brain_protocol::environment::Identifier,
+    root_id: environment_wire::Identifier,
+    session_id: environment_wire::Identifier,
     environment_name: &str,
 ) -> EnvironmentResult<SandboxTarget> {
     Ok(SandboxTarget {
-        binding_ref: brain_protocol::contract::environment_binding_ref(
-            root_id.as_str(),
-            environment_name,
-        ),
+        binding_ref: environment_wire::environment_binding_ref(root_id.as_str(), environment_name),
         kind: TargetKind::Environment,
         root_id,
         sandbox_id: None,
@@ -205,7 +202,7 @@ mod tests {
         let target = logical_environment_target(root_id, session_id, "workspace").unwrap();
         assert_eq!(
             target.binding_ref,
-            brain_protocol::contract::environment_binding_ref("ses_root", "workspace")
+            environment_wire::environment_binding_ref("ses_root", "workspace")
         );
         assert_ne!(target.binding_ref.as_str(), "binding:tool");
         assert_eq!(target.kind, TargetKind::Environment);

@@ -7,7 +7,7 @@ pub(crate) async fn fetch_bundle(
     fetch: &BundleFetch,
 ) -> EnvironmentResult<Vec<u8>> {
     if fetch.expires_at_ms.get() <= now_ms()
-        || fetch.max_bytes.get() as usize > brain_protocol::MAX_TOOL_BUNDLE_BYTES
+        || fetch.max_bytes.get() as usize > environment_wire::MAX_TOOL_BUNDLE_BYTES
     {
         return Err(invalid(
             "bundle fetch authority is expired or exceeds the bundle bound",

@@ -1,30 +1,36 @@
 //! Private production-Environment transport framing.
 //!
-//! Brain owns every public request and response carried here. These envelopes add only request
-//! multiplexing and target bootstrap/install commands; they are not a second public protocol.
-//! Every connection and run payload pins Brain's exact canonical contract digest.
+//! These envelopes add request multiplexing and target bootstrap/install commands around the
+//! public Environment v1 adapter. The provider protocol is private to this runtime.
 
-use brain::environment::{
-    SandboxFileContent, SandboxFileList, SandboxFileListRequest, SandboxSearchRequest,
-};
-use brain_protocol::environment::{
-    AcknowledgeTerminalRequest, Acknowledgement, BundleDescriptor, CancelRequest,
-    CancellationReceipt, FileEntry, NetworkCeiling, ObjectReference, ObserveRequest,
-    OperationObservation, ResourceCeiling, SandboxCopyResult, SandboxExecutionRequest,
-    SandboxFileRequest, SandboxFileWriteResult, SandboxTarget, SealedBinding, SubmitReceipt,
-    SubmitRequest, WriteStdinReceipt, WriteStdinRequest,
-};
+mod contract;
+mod network;
+mod ports;
+mod protocol;
+
+pub use contract::*;
 use environment_policy::connector::ConnectorClass;
 use environment_policy::secret::ControlToken;
+pub use network::*;
+pub use ports::*;
+pub use protocol::*;
 use serde::{Deserialize, Serialize};
 
 /// Inline file reads/writes are capped at 1 MiB decoded. A 2 MiB frame admits their padded base64
 /// plus the exact request/response envelope without making the WebSocket allocation unbounded.
 pub const MAX_INLINE_FILE_BYTES: usize = 1024 * 1024;
 pub const MAX_WIRE_FRAME_BYTES: usize = 2 * 1024 * 1024;
-/// Private guest transport headroom. Brain's canonical per-Tool bundle limit is narrower, while
-/// this matches the aggregate session-bundle ceiling so the transport cannot become the limiter.
-pub const MAX_BUNDLE_INSTALL_BYTES: usize = brain_protocol::MAX_SESSION_BUNDLE_BYTES;
+/// Private guest transport headroom. The per-Tool bundle limit is narrower, while this matches the
+/// aggregate session-bundle ceiling so the transport cannot become the limiter.
+pub const MAX_MANAGED_TOOL_INPUT_BYTES: usize = 192 * 1024;
+pub const MAX_TOOL_BUNDLE_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_SESSION_BUNDLE_BYTES: usize = 96 * 1024 * 1024;
+pub const MAX_SESSION_SECRET_NAMES: usize = 128;
+pub const MAX_SESSION_SECRET_DOCUMENT_BYTES: usize = 4 * 1024;
+pub const MAX_MODEL_TOOLS: usize = 128;
+pub const MAX_TOOL_TERMINAL_INLINE_BYTES: usize = 92 * 1024;
+pub const MAX_WRITE_STDIN_BYTES: usize = 4 * 1024;
+pub const MAX_BUNDLE_INSTALL_BYTES: usize = MAX_SESSION_BUNDLE_BYTES;
 pub const MAX_INSTALL_METADATA_BYTES: usize = 64 * 1024;
 pub const MAX_INSTALL_BODY_BYTES: usize = MAX_BUNDLE_INSTALL_BYTES + MAX_INSTALL_METADATA_BYTES + 1;
 pub use environment_policy::MAX_OBJECT_BYTES;
@@ -113,7 +119,7 @@ pub enum RequestCall {
 #[serde(deny_unknown_fields)]
 pub struct ResponseFrame {
     pub request_id: String,
-    pub result: Result<ResponseReply, brain_protocol::environment::EnvironmentError>,
+    pub result: Result<ResponseReply, EnvironmentError>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

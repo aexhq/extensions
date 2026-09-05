@@ -6,14 +6,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use base64::Engine as _;
-use brain::environment::{
-    SandboxFileContent, SandboxFileList, SandboxFileListRequest, SandboxSearchRequest,
+use environment_core::connector::ConnectorClass;
+use environment_core::files::{LiveFileEntry, LiveFileError, LiveFileKind, LiveFiles};
+use environment_core::operation::{OperationError, OperationRegistry, OperationState, Reservation};
+use environment_core::resources::{ResourceRequest, ResourceSupport};
+use environment_policy::guest_env::{
+    environment_name_is_valid, reserved_tool_environment, secret_material_fits,
 };
-use brain_protocol::contract::{
-    ENVIRONMENT_CONTRACT_DIGEST, operation_request_digest, sandbox_execution_request_digest,
-    terminal_inline_fits, terminal_result_digest, write_stdin_request_digest,
-};
-use brain_protocol::environment::{
+use environment_wire::network_ceiling_is_subset;
+use environment_wire::{
     AcknowledgeTerminalRequest, Acknowledgement, ArtifactTarget, BundleDescriptor, CancelRequest,
     CancellationReceipt, Digest, EnvironmentError, EnvironmentErrorCode, FileEntry, FileEntryKind,
     NetworkCeiling, ObserveRequest, OperationEnvelope, OperationObservation, OperationRef,
@@ -22,19 +23,18 @@ use brain_protocol::environment::{
     SealedBinding, SubmitReceipt, SubmitRequest, TargetKind, TargetReceipt, TerminalOutcome,
     TerminalResult, WriteStdinReceipt, WriteStdinRequest,
 };
-use brain_protocol::network::network_ceiling_is_subset;
-use environment_core::connector::ConnectorClass;
-use environment_core::files::{LiveFileEntry, LiveFileError, LiveFileKind, LiveFiles};
-use environment_core::operation::{OperationError, OperationRegistry, OperationState, Reservation};
-use environment_core::resources::{ResourceRequest, ResourceSupport};
-use environment_policy::guest_env::{
-    environment_name_is_valid, reserved_tool_environment, secret_material_fits,
+use environment_wire::{
+    ENVIRONMENT_CONTRACT_DIGEST, operation_request_digest, sandbox_execution_request_digest,
+    terminal_inline_fits, terminal_result_digest, write_stdin_request_digest,
 };
 use environment_wire::{
     FileEffectIdentity, FileEffectKind, FileEffectReservation, FileEffectStoredResult,
     GuestFileWriteRequest, GuestFileWriteSource, InstallBindingRequest, InstallBundleMetadata,
     InstallObjectMetadata, InstallReceipt, InstallSecretsRequest, MAX_INLINE_FILE_BYTES,
     RunPayload, TargetRuntimeStatus,
+};
+use environment_wire::{
+    SandboxFileContent, SandboxFileList, SandboxFileListRequest, SandboxSearchRequest,
 };
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
@@ -61,7 +61,7 @@ use crate::process::{
 // Brain reserves 4 KiB above the canonical inline value for the terminal outcome, digest, timing,
 // operation locator, and target receipt. Reserve that complete envelope before starting an effect
 // so terminal retention cannot leave an operation permanently `running` after its child exits.
-const TERMINAL_ENVELOPE_BYTES: usize = brain_protocol::MAX_TOOL_TERMINAL_INLINE_BYTES + 4 * 1024;
+const TERMINAL_ENVELOPE_BYTES: usize = environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES + 4 * 1024;
 const FILE_EFFECT_LOCK_SHARDS: usize = 64;
 
 mod files;

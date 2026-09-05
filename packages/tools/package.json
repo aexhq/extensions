@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/tools",
-  "version": "1.6.2",
-  "description": "Official remote Tool definitions and Environment-side implementations for Brain sessions",
+  "version": "2.0.0",
+  "description": "Official placed Tool definitions for Brain sessions",
   "license": "MIT",
   "homepage": "https://aex.dev",
   "repository": {
@@ -21,7 +21,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -30,11 +30,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "brain build",
-    "test": "npm run build && node --test"
+    "build": "node ../../tools/clean-dist.mjs && tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node ../../tools/build-tool-runtimes.mjs",
+    "test": "npm run build && node --test",
+    "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.15.3",
+    "@aexhq/brain": "0.16.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

@@ -9,16 +9,16 @@ use std::time::{Duration, Instant};
 use crate::temporary_from;
 use aws_sdk_lambdamicrovms::types::MicrovmState;
 use base64::Engine as _;
-use brain_protocol::contract::ENVIRONMENT_CONTRACT_DIGEST;
-use brain_protocol::environment::{EnvironmentError, EnvironmentErrorCode};
 use environment_core::materialization::InstalledTarget;
 use environment_lambda::control::{AUTH_HEADER, Control, ControlError, is_terminated};
 use environment_lambda::launch::{self, LaunchedEnvironment};
+use environment_wire::ENVIRONMENT_CONTRACT_DIGEST;
 use environment_wire::{
     CONTROL_AUTH_HEADER, FILE_ENTRY_HEADER, MAX_BUNDLE_INSTALL_BYTES, MAX_INSTALL_BODY_BYTES,
     MAX_INSTALL_METADATA_BYTES, MAX_WIRE_FRAME_BYTES, OBJECT_METADATA_HEADER, RequestCall,
     RequestFrame, ResponseFrame, ResponseReply,
 };
+use environment_wire::{EnvironmentError, EnvironmentErrorCode};
 use futures_util::{SinkExt as _, StreamExt as _};
 use tokio::io::AsyncReadExt as _;
 use tokio::sync::RwLock;
@@ -365,8 +365,8 @@ impl GuestClient {
     pub async fn export_file(
         &self,
         target: &InstalledTarget,
-        request: &brain_protocol::environment::SandboxFileRequest,
-    ) -> Result<(brain_protocol::environment::FileEntry, reqwest::Response), EnvironmentError> {
+        request: &environment_wire::SandboxFileRequest,
+    ) -> Result<(environment_wire::FileEntry, reqwest::Response), EnvironmentError> {
         let encoded = serde_json::to_vec(request).map_err(|_| {
             error(
                 EnvironmentErrorCode::InvalidRequest,
