@@ -47,8 +47,6 @@ struct Binding {
 #[serde(default, deny_unknown_fields)]
 struct EnvironmentConfiguration {
     region: Option<String>,
-    idle_seconds: Option<u64>,
-    maximum_seconds: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -167,10 +165,6 @@ impl AwsDriver {
         Ok(())
     }
 
-    fn target_lifetime(&self, binding: &Binding) -> Result<TargetLifetime, DriverError> {
-        bounded_target_lifetime(&binding.configuration, self.maximum_lifetime)
-    }
-
     fn operation_ref(encoded: &str) -> Result<OperationRef, DriverError> {
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(encoded)
@@ -226,7 +220,7 @@ impl AwsDriver {
             .map_err(|_| DriverError::invalid("invalid Tool deadline"))?;
         let input: Value = serde_json::from_str(&body.operation.input_json)
             .map_err(|_| DriverError::invalid("invalid Tool input"))?;
-        let lifetime = self.target_lifetime(&body.binding)?;
+        let lifetime = self.maximum_lifetime;
         let network = network(&body.binding.policy)?;
         let policy_digest = canonical_digest(&body.binding.policy)
             .map_err(|_| DriverError::invalid("Environment policy cannot be canonicalized"))?;
@@ -505,30 +499,6 @@ fn optional_seconds(name: &str, default: u64) -> anyhow::Result<u64> {
         .map_err(|_| anyhow::anyhow!("{name} must contain an unsigned decimal integer"))
 }
 
-fn bounded_target_lifetime(
-    configuration: &EnvironmentConfiguration,
-    maximum: TargetLifetime,
-) -> Result<TargetLifetime, DriverError> {
-    let maximum_seconds = configuration
-        .maximum_seconds
-        .unwrap_or(maximum.maximum_seconds);
-    let requested = TargetLifetime::new(
-        configuration
-            .idle_seconds
-            .unwrap_or(maximum.idle_seconds.min(maximum_seconds)),
-        maximum_seconds,
-    )
-    .map_err(DriverError::invalid)?;
-    if requested.idle_seconds > maximum.idle_seconds
-        || requested.maximum_seconds > maximum.maximum_seconds
-    {
-        return Err(DriverError::invalid(
-            "AWS target lifetime exceeds the deployment maximum",
-        ));
-    }
-    Ok(requested)
-}
-
 #[async_trait]
 impl Driver for AwsDriver {
     async fn dispatch(&self, request: DispatchRequest) -> Result<Value, DriverError> {
@@ -667,8 +637,6 @@ mod tests {
     fn managed_configuration_contains_only_present_provider_options() {
         assert_eq!(
             managed_configuration(&EnvironmentConfiguration {
-                idle_seconds: Some(30),
-                maximum_seconds: Some(60),
                 ..EnvironmentConfiguration::default()
             }),
             json!({})
@@ -676,38 +644,16 @@ mod tests {
         assert_eq!(
             managed_configuration(&EnvironmentConfiguration {
                 region: Some("us-east-1".into()),
-                idle_seconds: Some(30),
-                maximum_seconds: Some(60)
             }),
             json!({"region":"us-east-1"})
         );
     }
 
     #[test]
-    fn component_lifetime_is_finite_and_capped_by_the_driver() {
-        let maximum = TargetLifetime::new(120, 3_600).unwrap();
-        let defaulted =
-            bounded_target_lifetime(&EnvironmentConfiguration::default(), maximum).unwrap();
-        assert_eq!(defaulted, maximum);
-        let requested = bounded_target_lifetime(
-            &EnvironmentConfiguration {
-                idle_seconds: Some(30),
-                maximum_seconds: Some(600),
-                ..EnvironmentConfiguration::default()
-            },
-            maximum,
-        )
-        .unwrap();
-        assert_eq!(requested, TargetLifetime::new(30, 600).unwrap());
-        assert!(
-            bounded_target_lifetime(
-                &EnvironmentConfiguration {
-                    idle_seconds: Some(121),
-                    ..EnvironmentConfiguration::default()
-                },
-                maximum,
-            )
-            .is_err()
-        );
+    fn lifecycle_policy_is_not_environment_configuration() {
+        for field in ["idle_seconds", "maximum_seconds"] {
+            assert!(serde_json::from_value::<EnvironmentConfiguration>(json!({field:30})).is_err());
+        }
+        assert!(TargetLifetime::new(121, 60).is_err());
     }
 }

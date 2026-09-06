@@ -1,6 +1,8 @@
 import { agentloop, component } from "@aexhq/brain";
 import { z } from "zod";
 const options = z.object({
+  environmentSelection: z.enum(["hidden", "model"]).default("hidden"),
+  placements: z.record(z.string(), z.string()).default({}),
   contextWindow: z.number().int().positive().default(200_000),
   // pi defaults (compaction.ts): compact when context exceeds
   // contextWindow - reserveTokens, keep ~keepRecentTokens of recent messages.

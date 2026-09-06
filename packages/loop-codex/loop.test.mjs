@@ -17,6 +17,7 @@ const host = (responses, { results = {} } = {}) => {
       return response;
     },
     dispatch(calls) {
+      assert(calls.every((call) => call.environment === "sandbox"));
       record.dispatches.push(calls.map((call) => call.call_id));
       return calls.map((call) => ({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false }));
     },
@@ -28,15 +29,15 @@ const host = (responses, { results = {} } = {}) => {
   };
 };
 
-const turn = (message, fake, { transcript = [], slots = {}, configuration = {} } = {}) =>
+const turn = (message, fake, { transcript = [], kv = {}, configuration = {} } = {}) =>
   runCodex({
     input: { message },
     transcript,
-    slots,
+    kv,
     events: [],
     configuration,
     system: "",
-    tools: [],
+    tools: ["bash", "read", "ls", "write"].map((name) => ({ name, description: name, input_schema: { type: "object" }, environments: ["sandbox"] })),
   }, fake);
 
 const assistant = (content, usage = {}, stop_reason = "tool_use") => ({
@@ -82,7 +83,7 @@ test("compacts at the 90% token threshold using reported usage, keeping user mes
   assert.equal(rebuilt.length, 2);
   assert.match(rebuilt.at(-1).content[0].text, /^Another language model started to solve this problem/u);
   assert.match(rebuilt.at(-1).content[0].text, /progress so far/u);
-  assert.equal(output.slots.usage.lastTokens, 0);
+  assert.equal(output.kv.usage.lastTokens, 0);
 });
 
 test("replies when a response carries no tool calls", async () => {
@@ -91,7 +92,7 @@ test("replies when a response carries no tool calls", async () => {
 
   assert.deepEqual(fake.record.dispatches, []);
   assert.deepEqual(fake.record.emitted, [{ kind: "output_emitted", payload: { type: "assistant_message", message: "hi" } }]);
-  assert.equal(output.slots.usage.lastTokens, 12);
+  assert.equal(output.kv.usage.lastTokens, 12);
 });
 
 test("pages runtime failures into context and preserves the observation cursor across turns", async () => {
@@ -108,7 +109,7 @@ test("pages runtime failures into context and preserves the observation cursor a
   assert.match(fake.record.requests[0].messages[0].content[0].text, /interrupted/u);
   assert.match(fake.record.requests[0].messages[1].content[0].text, /env_browser/u);
   assert.deepEqual(fake.record.dispatches, []);
-  assert.equal(first.slots.observed_sequence, 2);
+  assert.equal(first.kv.observed_sequence, 2);
   const next = host([assistant([{ type: "text", text: "still here" }])]);
   next.events = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
   const second = await turn("next", next, first);

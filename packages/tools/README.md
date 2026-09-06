@@ -6,7 +6,7 @@ Official placed Tool definitions for Brain.
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
 import { bash, edit, read, write } from "@aexhq/tools";
 
-const workspace = awsMicroVm({ region: "eu-west-2" });
+const workspace = awsMicroVm({ name: "sandbox", url: process.env.ENVIRONMENT_URL, token: process.env.ENVIRONMENT_TOKEN, region: "eu-west-2" });
 const tools = [
   read({ env: workspace }),
   edit({ env: workspace }),
@@ -29,6 +29,10 @@ are never loaded into the Brain process.
 
 | Tool | Needs |
 | --- | --- |
-| `bash` | `process` |
-| `read`, `write`, `edit`, `ls`, `glob`, `todo` | `fs` |
-| `grep` | `process` |
+| `bash` | `pkg:apt/bash`, `file:///workspace?access=write` |
+| `read`, `ls`, `glob` | `file:///workspace` |
+| `write`, `edit`, `todo` | `file:///workspace?access=write` |
+| `grep` | `pkg:apt/ripgrep`, `file:///workspace` |
+
+Place the same factory in several named Environments to authorize each pair. The canonical Tool
+definition must match across placements; each pair fixes its own implementation and needs.

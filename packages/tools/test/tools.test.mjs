@@ -1,25 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { environment, inspectPlacedTool } from "@aexhq/brain";
+import { environment, inspectTool } from "@aexhq/brain";
 import { bash, edit, glob, grep, ls, read, todo, write } from "../dist/index.js";
 
 const declarations = {
-  bash: { factory: bash, needs: ["process"] },
-  edit: { factory: edit, needs: ["fs"] },
-  glob: { factory: glob, needs: ["fs"] },
-  grep: { factory: grep, needs: ["process"] },
-  ls: { factory: ls, needs: ["fs"] },
-  read: { factory: read, needs: ["fs"] },
-  todo: { factory: todo, needs: ["fs"] },
-  write: { factory: write, needs: ["fs"] },
+  bash: { factory: bash, needs: ["pkg:apt/bash", "file:///workspace?access=write"] },
+  edit: { factory: edit, needs: ["file:///workspace?access=write"] },
+  glob: { factory: glob, needs: ["file:///workspace"] },
+  grep: { factory: grep, needs: ["pkg:apt/ripgrep", "file:///workspace"] },
+  ls: { factory: ls, needs: ["file:///workspace"] },
+  read: { factory: read, needs: ["file:///workspace"] },
+  todo: { factory: todo, needs: ["file:///workspace?access=write"] },
+  write: { factory: write, needs: ["file:///workspace?access=write"] },
 };
 
 test("official Tool factories bind explicit Environments and opaque implementations", () => {
-  const env = environment({ driver: "test" })();
+  const env = environment({ url: () => "https://test.example" })({ name: "test" });
   for (const [name, { factory, needs }] of Object.entries(declarations)) {
     assert.throws(() => factory(), /requires \{ env \}/u, name);
-    const source = inspectPlacedTool(factory({ env }));
+    const source = inspectTool(factory({ env }));
     assert.equal(source.definition.name, name);
     assert.equal(source.environment, env);
     assert.deepEqual(source.needs, needs);
@@ -28,6 +28,6 @@ test("official Tool factories bind explicit Environments and opaque implementati
 });
 
 test("Tool factories reject options they do not declare", () => {
-  const env = environment({ driver: "test" })();
+  const env = environment({ url: () => "https://test.example" })({ name: "test" });
   assert.throws(() => read({ env, typo: true }), /does not accept options/u);
 });

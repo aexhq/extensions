@@ -1,3 +1,4 @@
+import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
 
 const CHECKPOINT_PREFIX = "Context checkpoint from earlier in this conversation:\n\n";
@@ -59,9 +60,10 @@ export async function runPi(input, context) {
     compaction: true,
     ...input.configuration,
   };
+  const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, input.slots.observed_sequence ?? 0);
-  const saved = input.slots.checkpoint;
+  const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
+  const saved = input.kv.checkpoint;
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
   const shouldCompact = () =>
@@ -86,6 +88,7 @@ export async function runPi(input, context) {
     const previous = checkpoint.summary === null ? "" : `Previous summary:\n\n${checkpoint.summary}\n\n`;
     const prompt = checkpoint.summary === null ? SUMMARIZATION_PROMPT : `${UPDATE_RULES}${SUMMARIZATION_PROMPT}`;
     const { message } = await context.model({
+      tools: [],
       messages: [{ role: "user", content: [{ type: "text", text: `${previous}${serializeConversation(messages.slice(0, cut))}\n\n${prompt}` }] }],
     });
     checkpoint.summary = text(message);
@@ -97,14 +100,14 @@ export async function runPi(input, context) {
   transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }] });
   for (;;) {
     if (shouldCompact()) await compact();
-    const { message, stop_reason } = await context.model({ messages: transcript });
+    const { message, stop_reason } = await context.model({ messages: transcript, tools: placement.definitions });
     transcript.push(message);
     const calls = message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: text(message) });
-      return { transcript, slots: { checkpoint, observed_sequence } };
+      return { transcript, kv: { checkpoint, observed_sequence } };
     }
     if (stop_reason === "max_tokens") {
       transcript.push({
@@ -113,7 +116,7 @@ export async function runPi(input, context) {
       });
       continue;
     }
-    const results = await context.dispatch(calls);
+    const results = await context.dispatch(calls.map(placement.invocation));
     const byCall = new Map(results.map((result) => [result.call_id, result]));
     transcript.push({
       role: "user",

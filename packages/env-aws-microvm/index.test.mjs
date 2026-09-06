@@ -1,24 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import { inspectEnvironment } from "@aexhq/brain";
 import { awsMicroVm } from "./dist/index.js";
-
-test("creates an immutable AWS MicroVM placement descriptor", () => {
-  const source = inspectEnvironment(awsMicroVm({ region: "eu-west-2", idleSeconds: 30, maximumSeconds: 600 }));
-  assert.deepEqual(source.configuration, {
-    driver: "aws-microvm",
-    region: "eu-west-2",
-    idle_seconds: 30,
-    maximum_seconds: 600,
-  });
-  assert.deepEqual(source.bindings, {});
+const options = { name: "sandbox", url: "https://sandbox.example", token: "secret" };
+test("creates a named HTTP Environment with separate credentials", () => {
+  const source = inspectEnvironment(awsMicroVm({ ...options, region: "eu-west-2" }));
+  assert.deepEqual(source.configuration, { driver: "aws-microvm", region: "eu-west-2" });
+  assert.deepEqual(source.driver, { driver: "http", url: options.url, credential: "secret" });
+  assert.equal(source.name, "sandbox");
 });
-
-test("validates provider options through the declared schema", () => {
-  assert.doesNotThrow(() => awsMicroVm());
-  assert.throws(() => awsMicroVm({ region: "" }), /too small/iu);
-  assert.throws(() => awsMicroVm({ idleSeconds: 0 }), /too small/iu);
-  assert.throws(() => awsMicroVm({ idleSeconds: 61, maximumSeconds: 60 }), /cannot exceed/u);
-  assert.throws(() => awsMicroVm({ typo: true }), /unrecognized key/iu);
+test("validates provider configuration and leaves lifecycle policy with the caller", () => {
+  assert.doesNotThrow(() => awsMicroVm(options));
+  assert.throws(() => awsMicroVm({ ...options, region: "" }), /too small/iu);
+  for (const field of ["idleSeconds", "maximumSeconds", "typo"]) {
+    assert.throws(() => awsMicroVm({ ...options, [field]: 30 }), /unrecognized key/iu);
+  }
 });

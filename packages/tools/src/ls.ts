@@ -8,6 +8,6 @@ export const ls = tool({
   description: "List entries in an Environment workspace directory.",
   input: lsInput,
   output: lsOutput,
-  needs: ["fs"],
+  needs: ["file:///workspace"],
   implementation: officialTool("ls"),
 });
