@@ -16,7 +16,45 @@ env:
   RUNTIME: packages/env-aws-microvm/runtime
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      packages: ${{ github.event_name != 'pull_request' || steps.filter.outputs.common == 'true' || steps.filter.outputs.packages == 'true' }}
+      audit: ${{ github.event_name != 'pull_request' || steps.filter.outputs.common == 'true' || steps.filter.outputs.dependencies == 'true' }}
+      runtime-format-clippy: ${{ github.event_name != 'pull_request' || steps.filter.outputs.common == 'true' || steps.filter.outputs.runtime == 'true' }}
+      runtime-test: ${{ github.event_name != 'pull_request' || steps.filter.outputs.common == 'true' || steps.filter.outputs.runtime == 'true' }}
+      linux-environment-image: ${{ github.event_name != 'pull_request' || steps.filter.outputs.common == 'true' || steps.filter.outputs.runtime == 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # Compare the tested merge commit with its base, including every PR commit and both rename paths.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          token: ''
+          predicate-quantifier: every
+          filters: |
+            common:
+              - '!*.md'
+              - '!**/README*.md'
+              - '!{packages/loop-codex,packages/loop-pi,packages/tools,packages/env-aws-microvm,shared}/**'
+              - '!{package.json,package-lock.json}'
+            packages:
+              - '{packages/**,shared/**,package.json,package-lock.json}'
+              - '!**/README*.md'
+            dependencies:
+              - '**/package{,-lock}.json'
+            runtime:
+              - 'packages/env-aws-microvm/runtime/**'
+              - '!**/README*.md'
+
   packages:
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -61,6 +99,8 @@ jobs:
           fi
 
   audit:
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -71,6 +111,8 @@ jobs:
       - run: npm audit --audit-level=high
 
   runtime-format-clippy:
+    needs: changes
+    if: needs.changes.outputs.runtime-format-clippy == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -85,6 +127,8 @@ jobs:
       - run: cargo clippy --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets -- -D warnings
 
   runtime-test:
+    needs: changes
+    if: needs.changes.outputs.runtime-test == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -97,6 +141,8 @@ jobs:
       - run: cargo test --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
 
   linux-environment-image:
+    needs: changes
+    if: needs.changes.outputs.linux-environment-image == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -120,19 +166,21 @@ jobs:
 
   build-test:
     if: always()
-    needs: [packages, audit, runtime-format-clippy, runtime-test, linux-environment-image]
+    needs: [changes, packages, audit, runtime-format-clippy, runtime-test, linux-environment-image]
     runs-on: ubuntu-24.04
     steps:
-      - name: Every release gate passed
+      - name: Every affected check passed
         env:
-          PACKAGES: ${{ needs.packages.result }}
-          AUDIT: ${{ needs.audit.result }}
-          LINT: ${{ needs.runtime-format-clippy.result }}
-          TEST: ${{ needs.runtime-test.result }}
-          IMAGE: ${{ needs.linux-environment-image.result }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          test "$PACKAGES" = success
-          test "$AUDIT" = success
-          test "$LINT" = success
-          test "$TEST" = success
-          test "$IMAGE" = success
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { changes, ...jobs } = JSON.parse(process.env.NEEDS);
+          assert.equal(changes.result, 'success', 'change detection must succeed');
+          for (const [name, job] of Object.entries(jobs)) {
+            const selected = changes.outputs[name];
+            assert.ok(['true', 'false'].includes(selected), `${name}: missing selection`);
+            const expected = selected === 'true' ? 'success' : 'skipped';
+            assert.equal(job.result, expected, `${name}: expected ${expected}, got ${job.result}`);
+          }
+          NODE
