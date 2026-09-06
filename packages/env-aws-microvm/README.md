@@ -1,35 +1,31 @@
 # @aexhq/env-aws-microvm
 
-Official AWS MicroVM Environment configuration for Brain.
+Official AWS MicroVM Environment for Brain.
 
 ```js
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
 
-const environment = awsMicroVm({
+const sandbox = awsMicroVm({
+  name: "sandbox",
+  url: process.env.ENVIRONMENT_URL,
+  token: process.env.ENVIRONMENT_TOKEN,
   region: "eu-west-2",
-  idleSeconds: 60,
-  maximumSeconds: 3_600,
 });
 ```
 
-The public factory returns an immutable Environment descriptor for the `aws-microvm` driver. It
-contains deployment configuration only: no AWS SDK or provider runtime is loaded into the Brain
-process, and the Environment exposes no provider-specific lifecycle methods.
+The application supplies the deployed driver's URL and bearer credential. The SDK sends the
+credential separately from the immutable Environment configuration; it is not part of a journaled
+implementation descriptor. The factory loads no AWS SDK or provider runtime into Brain.
 
 The external driver, guest supervisor, image builder, and egress gateway live in `runtime/` and
-must be deployed separately. That driver owns execution, workspaces, quotas, cancellation, and
-resource enforcement, and must explicitly support any opaque Tool implementation it accepts.
-Brain validates and transports the Environment and Tool contracts but does not compile programs or
-install language packages.
+are deployed separately. Setup records configuration and granted needs. Execute accepts an
+opaque version 1 `aex_official_tool` descriptor, resolves its bundle from the publisher-built
+registry, and checks the Tool's needs against the execution and setup grants. It supports the
+official Node.js Tools; arbitrary Python programs and Agentloop Components require a different
+provider implementation. Brain does not compile programs or install language packages.
 
-The supplied driver accepts version 1 `aex_official_tool` descriptors, binds them to the complete
-Tool manifests received during `attach`, and checks the manifests against its publisher-built
-runtime registry before invoking a bundle.
-
-`idleSeconds` cannot exceed `maximumSeconds`. The deployed driver may impose stricter finite
-limits and rejects unsupported configuration rather than silently weakening it.
-
-Physical expiry belongs to this provider, including while a session is suspended or logically
-attached. Brain stores the binding and records failures; it does not restore an expired MicroVM
-or retry its tool effects. A different Environment may choose lazy allocation on first invocation
-or attach to an externally owned resource. These are provider policies, not Brain lifecycle flags.
+The caller chooses lifecycle milestones: setup at session creation, detach at end, teardown at
+delete. Detach retains the workspace; teardown releases only this session's named Environment.
+There are no session-level TTL options. Deployed AWS services still impose physical idle and
+maximum-duration ceilings. Resource loss is reported; the driver does not recreate a lost
+workspace or replay an uncertain Tool effect. A lost submission or result returns `unknown`.

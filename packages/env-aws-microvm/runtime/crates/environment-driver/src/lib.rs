@@ -11,6 +11,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use brain_protocol::{EnvironmentCommand, EnvironmentOperation, EnvironmentRequest};
 use futures_util::StreamExt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -169,65 +170,6 @@ impl Driver for HttpRelayDriver {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct EnvironmentBinding {
-    environment_id: String,
-    directory_generation: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct EnvironmentCommand {
-    contract: String,
-    binding: EnvironmentBinding,
-    operation: EnvironmentOperation,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct EnvironmentOperation {
-    sequence: u64,
-    environment_id: String,
-    session_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    attachment_id: Option<String>,
-    request: EnvironmentRequest,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum EnvironmentRequest {
-    Setup {
-        configuration: Value,
-    },
-    Attach {
-        provisions: Vec<Provision>,
-        bindings: HashMap<String, String>,
-    },
-    Call {
-        name: String,
-        input: Value,
-    },
-    Invoke {
-        call_id: String,
-        tool: String,
-        input: Value,
-        deadline_ms: u64,
-    },
-    Cancel {
-        target_sequence: u64,
-    },
-    Detach,
-    Teardown,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Provision {
-    manifest: ToolManifest,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct ToolManifest {
     name: String,
     description: String,
@@ -235,7 +177,6 @@ struct ToolManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_schema: Option<Value>,
     needs: Vec<String>,
-    binding_names: Vec<String>,
     implementation: Value,
 }
 
@@ -254,12 +195,12 @@ struct DriverState {
     drivers: Arc<HashMap<String, Arc<dyn Driver>>>,
     tools: Arc<HashMap<String, ToolBundle>>,
     environments: Arc<Mutex<HashMap<String, ActiveEnvironment>>>,
-    attachments: Arc<Mutex<HashMap<AttachmentKey, ActiveAttachment>>>,
     operations: Arc<Mutex<OperationBook>>,
 }
 
 #[derive(Clone)]
 struct ToolBundle {
+    needs: Vec<String>,
     contract_digest: String,
     bundle_digest: String,
     bytes: Arc<[u8]>,
@@ -267,23 +208,10 @@ struct ToolBundle {
 
 #[derive(Clone)]
 struct ActiveEnvironment {
-    generation: u64,
     driver: String,
     provider_configuration: Value,
     configuration_digest: String,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct AttachmentKey {
-    environment_id: String,
-    session_id: String,
-    attachment_id: String,
-}
-
-#[derive(Clone)]
-struct ActiveAttachment {
-    generation: u64,
-    tools: HashMap<String, ToolBundle>,
+    needs: Vec<String>,
 }
 
 #[derive(Default)]
@@ -335,7 +263,6 @@ pub fn router(
         drivers: Arc::new(by_name),
         tools: Arc::new(tools),
         environments: Arc::new(Mutex::new(HashMap::new())),
-        attachments: Arc::new(Mutex::new(HashMap::new())),
         operations: Arc::new(Mutex::new(OperationBook::default())),
     };
     Ok(Router::new()
@@ -382,6 +309,7 @@ fn load_tools(directory: &Path) -> anyhow::Result<HashMap<String, ToolBundle>> {
             "Tool {name} bundle size is invalid"
         );
         let bundle = ToolBundle {
+            needs: entry.manifest.needs,
             contract_digest: entry.contract_digest.to_ascii_lowercase(),
             bundle_digest: hex::encode(Sha256::digest(&bytes)),
             bytes: bytes.into(),
@@ -409,10 +337,7 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
         Ok(request) => request,
         Err(_) => return http_failure(StatusCode::BAD_REQUEST, "invalid Environment command"),
     };
-    if command.contract != ENVIRONMENT_CONTRACT
-        || !valid_operation(&command.operation)
-        || !valid_binding(&command.binding, &command.operation)
-    {
+    if command.contract != ENVIRONMENT_CONTRACT || !valid_operation(&command.operation) {
         return http_failure(StatusCode::BAD_REQUEST, "invalid Environment command");
     }
     let sequence = command.operation.sequence;
@@ -429,7 +354,7 @@ async fn operation(State(state): State<DriverState>, headers: HeaderMap, body: B
     if let Some(receipt) = previous_operation(&state, &operation_key, &request_digest).await {
         return environment_response(sequence, receipt);
     }
-    let receipt = match handle_operation(&state, &command.binding, &command.operation).await {
+    let receipt = match handle_operation(&state, &command.operation).await {
         Ok(receipt) => receipt,
         Err(error) => {
             tracing::warn!(
@@ -508,51 +433,41 @@ async fn complete_operation(
 
 async fn handle_operation(
     state: &DriverState,
-    binding: &EnvironmentBinding,
     operation: &EnvironmentOperation,
 ) -> Result<Value, DriverError> {
     match &operation.request {
-        EnvironmentRequest::Setup { configuration } => setup(state, binding, configuration).await,
-        EnvironmentRequest::Attach {
-            provisions,
-            bindings,
-        } => attach(state, binding, operation, provisions, bindings).await,
-        EnvironmentRequest::Invoke {
-            call_id,
-            tool,
+        EnvironmentRequest::Setup {
+            configuration,
+            needs,
+        } => setup(state, operation, configuration, needs).await,
+        EnvironmentRequest::Execute {
+            implementation,
+            needs,
             input,
             deadline_ms,
-        } => {
-            invoke(
-                state,
-                binding,
-                operation,
-                call_id,
-                tool,
-                input,
-                *deadline_ms,
-            )
-            .await
-        }
+            ..
+        } => execute(state, operation, implementation, needs, input, *deadline_ms).await,
         EnvironmentRequest::Cancel { target_sequence } => {
-            cancel(state, binding, operation, *target_sequence).await
+            cancel(state, operation, *target_sequence).await
         }
-        EnvironmentRequest::Detach => detach(state, binding, operation).await,
-        EnvironmentRequest::Teardown => teardown(state, binding, operation).await,
-        EnvironmentRequest::Call { name, input } => {
-            let _ = input;
-            Err(DriverError::invalid(format!(
-                "unsupported AWS MicroVM Environment method {name}"
-            )))
+        EnvironmentRequest::Detach => {
+            environment(state, operation).await?;
+            Ok(accepted_receipt())
         }
+        EnvironmentRequest::Teardown => teardown(state, operation).await,
+        EnvironmentRequest::Call { name, .. } => Err(DriverError::invalid(format!(
+            "unsupported AWS MicroVM Environment method {name}"
+        ))),
     }
 }
 
 async fn setup(
     state: &DriverState,
-    binding: &EnvironmentBinding,
+    operation: &EnvironmentOperation,
     configuration: &Value,
+    needs: &[String],
 ) -> Result<Value, DriverError> {
+    needs_policy(needs)?;
     let mut provider_configuration = configuration.clone();
     let object = provider_configuration
         .as_object_mut()
@@ -562,159 +477,82 @@ async fn setup(
         .and_then(|value| value.as_str().map(str::to_owned))
         .ok_or_else(|| DriverError::invalid("Environment configuration has no driver"))?;
     if !state.drivers.contains_key(&driver) {
-        return Err(DriverError {
-            status: StatusCode::NOT_FOUND,
-            message: "Environment driver is not configured".into(),
-        });
+        return Err(DriverError::invalid("Environment driver is not configured"));
     }
-    let configuration_digest = canonical_digest(configuration)?;
+    if object.keys().any(|key| key != "region") {
+        return Err(DriverError::invalid(
+            "unsupported provider configuration; lifecycle policy belongs to the caller",
+        ));
+    }
+    let configuration_digest = canonical_digest(&(configuration, needs))?;
+    let key = environment_key(operation);
     let mut environments = state.environments.lock().await;
-    if let Some(existing) = environments.get(&binding.environment_id) {
-        if existing.generation > binding.directory_generation {
+    if let Some(existing) = environments.get(&key) {
+        if existing.configuration_digest != configuration_digest {
             return Err(DriverError::invalid(
-                "Environment directory generation is stale",
+                "Environment is already configured differently",
             ));
         }
-        if existing.generation == binding.directory_generation
-            && existing.configuration_digest != configuration_digest
-        {
-            return Err(DriverError::invalid(
-                "Environment generation was reused with different configuration",
-            ));
-        }
+        return Ok(accepted_receipt());
     }
     environments.insert(
-        binding.environment_id.clone(),
+        key,
         ActiveEnvironment {
-            generation: binding.directory_generation,
             driver,
             provider_configuration,
             configuration_digest,
-        },
-    );
-    drop(environments);
-    state.attachments.lock().await.retain(|key, value| {
-        key.environment_id != binding.environment_id
-            || value.generation == binding.directory_generation
-    });
-    Ok(accepted_receipt())
-}
-
-async fn attach(
-    state: &DriverState,
-    binding: &EnvironmentBinding,
-    operation: &EnvironmentOperation,
-    provisions: &[Provision],
-    bindings: &HashMap<String, String>,
-) -> Result<Value, DriverError> {
-    environment(state, binding).await?;
-    let attachment_id = operation
-        .attachment_id
-        .as_ref()
-        .ok_or_else(|| DriverError::invalid("Environment attach has no attachment id"))?;
-    let mut tools = HashMap::new();
-    for provision in provisions {
-        let manifest = &provision.manifest;
-        if !valid_identifier(&manifest.name)
-            || !manifest.input_schema.is_object()
-            || manifest
-                .output_schema
-                .as_ref()
-                .is_some_and(|value| !value.is_object())
-            || manifest
-                .binding_names
-                .iter()
-                .any(|name| !valid_identifier(name) || !bindings.contains_key(name))
-        {
-            return Err(DriverError::invalid("invalid Tool manifest"));
-        }
-        let implementation: OfficialToolImplementation =
-            serde_json::from_value(manifest.implementation.clone()).map_err(|_| {
-                DriverError::invalid("AWS MicroVM requires an official Tool implementation")
-            })?;
-        if implementation.kind != "aex_official_tool"
-            || implementation.version != 1
-            || implementation.name != manifest.name
-        {
-            return Err(DriverError::invalid(
-                "AWS MicroVM Tool implementation descriptor is invalid",
-            ));
-        }
-        let bundle = state
-            .tools
-            .get(&implementation.name)
-            .ok_or_else(|| DriverError {
-                status: StatusCode::NOT_FOUND,
-                message: format!("official Tool {} is not installed", implementation.name),
-            })?;
-        let actual_contract = canonical_digest(manifest)?;
-        if actual_contract != bundle.contract_digest {
-            return Err(DriverError::invalid(format!(
-                "official Tool {} manifest does not match its installed runtime",
-                manifest.name
-            )));
-        }
-        if tools
-            .insert(manifest.name.clone(), bundle.clone())
-            .is_some()
-        {
-            return Err(DriverError::invalid("Tool is provisioned more than once"));
-        }
-    }
-    state.attachments.lock().await.insert(
-        attachment_key(operation, attachment_id),
-        ActiveAttachment {
-            generation: binding.directory_generation,
-            tools,
+            needs: needs.to_vec(),
         },
     );
     Ok(accepted_receipt())
 }
 
-async fn invoke(
+async fn execute(
     state: &DriverState,
-    binding: &EnvironmentBinding,
     operation: &EnvironmentOperation,
-    call_id: &str,
-    tool: &str,
+    implementation: &Value,
+    needs: &[String],
     input: &Value,
     deadline_ms: u64,
 ) -> Result<Value, DriverError> {
-    if !valid_identifier(call_id) || !valid_identifier(tool) || deadline_ms == 0 {
-        return Err(DriverError::invalid("invalid Tool invocation"));
+    if deadline_ms == 0 {
+        return Err(DriverError::invalid("execution deadline must be positive"));
     }
-    let deadline_at_ms = now_ms().saturating_add(deadline_ms);
-    let environment = environment(state, binding).await?;
-    let attachment_id = operation
-        .attachment_id
-        .as_ref()
-        .ok_or_else(|| DriverError::invalid("Tool invocation has no attachment id"))?;
-    let attachment = state
-        .attachments
-        .lock()
-        .await
-        .get(&attachment_key(operation, attachment_id))
-        .cloned()
-        .ok_or_else(|| DriverError::invalid("Environment attachment is not active"))?;
-    if attachment.generation != binding.directory_generation {
+    let descriptor: OfficialToolImplementation = serde_json::from_value(implementation.clone())
+        .map_err(|_| {
+            DriverError::invalid("AWS MicroVM requires an official Tool implementation")
+        })?;
+    if descriptor.kind != "aex_official_tool"
+        || descriptor.version != 1
+        || !valid_identifier(&descriptor.name)
+    {
+        return Err(DriverError::invalid("unsupported Tool implementation"));
+    }
+    let tool = &descriptor.name;
+    let bundle = state
+        .tools
+        .get(tool)
+        .ok_or_else(|| DriverError::invalid("official Tool runtime is not installed"))?;
+    let environment = environment(state, operation).await?;
+    if !bundle.needs.iter().all(|need| needs.contains(need))
+        || !needs.iter().all(|need| environment.needs.contains(need))
+    {
         return Err(DriverError::invalid(
-            "Environment attachment generation is stale",
+            "execution needs do not match setup grants and the installed Tool",
         ));
     }
-    let bundle = attachment.tools.get(tool).ok_or_else(|| DriverError {
-        status: StatusCode::NOT_FOUND,
-        message: "Tool is not provisioned in this Environment attachment".into(),
-    })?;
+    let deadline_at_ms = now_ms().saturating_add(deadline_ms);
     let driver = state
         .drivers
         .get(&environment.driver)
         .cloned()
         .ok_or_else(|| DriverError::unavailable("Environment driver is no longer configured"))?;
-    let operation_id = provider_operation_id(&operation.session_id, operation.sequence);
+    let operation_id = provider_operation_id(operation.session_id.as_str(), operation.sequence);
     let request_digest = canonical_digest(operation)?;
-    let policy = serde_json::json!({});
-    let binding_value = provider_binding(&environment, operation);
-    let submit = driver
+    let policy = needs_policy(needs)?;
+    let mut binding_value = provider_binding(&environment, operation);
+    binding_value["policy"] = policy;
+    let submit = match driver
         .dispatch(DispatchRequest {
             operation_id: operation_id.clone(),
             action: "submit".into(),
@@ -739,16 +577,21 @@ async fn invoke(
                         "options":{}
                     })).map_err(|_| DriverError::invalid("Tool input cannot be encoded"))?,
                     "deadline_at_ms":deadline_at_ms.to_string()
-                },
-                "policy":policy
+                }
             }),
             deadline_at_ms: deadline_at_ms.to_string(),
         })
-        .await?;
-    let provider_reference = submit
-        .get("provider_operation_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DriverError::unavailable("Environment returned no operation reference"))?;
+        .await {
+            Ok(submit) => submit,
+            Err(error) if error.status == StatusCode::BAD_REQUEST => return Err(error),
+            Err(_) => return Ok(unknown_receipt("Environment did not confirm Tool submission")),
+        };
+    let Some(provider_reference) = submit.get("provider_operation_id").and_then(Value::as_str)
+    else {
+        return Ok(unknown_receipt(
+            "Environment returned no operation reference",
+        ));
+    };
     let mut cursor: Option<String> = None;
     loop {
         if now_ms() >= deadline_at_ms {
@@ -757,9 +600,12 @@ async fn invoke(
                 "message":"Tool execution did not become terminal before its deadline"
             }));
         }
-        let observation = driver
+        let observation = match driver
             .dispatch(DispatchRequest {
-                operation_id: provider_operation_id(&operation.session_id, operation.sequence),
+                operation_id: provider_operation_id(
+                    operation.session_id.as_str(),
+                    operation.sequence,
+                ),
                 action: "observe".into(),
                 request: serde_json::json!({
                     "binding":binding_value,
@@ -768,7 +614,15 @@ async fn invoke(
                 }),
                 deadline_at_ms: deadline_at_ms.to_string(),
             })
-            .await?;
+            .await
+        {
+            Ok(observation) => observation,
+            Err(_) => {
+                return Ok(unknown_receipt(
+                    "Environment lost contact with the Tool execution",
+                ));
+            }
+        };
         cursor = observation
             .get("cursor")
             .and_then(Value::as_str)
@@ -777,29 +631,38 @@ async fn invoke(
             Some("pending" | "running") => continue,
             Some("completed") => {
                 return Ok(serde_json::json!({
-                    "type":"outcome",
-                    "outcome":{"status":"ok","value":terminal_value(&observation)?}
+                    "type":"result",
+                    "output":match terminal_value(&observation) { Ok(value) => value, Err(_) => return Ok(unknown_receipt("Environment returned an unreadable Tool result")) }
                 }));
             }
             Some("failed") => {
-                let terminal = terminal_value(&observation)?;
-                return Ok(serde_json::json!({
-                    "type":"outcome",
-                    "outcome":{
-                        "status":"error",
-                        "error":{
-                            "code":"tool_failed",
-                            "message":terminal_message(&terminal),
-                            "details":terminal
-                        }
+                let terminal = match terminal_value(&observation) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return Ok(unknown_receipt(
+                            "Environment returned an unreadable Tool result",
+                        ));
                     }
-                }));
+                };
+                return Ok(failure_receipt(
+                    "tool_failed",
+                    &terminal_message(&terminal),
+                    false,
+                ));
             }
             Some("cancelled") => {
-                return Ok(serde_json::json!({"type":"outcome","outcome":{"status":"cancelled"}}));
+                return Ok(failure_receipt(
+                    "cancelled",
+                    "execution was cancelled",
+                    false,
+                ));
             }
             Some("deadline_exceeded") => {
-                return Ok(serde_json::json!({"type":"outcome","outcome":{"status":"timeout"}}));
+                return Ok(failure_receipt(
+                    "timeout",
+                    "execution deadline elapsed",
+                    false,
+                ));
             }
             Some("interrupted" | "unknown") => {
                 return Ok(serde_json::json!({
@@ -817,16 +680,19 @@ async fn invoke(
     }
 }
 
+fn unknown_receipt(message: &str) -> Value {
+    serde_json::json!({"type":"unknown", "message":message})
+}
+
 async fn cancel(
     state: &DriverState,
-    binding: &EnvironmentBinding,
     operation: &EnvironmentOperation,
     target_sequence: u64,
 ) -> Result<Value, DriverError> {
     if target_sequence == 0 {
         return Err(DriverError::invalid("invalid cancellation target"));
     }
-    let environment = environment(state, binding).await?;
+    let environment = environment(state, operation).await?;
     let driver = state
         .drivers
         .get(&environment.driver)
@@ -834,11 +700,11 @@ async fn cancel(
         .ok_or_else(|| DriverError::unavailable("Environment driver is no longer configured"))?;
     driver
         .dispatch(DispatchRequest {
-            operation_id: provider_operation_id(&operation.session_id, operation.sequence),
+            operation_id: provider_operation_id(operation.session_id.as_str(), operation.sequence),
             action: "cancel".into(),
             request: serde_json::json!({
                 "binding":provider_binding(&environment, operation),
-                "target_operation_id":provider_operation_id(&operation.session_id, target_sequence)
+                "target_operation_id":provider_operation_id(operation.session_id.as_str(), target_sequence)
             }),
             deadline_at_ms: now_ms().saturating_add(5_000).to_string(),
         })
@@ -846,30 +712,11 @@ async fn cancel(
     Ok(serde_json::json!({"type":"accepted"}))
 }
 
-async fn detach(
-    state: &DriverState,
-    binding: &EnvironmentBinding,
-    operation: &EnvironmentOperation,
-) -> Result<Value, DriverError> {
-    environment(state, binding).await?;
-    let attachment_id = operation
-        .attachment_id
-        .as_ref()
-        .ok_or_else(|| DriverError::invalid("Environment detach has no attachment id"))?;
-    state
-        .attachments
-        .lock()
-        .await
-        .remove(&attachment_key(operation, attachment_id));
-    Ok(serde_json::json!({"type":"accepted"}))
-}
-
 async fn teardown(
     state: &DriverState,
-    binding: &EnvironmentBinding,
     operation: &EnvironmentOperation,
 ) -> Result<Value, DriverError> {
-    let environment = environment(state, binding).await?;
+    let environment = environment(state, operation).await?;
     let driver = state
         .drivers
         .get(&environment.driver)
@@ -877,7 +724,7 @@ async fn teardown(
         .ok_or_else(|| DriverError::unavailable("Environment driver is no longer configured"))?;
     driver
         .dispatch(DispatchRequest {
-            operation_id: provider_operation_id(&operation.session_id, operation.sequence),
+            operation_id: provider_operation_id(operation.session_id.as_str(), operation.sequence),
             action: "release".into(),
             request: serde_json::json!({
                 "binding":provider_binding(&environment, operation)
@@ -889,44 +736,68 @@ async fn teardown(
         .environments
         .lock()
         .await
-        .remove(&binding.environment_id);
-    state
-        .attachments
-        .lock()
-        .await
-        .retain(|key, _| key.environment_id != binding.environment_id);
+        .remove(&environment_key(operation));
     Ok(serde_json::json!({"type":"accepted"}))
 }
 
 async fn environment(
     state: &DriverState,
-    binding: &EnvironmentBinding,
+    operation: &EnvironmentOperation,
 ) -> Result<ActiveEnvironment, DriverError> {
-    let environment = state
+    state
         .environments
         .lock()
         .await
-        .get(&binding.environment_id)
+        .get(&environment_key(operation))
         .cloned()
-        .ok_or_else(|| DriverError::unavailable("Environment has not been set up"))?;
-    if environment.generation != binding.directory_generation {
-        return Err(DriverError::invalid(
-            "Environment directory generation is stale",
-        ));
-    }
-    Ok(environment)
+        .ok_or_else(|| DriverError::unavailable("Environment has not been set up"))
 }
 
 fn accepted_receipt() -> Value {
-    serde_json::json!({
-        "type":"accepted",
-        "resources":{
-            "fs":{"root":"/workspace"},
-            "process":{
-                "output_bytes_max":environment_wire::MAX_TOOL_TERMINAL_INLINE_BYTES,
-                "timeout_ms_max":120_000
-            }
+    serde_json::json!({"type":"accepted"})
+}
+
+// A provider root owns its VM and release operation, so sibling Environments need separate roots.
+fn environment_key(operation: &EnvironmentOperation) -> String {
+    format!(
+        "env_{}",
+        hex::encode(Sha256::digest(format!(
+            "{}\0{}",
+            operation.session_id, operation.environment
+        )))
+    )
+}
+
+fn needs_policy(needs: &[String]) -> Result<Value, DriverError> {
+    let mut destinations = Vec::new();
+    for need in needs {
+        if matches!(
+            need.as_str(),
+            "file:///workspace"
+                | "file:///workspace?access=write"
+                | "pkg:apt/bash"
+                | "pkg:apt/ripgrep"
+        ) {
+            continue;
         }
+        let uri = reqwest::Url::parse(need)
+            .map_err(|_| DriverError::invalid(format!("unmet need {need}")))?;
+        if uri.scheme() != "https"
+            || uri.host_str().is_none()
+            || !uri.username().is_empty()
+            || uri.password().is_some()
+            || !matches!(uri.path(), "" | "/")
+            || uri.query().is_some()
+            || uri.fragment().is_some()
+        {
+            return Err(DriverError::invalid(format!("unmet need {need}")));
+        }
+        destinations.push(serde_json::json!({"protocol":"tls", "host":uri.host_str().unwrap(), "ports":[uri.port_or_known_default().unwrap()]}));
+    }
+    Ok(if destinations.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::json!({"network":{"outbound":"allowlist","destinations":destinations}})
     })
 }
 
@@ -934,21 +805,13 @@ fn provider_binding(environment: &ActiveEnvironment, operation: &EnvironmentOper
     serde_json::json!({
         "driver":environment.driver,
         "configuration":environment.provider_configuration,
-        "policy":{},
+        "policy":needs_policy(&environment.needs).expect("setup validated needs"),
         "tenant_id":operation.session_id,
-        "session_id":operation.session_id,
-        "root_id":operation.session_id,
+        "session_id":environment_key(operation),
+        "root_id":environment_key(operation),
         "parent_id":Value::Null,
-        "environment_id":operation.environment_id
+        "environment_id":operation.environment
     })
-}
-
-fn attachment_key(operation: &EnvironmentOperation, attachment_id: &str) -> AttachmentKey {
-    AttachmentKey {
-        environment_id: operation.environment_id.clone(),
-        session_id: operation.session_id.clone(),
-        attachment_id: attachment_id.to_owned(),
-    }
 }
 
 fn operation_key(operation: &EnvironmentOperation) -> String {
@@ -989,16 +852,8 @@ fn canonical_digest(value: &impl Serialize) -> Result<String, DriverError> {
 
 fn valid_operation(operation: &EnvironmentOperation) -> bool {
     operation.sequence > 0
-        && valid_identifier(&operation.environment_id)
-        && valid_identifier(&operation.session_id)
-        && operation
-            .attachment_id
-            .as_deref()
-            .is_none_or(valid_identifier)
-}
-
-fn valid_binding(binding: &EnvironmentBinding, operation: &EnvironmentOperation) -> bool {
-    binding.environment_id == operation.environment_id && binding.directory_generation > 0
+        && valid_identifier(operation.environment.as_str())
+        && valid_identifier(operation.session_id.as_str())
 }
 
 fn valid_identifier(value: &str) -> bool {
@@ -1072,7 +927,14 @@ mod tests {
             );
             self.actions.lock().unwrap().push(request.action.clone());
             match request.action.as_str() {
-                "submit" => Ok(serde_json::json!({"provider_operation_id":"provider-1"})),
+                "submit" => {
+                    assert_eq!(request.request.as_object().unwrap().len(), 2);
+                    assert_eq!(
+                        request.request["binding"]["policy"],
+                        needs_policy(&[]).unwrap()
+                    );
+                    Ok(serde_json::json!({"provider_operation_id":"provider-1"}))
+                }
                 "observe" => Ok(serde_json::json!({
                     "state":"completed",
                     "cursor":"1",
@@ -1085,6 +947,51 @@ mod tests {
         }
     }
 
+    struct LostResultDriver {
+        fail_submit: bool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl Driver for LostResultDriver {
+        async fn dispatch(&self, request: DispatchRequest) -> Result<Value, DriverError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if request.action == "submit" && !self.fail_submit {
+                Ok(serde_json::json!({"provider_operation_id":"provider-1"}))
+            } else {
+                Err(DriverError::unavailable("connection lost"))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn lost_submission_or_result_remains_unknown_without_replay() {
+        for fail_submit in [true, false] {
+            let tool = manifest("echo");
+            let directory = tool_directory(&tool);
+            let driver = Arc::new(LostResultDriver {
+                fail_submit,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let app = router(
+                "secret",
+                [("aws-microvm".into(), driver.clone() as Arc<dyn Driver>)],
+                directory.path(),
+            )
+            .unwrap();
+            let setup = app.clone().oneshot(command("secret", 1, serde_json::json!({"type":"setup","needs":[],"configuration":{"driver":"aws-microvm"}}))).await.unwrap();
+            assert_eq!(body(setup).await["receipt"]["type"], "accepted");
+            for _ in 0..2 {
+                let response = app.clone().oneshot(command("secret", 2, serde_json::json!({"type":"execute", "implementation":tool.implementation, "needs":[], "input":{}, "deadline_ms":60_000}))).await.unwrap();
+                assert_eq!(body(response).await["receipt"]["type"], "unknown");
+            }
+            assert_eq!(
+                driver.calls.load(std::sync::atomic::Ordering::SeqCst),
+                if fail_submit { 1 } else { 2 }
+            );
+        }
+    }
+
     fn manifest(name: &str) -> ToolManifest {
         ToolManifest {
             name: name.into(),
@@ -1092,7 +999,6 @@ mod tests {
             input_schema: serde_json::json!({"type":"object"}),
             output_schema: Some(serde_json::json!({"type":"object"})),
             needs: vec![],
-            binding_names: vec![],
             implementation: serde_json::json!({
                 "type":"aex_official_tool",
                 "version":1,
@@ -1119,12 +1025,7 @@ mod tests {
         directory
     }
 
-    fn command(
-        token: &str,
-        sequence: u64,
-        attachment_id: Option<&str>,
-        request: Value,
-    ) -> Request<Body> {
+    fn command(token: &str, sequence: u64, request: Value) -> Request<Body> {
         Request::builder()
             .method("POST")
             .uri("/v1/operations")
@@ -1133,15 +1034,10 @@ mod tests {
             .body(Body::from(
                 serde_json::json!({
                     "contract":"environment/v1",
-                    "binding":{
-                        "environment_id":"environment-1",
-                        "directory_generation":1
-                    },
                     "operation":{
                         "sequence":sequence,
-                        "environment_id":"environment-1",
+                        "environment":"workspace",
                         "session_id":"session-1",
-                        "attachment_id":attachment_id,
                         "request":request
                     }
                 })
@@ -1158,7 +1054,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lifecycle_provisions_an_official_tool_manifest_and_executes_it() {
+    async fn lifecycle_resolves_an_official_tool_at_execution() {
         let tool = manifest("echo");
         let directory = tool_directory(&tool);
         let driver = Arc::new(FixtureDriver {
@@ -1176,41 +1072,23 @@ mod tests {
             .oneshot(command(
                 "secret",
                 1,
-                None,
-                serde_json::json!({"type":"setup","configuration":{"driver":"aws-microvm"}}),
+                serde_json::json!({"type":"setup","needs":["https://api.example.com"],"configuration":{"driver":"aws-microvm"}}),
             ))
             .await
             .unwrap();
         let setup = body(setup).await;
         assert_eq!(setup["sequence"], 1);
-        assert_eq!(setup["receipt"]["resources"]["fs"]["root"], "/workspace");
-
-        let attach = app
-            .clone()
-            .oneshot(command(
-                "secret",
-                2,
-                Some("attachment-1"),
-                serde_json::json!({
-                    "type":"attach",
-                    "provisions":[{"manifest":tool}],
-                    "bindings":{}
-                }),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(body(attach).await["receipt"]["type"], "accepted");
+        assert_eq!(setup["receipt"]["type"], "accepted");
 
         let execute = app
             .clone()
             .oneshot(command(
                 "secret",
                 3,
-                Some("attachment-1"),
                 serde_json::json!({
-                    "type":"invoke",
-                    "call_id":"call-1",
-                    "tool":"echo",
+                    "type":"execute",
+                    "implementation":tool.implementation,
+                    "needs":[],
                     "input":{"value":42},
                     "deadline_ms":60_000
                 }),
@@ -1218,10 +1096,9 @@ mod tests {
             .await
             .unwrap();
         let execute = body(execute).await;
-        assert_eq!(execute["receipt"]["type"], "outcome");
-        assert_eq!(execute["receipt"]["outcome"]["status"], "ok");
+        assert_eq!(execute["receipt"]["type"], "result");
         assert_eq!(
-            execute["receipt"]["outcome"]["value"],
+            execute["receipt"]["output"],
             serde_json::json!({"answer":42})
         );
 
@@ -1230,7 +1107,6 @@ mod tests {
             .oneshot(command(
                 "secret",
                 4,
-                Some("attachment-1"),
                 serde_json::json!({"type":"cancel","target_sequence":3}),
             ))
             .await
@@ -1238,12 +1114,7 @@ mod tests {
         assert_eq!(body(cancel).await["receipt"]["type"], "accepted");
 
         let teardown = app
-            .oneshot(command(
-                "secret",
-                5,
-                None,
-                serde_json::json!({"type":"teardown"}),
-            ))
+            .oneshot(command("secret", 5, serde_json::json!({"type":"teardown"})))
             .await
             .unwrap();
         assert_eq!(body(teardown).await["receipt"]["type"], "accepted");
@@ -1273,8 +1144,7 @@ mod tests {
                 .oneshot(command(
                     "wrong",
                     1,
-                    None,
-                    serde_json::json!({"type":"setup","configuration":{"driver":"aws-microvm"}}),
+                        serde_json::json!({"type":"setup","needs":[],"configuration":{"driver":"aws-microvm"}}),
                 ))
                 .await
                 .unwrap()
@@ -1286,8 +1156,7 @@ mod tests {
             .oneshot(command(
                 "secret",
                 1,
-                None,
-                serde_json::json!({"type":"setup","configuration":{"driver":"aws-microvm"}}),
+                serde_json::json!({"type":"setup","needs":[],"configuration":{"driver":"aws-microvm"}}),
             ))
             .await
             .unwrap();
@@ -1297,8 +1166,7 @@ mod tests {
             .oneshot(command(
                 "secret",
                 1,
-                None,
-                serde_json::json!({"type":"setup","configuration":{"driver":"aws-microvm","idle_seconds":30}}),
+                serde_json::json!({"type":"setup","needs":[],"configuration":{"driver":"aws-microvm","idle_seconds":30}}),
             ))
             .await
             .unwrap();
@@ -1310,11 +1178,9 @@ mod tests {
             .oneshot(command(
                 "secret",
                 2,
-                Some("attachment-1"),
                 serde_json::json!({
-                    "type":"attach",
-                    "provisions":[{"manifest":wrong}],
-                    "bindings":{}
+                    "type":"execute",
+                    "implementation":wrong.implementation, "needs":[], "input":{}, "deadline_ms":1000
                 }),
             ))
             .await

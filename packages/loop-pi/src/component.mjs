@@ -19,7 +19,7 @@ export async function turn(input) {
     const output = await runPi({
       input: JSON.parse(input.inputJson),
       transcript: JSON.parse(input.transcriptJson),
-      slots: JSON.parse(input.slotsJson),
+      kv: JSON.parse(input.kvJson),
       events: JSON.parse(input.eventsJson),
       configuration: JSON.parse(input.configurationJson),
       system: input.system,
@@ -33,7 +33,7 @@ export async function turn(input) {
     });
     return {
       transcriptJson: JSON.stringify(output.transcript),
-      slotsJson: JSON.stringify(output.slots),
+      kvJson: JSON.stringify(output.kv),
       resultJson: output.result === undefined ? undefined : JSON.stringify(output.result),
     };
   } catch (error) {

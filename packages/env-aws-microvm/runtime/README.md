@@ -13,14 +13,14 @@
 </p>
 
 Environments implements Brain's public `environment/v1` JSON contract. The loopback driver keeps
-Environment configuration from `setup`, consumes complete Tool manifests at `attach`, and accepts
+Environment configuration and needs from `setup`, and accepts
 only the versioned `aex_official_tool` implementation descriptors it knows how to resolve. It
-verifies each manifest against the publisher-built runtime registry before any bundle reaches a
-guest.
+resolves each descriptor from the publisher-built registry during `execute` and validates its
+needs before any bundle reaches a guest.
 
-The MVP placement and attachment directory is task-local. If the Brain task and its essential
+The MVP Environment directory is task-local. If the Brain task and its essential
 driver sidecar restart, existing external Environment bindings become unreachable; Brain does not
-replay `setup` or `attach`, and callers must create a new Environment/session. Provider hard
+replay `setup` or execution, and callers must create a new Environment/session. Provider hard
 lifetimes still bound abandoned MicroVMs. This matches the MVP's explicit exclusion of distributed
 command delivery and recovery; durable cross-task Environment recovery requires a shared directory
 in a later contract.
@@ -54,7 +54,7 @@ node scripts/test-tool-runner.mjs
 ```
 
 CI also builds the Linux image and proves that neither Tool identity class can reach the supervisor
-control listener. Production publishes only the immutable egress-gateway image and plane-local
+control listener. Production publishes only the immutable egress-gateway image and driver images, plus plane-local
 Lambda MicroVM images.
 
 The hosted provider bridge is built independently from this runtime root:

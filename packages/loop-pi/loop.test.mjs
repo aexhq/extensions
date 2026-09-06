@@ -17,6 +17,7 @@ const host = (responses, { results = {} } = {}) => {
       return response;
     },
     dispatch(calls) {
+      assert(calls.every((call) => call.environment === "sandbox"));
       record.dispatches.push(calls.map((call) => call.call_id));
       return results[record.dispatches.length - 1] ?? calls.map((call) => ({ call_id: call.call_id, output: "", is_error: false }));
     },
@@ -28,15 +29,15 @@ const host = (responses, { results = {} } = {}) => {
   };
 };
 
-const turn = (message, fake, { transcript = [], slots = {}, configuration = {} } = {}) =>
+const turn = (message, fake, { transcript = [], kv = {}, configuration = {} } = {}) =>
   runPi({
     input: { message },
     transcript,
-    slots,
+    kv,
     events: [],
     configuration,
     system: "",
-    tools: [],
+    tools: ["bash", "read", "ls", "write"].map((name) => ({ name, description: name, input_schema: { type: "object" }, environments: ["sandbox"] })),
   }, fake);
 
 const assistant = (content, stop_reason = "end_turn", usage = {}) => ({
@@ -96,7 +97,7 @@ test("compacts older history into a structured checkpoint and keeps the recent t
     assistant([{ type: "text", text: "## Goal\nfinish the task" }]),
     assistant([{ type: "text", text: "sure" }]),
   ]);
-  const second = await turn("new question", fake, { transcript: first.transcript, slots: first.slots, configuration });
+  const second = await turn("new question", fake, { transcript: first.transcript, kv: first.kv, configuration });
 
   const prompt = fake.record.requests[0].messages.at(-1).content[0].text;
   assert.match(prompt, /## Goal/u);
@@ -105,7 +106,7 @@ test("compacts older history into a structured checkpoint and keeps the recent t
   assert.match(rebuilt[0].content[0].text, /^Context checkpoint from earlier in this conversation:/u);
   assert.match(rebuilt[0].content[0].text, /finish the task/u);
   assert.deepEqual(rebuilt.at(-1), { role: "user", content: [{ type: "text", text: "new question" }] });
-  assert.equal(second.slots.checkpoint.summary, "## Goal\nfinish the task");
+  assert.equal(second.kv.checkpoint.summary, "## Goal\nfinish the task");
   assert.equal(second.transcript[0].content[0].text.startsWith("Context checkpoint"), true);
 });
 
@@ -123,7 +124,7 @@ test("pages runtime failures into context and preserves the observation cursor a
   assert.match(fake.record.requests[0].messages[0].content[0].text, /interrupted/u);
   assert.match(fake.record.requests[0].messages[1].content[0].text, /env_browser/u);
   assert.deepEqual(fake.record.dispatches, []);
-  assert.equal(first.slots.observed_sequence, 2);
+  assert.equal(first.kv.observed_sequence, 2);
   const next = host([assistant([{ type: "text", text: "still here" }])]);
   next.events = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
   const second = await turn("next", next, first);

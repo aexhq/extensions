@@ -8,6 +8,6 @@ export const write = tool({
   description: "Write UTF-8 text to a file in the Environment workspace, creating parent directories.",
   input: writeInput,
   output: writeOutput,
-  needs: ["fs"],
+  needs: ["file:///workspace?access=write"],
   implementation: officialTool("write"),
 });

@@ -24,7 +24,7 @@ jobs:
         with:
           repository: aexhq/brain
           path: brain-source
-          ref: 682ce03104991f5815de0655165509510f07dbb6
+          ref: 8fcfa8d9b0c9b58e09664fa6b739d80de952e708
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
@@ -39,6 +39,26 @@ jobs:
           echo "BRAIN_PACKAGE_ARCHIVE=$RUNNER_TEMP/$brain_archive" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run package-smoke
+      - name: Execute the built Agentloops through the pinned Brain image
+        shell: bash
+        run: |
+          set -euo pipefail
+          brain_ref=$(git -C brain-source rev-parse HEAD)
+          docker run -d --name extension-brain --network host \
+            -e BRAIN_API_TOKEN=extension-fixture-token \
+            -e BRAIN_LISTEN=127.0.0.1:18092 \
+            -e BRAIN_MODEL_BASE_URL=http://127.0.0.1:18093/v1 \
+            "ghcr.io/aexhq/brain:$brain_ref"
+          trap 'docker rm -f extension-brain >/dev/null' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18092/health/ready >/dev/null; then break; fi
+            test "$attempt" -lt 60
+            sleep 1
+          done
+          if ! timeout 300 node tools/check-native-loops.mjs; then
+            docker logs extension-brain
+            exit 1
+          fi
 
   audit:
     runs-on: ubuntu-24.04

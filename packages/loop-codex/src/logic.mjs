@@ -1,3 +1,4 @@
+import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
 
 const AUTO_COMPACT_RATIO = 0.9;
@@ -13,7 +14,7 @@ Include:
 
 Be concise, structured, and focused on helping the next LLM seamlessly continue the work.`;
 
-const SUMMARY_PREFIX = `Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:`;
+const SUMMARY_PREFIX = `Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the kv of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:`;
 
 const estimateTokens = (messages) => Math.ceil(JSON.stringify(messages).length / 4);
 const messageText = (message) => message.content.filter((block) => block.type === "text").map((block) => block.text).join("");
@@ -22,14 +23,16 @@ const isPlainUserMessage = (message) =>
 
 export async function runCodex(input, context) {
   const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
+  const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, input.slots.observed_sequence ?? 0);
-  const saved = input.slots.usage;
+  const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
+  const saved = input.kv.usage;
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
   const shouldCompact = () => options.compaction && usedTokens() >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
   const compact = async () => {
     const { message } = await context.model({
+      tools: [],
       messages: [...transcript, { role: "user", content: [{ type: "text", text: SUMMARIZATION_PROMPT }] }],
     });
     const kept = [];
@@ -50,7 +53,7 @@ export async function runCodex(input, context) {
   transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }] });
   for (;;) {
     if (shouldCompact()) await compact();
-    const response = await context.model({ messages: transcript });
+    const response = await context.model({ messages: transcript, tools: placement.definitions });
     usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
     const calls = response.message.content
@@ -58,11 +61,11 @@ export async function runCodex(input, context) {
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
-      return { transcript, slots: { usage, observed_sequence } };
+      return { transcript, kv: { usage, observed_sequence } };
     }
     const results = [];
     for (const call of calls) {
-      const [result] = await context.dispatch([call]);
+      const [result] = await context.dispatch([placement.invocation(call)]);
       results.push({
         type: "tool_result",
         tool_use_id: call.call_id,

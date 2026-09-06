@@ -17,10 +17,10 @@ Codex's remote/server-side compaction, TokenBudget feature, MCP hooks, steering 
 machinery are host concerns and are not ported.
 
 ```ts
-import { brainWasm } from "@aexhq/brain";
+import { brainEnv } from "@aexhq/brain";
 import { codex } from "@aexhq/agentloop-codex";
 
-const loopRuntime = brainWasm();
+const loopRuntime = brainEnv({ name: "brain" });
 const session = await brain.sessions.create({
   agentloop: codex({ env: loopRuntime, contextWindow: 200_000 }),
   model,
@@ -32,8 +32,14 @@ The component is built by this package's publisher. Brain consumes the resulting
 does not compile its JavaScript source.
 
 The loop reads paginated session Events before each turn and saves its observation cursor in
-slots. Interrupted turns and environment failures enter the transcript as runtime observations.
+kv. Interrupted turns and environment failures enter the transcript as runtime observations.
 A failed tool result goes back to the model with `is_error`; the loop does not retry it automatically.
-Brain can release execution between turns without losing this transcript or cursor. Physical
-browser and sandbox state follows the Environment provider's TTL and may be lost. The official
-`tool-env` inspection and lifecycle tool is planned after the MVP.
+Brain can release execution between turns without losing this transcript or cursor. The caller
+controls Environment lifetime; a browser closure or provider resource loss can still destroy its
+physical state.
+
+By default the model sees canonical Tool schemas. A Tool with multiple placements requires an
+explicit `placements: { toolName: "environmentName" }` option. Set
+`environmentSelection: "model"` to expose each Tool's authorized Environment names in its input
+schema. The loop unwraps that choice before dispatch; Brain validates the selected pair and the
+canonical input. Both modes use the same session Tool placements.

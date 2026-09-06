@@ -8,6 +8,6 @@ export const bash = tool({
   description: "Run a Bash command in the session Environment workspace.",
   input: bashInput,
   output: bashOutput,
-  needs: ["process"],
+  needs: ["pkg:apt/bash", "file:///workspace?access=write"],
   implementation: officialTool("bash"),
 });

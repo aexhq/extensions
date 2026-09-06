@@ -15,13 +15,13 @@ precompiled WebAssembly Components and run in Brain's built-in Wasmtime Environm
 Tools are interpreted by the external Environment driver selected by the application.
 
 ```ts
-import { brainWasm } from "@aexhq/brain";
+import { brainEnv } from "@aexhq/brain";
 import { awsMicroVm } from "@aexhq/env-aws-microvm";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash, read } from "@aexhq/tools";
 
-const loopRuntime = brainWasm();
-const workspace = awsMicroVm({ region: "eu-west-2" });
+const loopRuntime = brainEnv({ name: "brain" });
+const workspace = awsMicroVm({ name: "sandbox", url: process.env.ENVIRONMENT_URL, token: process.env.ENVIRONMENT_TOKEN, region: "eu-west-2" });
 
 const session = await brain.sessions.create({
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
@@ -38,7 +38,7 @@ Application-resident Tools use the same public factory with `run`. Their code ex
 application process, and `ctx.emit` records application-defined events in the session journal.
 
 ```ts
-import { tool } from "@aexhq/brain";
+import { hostEnv, tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const notify = tool({
@@ -51,13 +51,15 @@ const notify = tool({
   },
 });
 
-const tools = [notify()];
+const tools = [notify({ env: hostEnv({ name: "app" }) })];
 ```
 
 ## Brain runtime boundary
 
 These packages consume Brain's public SDK and contracts. Brain is independently usable without
 this repository or Aex. The loops run in fresh Wasm stores, keep transcript and policy state in
-returned slots, and read interruption/environment Events before asking the model to continue.
-Environment providers own physical expiry and resource recovery. The entire `tool-env` tool,
-mutable bindings, and unbound-tool placement are post-MVP.
+returned kv, and read interruption/environment Events before asking the model to continue.
+Callers control Environment lifetime through setup, detach, and teardown. Providers implement
+those operations and enforce their physical resource ceilings. A Tool can be declared in several
+named Environments; the loop either selects a configured placement or presents authorized choices
+to the model. See the loop packages' `placements` and `environmentSelection` options.
