@@ -48,7 +48,7 @@ jobs:
             -e BRAIN_API_TOKEN=extension-fixture-token \
             -e BRAIN_LISTEN=127.0.0.1:18092 \
             -e BRAIN_MODEL_BASE_URL=http://127.0.0.1:18093/v1 \
-            "ghcr.io/aexhq/brain:$brain_ref"
+            "ghcr.io/aexhq/brain:sha-$brain_ref"
           trap 'docker rm -f extension-brain >/dev/null' EXIT
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:18092/health/ready >/dev/null; then break; fi
