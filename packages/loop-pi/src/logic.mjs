@@ -45,6 +45,8 @@ const text = (message) => message.content.filter((block) => block.type === "text
 const blockText = (block) => {
   if (block.type === "text") return block.text;
   if (block.type === "tool_use") return `[tool_use ${block.name}] ${JSON.stringify(block.input)}`;
+  if (block.type === "native") return `[provider continuation state: ${block.format}]`;
+  if (block.type === "image") return block.url.startsWith("https://") ? `[image ${block.url}]` : "[embedded image]";
   const output = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
   return `[tool_result${block.is_error ? " (error)" : ""}] ${output.length > 2000 ? `${output.slice(0, 2000)}…` : output}`;
 };
@@ -64,6 +66,7 @@ export async function runPi(input, context) {
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
   const saved = input.kv.checkpoint;
+  await context.setKv("observed_sequence", observed_sequence);
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
   const shouldCompact = () =>
@@ -87,27 +90,36 @@ export async function runPi(input, context) {
     if (cut === 0) return;
     const previous = checkpoint.summary === null ? "" : `Previous summary:\n\n${checkpoint.summary}\n\n`;
     const prompt = checkpoint.summary === null ? SUMMARIZATION_PROMPT : `${UPDATE_RULES}${SUMMARIZATION_PROMPT}`;
-    const { message } = await context.model({
+    const { message, stop_reason } = await context.model({
+      response_format: null,
       tools: [],
       messages: [{ role: "user", content: [{ type: "text", text: `${previous}${serializeConversation(messages.slice(0, cut))}\n\n${prompt}` }] }],
     });
+    if (stop_reason !== "end_turn") throw new Error(`Compaction did not complete: ${stop_reason}`);
     checkpoint.summary = text(message);
     transcript.splice(0, transcript.length,
       { role: "user", content: [{ type: "text", text: `${CHECKPOINT_PREFIX}${checkpoint.summary}` }] },
       ...messages.slice(cut));
   };
 
-  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }] });
+  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
   for (;;) {
-    if (shouldCompact()) await compact();
+    await context.setTranscript(transcript);
+    if (shouldCompact()) {
+      await compact();
+      await context.setTranscript(transcript);
+      await context.setKv("checkpoint", checkpoint);
+    }
     const { message, stop_reason } = await context.model({ messages: transcript, tools: placement.definitions });
     transcript.push(message);
+    await context.setTranscript(transcript);
+    await context.setKv("checkpoint", checkpoint);
     const calls = message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: text(message) });
-      return { transcript, kv: { checkpoint, observed_sequence } };
+      return {};
     }
     if (stop_reason === "max_tokens") {
       transcript.push({

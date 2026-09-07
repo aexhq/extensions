@@ -57,9 +57,15 @@ const tools = [notify({ env: hostEnv({ name: "app" }) })];
 ## Brain runtime boundary
 
 These packages consume Brain's public SDK and contracts. Brain is independently usable without
-this repository or Aex. The loops run in fresh Wasm stores, keep transcript and policy state in
-returned kv, and read interruption/environment Events before asking the model to continue.
+this repository or Aex. The loops run in fresh Wasm stores, save transcript and kv inline through
+Brain's durable state services, and read interruption/environment Events before asking the model to continue.
 Callers control Environment lifetime through setup, detach, and teardown. Providers implement
 those operations and enforce their physical resource ceilings. A Tool can be declared in several
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
+
+Version 4 packages use Brain 0.19.0 and its new Agentloop WIT. Update the server alongside the SDK
+and extensions, and recreate sessions with the rebuilt loop Components. A turn returns only its
+result; acknowledged state writes survive later failures. See
+[ADR-045](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-07-01-protocol-freeze.md)
+for the protocol changes, compatibility limits, and deferred work.

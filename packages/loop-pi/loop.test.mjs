@@ -6,9 +6,11 @@ import { runPi } from "./src/logic.mjs";
 // A fake Brain: model answers come off a script, dispatches are recorded and
 // answered from a table, appends are recorded.
 const host = (responses, { results = {} } = {}) => {
-  const record = { requests: [], dispatches: [], emitted: [] };
+  const record = { requests: [], dispatches: [], emitted: [], transcript: [], kv: {}, writes: [] };
   return {
     record,
+    setTranscript(messages) { record.transcript = structuredClone(messages); record.writes.push("transcript"); },
+    setKv(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
     events: (after) => ({ events: [], next_cursor: after }),
     model(request) {
       record.requests.push(structuredClone(request));
@@ -29,8 +31,9 @@ const host = (responses, { results = {} } = {}) => {
   };
 };
 
-const turn = (message, fake, { transcript = [], kv = {}, configuration = {} } = {}) =>
-  runPi({
+const turn = async (message, fake, { transcript = [], kv = {}, configuration = {} } = {}) => {
+  fake.record.kv = structuredClone(kv);
+  await runPi({
     input: { message },
     transcript,
     kv,
@@ -39,6 +42,8 @@ const turn = (message, fake, { transcript = [], kv = {}, configuration = {} } = 
     system: "",
     tools: ["bash", "read", "ls", "write"].map((name) => ({ name, description: name, input_schema: { type: "object" }, environments: ["sandbox"] })),
   }, fake);
+  return { transcript: fake.record.transcript, kv: fake.record.kv };
+};
 
 const assistant = (content, stop_reason = "end_turn", usage = {}) => ({
   message: { role: "assistant", content },

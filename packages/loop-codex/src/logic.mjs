@@ -26,15 +26,18 @@ export async function runCodex(input, context) {
   const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
+  await context.setKv("observed_sequence", observed_sequence);
   const saved = input.kv.usage;
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
   const shouldCompact = () => options.compaction && usedTokens() >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
   const compact = async () => {
-    const { message } = await context.model({
+    const { message, stop_reason } = await context.model({
+      response_format: null,
       tools: [],
       messages: [...transcript, { role: "user", content: [{ type: "text", text: SUMMARIZATION_PROMPT }] }],
     });
+    if (stop_reason !== "end_turn") throw new Error(`Compaction did not complete: ${stop_reason}`);
     const kept = [];
     let budget = COMPACT_USER_MESSAGE_MAX_TOKENS;
     for (let index = transcript.length - 1; index >= 0; index -= 1) {
@@ -50,18 +53,25 @@ export async function runCodex(input, context) {
     usage.lastTokens = 0;
   };
 
-  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }] });
+  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
   for (;;) {
-    if (shouldCompact()) await compact();
+    await context.setTranscript(transcript);
+    if (shouldCompact()) {
+      await compact();
+      await context.setTranscript(transcript);
+      await context.setKv("usage", usage);
+    }
     const response = await context.model({ messages: transcript, tools: placement.definitions });
     usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
+    await context.setTranscript(transcript);
+    await context.setKv("usage", usage);
     const calls = response.message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
       await context.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
-      return { transcript, kv: { usage, observed_sequence } };
+      return {};
     }
     const results = [];
     for (const call of calls) {
