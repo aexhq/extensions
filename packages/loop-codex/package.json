@@ -30,7 +30,8 @@
   ],
   "scripts": {
     "build": "node ../../tools/build-agentloop.mjs src/component.mjs src/index.mjs dist",
-    "test": "npm run build && node --test",
+    "test": "npm run build && node --test *.test.mjs",
+    "test:journeys": "node --test test/journeys.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

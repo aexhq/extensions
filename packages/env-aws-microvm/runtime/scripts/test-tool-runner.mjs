@@ -207,8 +207,9 @@ test("the grep bundle drives ripgrep", async () => {
       return;
     }
     await writeFile(join(directory, "a.txt"), "needle\n");
-    assert.deepEqual(await invoke("grep", directory, "grep", { pattern: "needle" }), {
-      matches: [`${process.platform === "win32" ? ".\\" : ""}a.txt:1:needle`],
+    const found = await invoke("grep", directory, "grep", { pattern: "needle" });
+    assert.deepEqual({ ...found, matches: found.matches.map((line) => line.replace(/^\.[\\/]/u, "")) }, {
+      matches: ["a.txt:1:needle"],
       truncated: false,
     });
     assert.deepEqual(await invoke("grep", directory, "grep-empty", { pattern: "absent" }), {

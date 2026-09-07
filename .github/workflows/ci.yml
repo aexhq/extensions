@@ -39,7 +39,7 @@ jobs:
           echo "BRAIN_PACKAGE_ARCHIVE=$RUNNER_TEMP/$brain_archive" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run package-smoke
-      - name: Execute the built Agentloops through the pinned Brain image
+      - name: Run each extension's journeys through the pinned Brain image
         shell: bash
         run: |
           set -euo pipefail
@@ -55,7 +55,7 @@ jobs:
             test "$attempt" -lt 60
             sleep 1
           done
-          if ! timeout 300 node tools/check-native-loops.mjs; then
+          if ! timeout 300 npm run test:journeys; then
             docker logs extension-brain
             exit 1
           fi
