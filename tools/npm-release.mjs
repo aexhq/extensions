@@ -76,8 +76,8 @@ async function pack(directory) {
     const packageDocument = await document(workspace);
     if (packageDocument.publishConfig?.access !== "public" ||
         packageDocument.publishConfig?.tag !== "next" ||
-        packageDocument.publishConfig?.provenance !== false) {
-      throw new Error(`${packageDocument.name} must publish publicly without provenance under the next dist-tag`);
+        packageDocument.publishConfig?.provenance !== true) {
+      throw new Error(`${packageDocument.name} must publish publicly with provenance under the next dist-tag`);
     }
     const spec = `${packageDocument.name}@${packageDocument.version}`;
     const released = releasedIntegrity(spec);
