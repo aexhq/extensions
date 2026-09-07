@@ -7,7 +7,6 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const workspaces = [
-  "env-aws-microvm",
   "loop-codex",
   "loop-pi",
   "tools",

@@ -23,7 +23,7 @@ const pack = (directory) => {
 try {
   await mkdir(artifacts);
   await mkdir(consumer);
-  const packages = ["env-aws-microvm", "loop-codex", "loop-pi", "tools"]
+  const packages = ["loop-codex", "loop-pi", "tools"]
     .map((name) => pack(path.join(root, "packages", name)));
   if (process.env.BRAIN_PACKAGE_ARCHIVE !== undefined) packages.unshift(path.resolve(process.env.BRAIN_PACKAGE_ARCHIVE));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
@@ -33,9 +33,8 @@ try {
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  Brain, brainEnv, inspectAgentloop, inspectEnvironment, inspectTool, hostEnv, tool,
+  Brain, brainEnv, environment, inspectAgentloop, inspectTool, hostEnv, tool,
 } from "@aexhq/brain";
-import { awsMicroVm } from "@aexhq/env-aws-microvm";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
 import { read } from "@aexhq/tools";
@@ -53,8 +52,7 @@ const resident = tool({
 })({ env: hostEnv({ name: "app" }) });
 assert.equal(inspectTool(resident)?.definition.name, "create_invoice");
 const loopRuntime = brainEnv({ name: "brain" });
-const workspace = awsMicroVm({ name: "sandbox", url: "https://sandbox.example", token: "test", region: "eu-west-2" });
-assert.equal(inspectEnvironment(workspace).configuration.driver, "aws-microvm");
+const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
 assert.deepEqual(readSource.implementation, { type: "aex_official_tool", version: 1, name: "read" });
@@ -76,14 +74,13 @@ console.log("packed extension packages compose through the public Brain contract
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
   assert.match(output, /public Brain contracts/u);
-  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv } from "@aexhq/brain";
-import { awsMicroVm } from "@aexhq/env-aws-microvm";
+  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash, read, write } from "@aexhq/tools";
 
 const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const loopRuntime = brainEnv({ name: "brain" });
-const workspace = awsMicroVm({ name: "sandbox", url: "https://sandbox.example", token: "test", region: "eu-west-2" });
+const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
   agentloop: pi({ env: loopRuntime }),
