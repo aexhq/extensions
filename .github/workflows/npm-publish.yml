@@ -91,6 +91,10 @@ jobs:
           toolchain: "1.97.1"
       - run: npm install --global npm@11.19.0
       - run: npm ci
+      - name: Install Tool test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
       - run: npm test
 
   stage-package-smoke:
