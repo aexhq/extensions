@@ -1,6 +1,6 @@
 # extensions
 
-Official Agentloop, Tool, and Environment extensions for Aex. They use only the public
+Official Agentloop and Tool extensions for Aex. They use only the public
 `@aexhq/brain` extension API.
 
 | package | role |
@@ -8,20 +8,18 @@ Official Agentloop, Tool, and Environment extensions for Aex. They use only the 
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
 | `@aexhq/tools` | Model-visible Tool definitions with Environment-side implementations |
-| `@aexhq/env-aws-microvm` | AWS MicroVM Environment driver configuration |
 
 Every placed Agentloop and Tool names its Environment explicitly. The loop packages ship
 precompiled WebAssembly Components and run in Brain's built-in Wasmtime Environment; workspace
-Tools are interpreted by the external Environment driver selected by the application.
+Tools require an application-supplied Environment that executes their implementation descriptors.
 
 ```ts
-import { brainEnv } from "@aexhq/brain";
-import { awsMicroVm } from "@aexhq/env-aws-microvm";
+import { brainEnv, environment } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash, read } from "@aexhq/tools";
 
 const loopRuntime = brainEnv({ name: "brain" });
-const workspace = awsMicroVm({ name: "sandbox", url: process.env.ENVIRONMENT_URL, token: process.env.ENVIRONMENT_TOKEN, region: "eu-west-2" });
+const workspace = environment({ url: () => process.env.ENVIRONMENT_URL! })({ name: "workspace" });
 
 const session = await brain.sessions.create({
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
@@ -33,6 +31,9 @@ const session = await brain.sessions.create({
 Brain accepts components and opaque driver implementations; it does not compile extension source
 or install language packages. Each extension publisher owns its build, while the chosen
 Environment owns execution and resource enforcement.
+
+The workspace example requires your own Environment server; this repository does not provide a sandbox.
+Hosted Aex currently supports Brain's Wasm Environment and application `hostEnv` Tools.
 
 Application-resident Tools use the same public factory with `run`. Their code executes in the
 application process, and `ctx.emit` records application-defined events in the session journal.
@@ -75,8 +76,8 @@ for the protocol changes, compatibility limits, and deferred work.
 Each loop owns its factory/logic tests and `test/journeys.mjs`; shared journey fixtures register
 the same contract scenarios separately for Pi and Codex. Tools owns factory tests, built-runtime
 integration tests for all eight Tools, and public-SDK workspace journeys under `packages/tools/test`.
-The Tools journeys use a local HTTP Environment fixture that executes the packaged runtimes;
-they do not provision AWS or validate MicroVM isolation.
+The Tools journeys use a local HTTP Environment fixture that executes the packaged runtimes
+and verifies their results through Brain.
 
 Run `npm test` for unit/runtime tests and `npm run package-smoke` for packed consumer composition.
 With the pinned Brain server listening on `127.0.0.1:18092`, token `extension-fixture-token`, and

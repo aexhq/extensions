@@ -12,9 +12,6 @@ concurrency:
   group: extensions-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  RUNTIME: packages/env-aws-microvm/runtime
-
 jobs:
   packages:
     runs-on: ubuntu-24.04
@@ -74,69 +71,15 @@ jobs:
       # Reads package-lock.json; no install, so a slow registry costs this job alone.
       - run: npm audit --audit-level=high
 
-  runtime-format-clippy:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.97.1"
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: packages/env-aws-microvm/runtime -> target
-      - run: cargo fmt --manifest-path "$RUNTIME/Cargo.toml" --all -- --check
-      - run: cargo clippy --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets -- -D warnings
-
-  runtime-test:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.97.1"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: packages/env-aws-microvm/runtime -> target
-      - run: cargo test --manifest-path "$RUNTIME/Cargo.toml" --workspace --all-targets --locked
-
-  linux-environment-image:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.97.1"
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: packages/env-aws-microvm/runtime -> target
-      - run: cargo build --manifest-path "$RUNTIME/Cargo.toml" -p environment-guest --release --locked
-      - name: Build and inspect the native image
-        working-directory: packages/env-aws-microvm/runtime
-        run: |
-          set -euo pipefail
-          docker build -f image/Dockerfile --build-arg BIN=target/release/environment-guest -t environment:ci .
-          docker run --rm --entrypoint sh --user 0:0 environment:ci -ceu '
-            test -z "$(find / -xdev -type f -perm /6000 -print -quit)"
-            test -z "$(getcap -r / 2>/dev/null || true)"
-            test "$(stat -c "%u:%g:%a" /var/environment)" = "1001:1000:710"
-          '
-
   build-test:
     if: always()
-    needs: [packages, audit, runtime-format-clippy, runtime-test, linux-environment-image]
+    needs: [packages, audit]
     runs-on: ubuntu-24.04
     steps:
       - name: Every release gate passed
         env:
           PACKAGES: ${{ needs.packages.result }}
           AUDIT: ${{ needs.audit.result }}
-          LINT: ${{ needs.runtime-format-clippy.result }}
-          TEST: ${{ needs.runtime-test.result }}
-          IMAGE: ${{ needs.linux-environment-image.result }}
         run: |
           test "$PACKAGES" = success
           test "$AUDIT" = success
-          test "$LINT" = success
-          test "$TEST" = success
-          test "$IMAGE" = success

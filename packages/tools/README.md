@@ -3,10 +3,10 @@
 Official placed Tool definitions for Brain.
 
 ```js
-import { awsMicroVm } from "@aexhq/env-aws-microvm";
+import { environment } from "@aexhq/brain";
 import { bash, edit, read, write } from "@aexhq/tools";
 
-const workspace = awsMicroVm({ name: "sandbox", url: process.env.ENVIRONMENT_URL, token: process.env.ENVIRONMENT_TOKEN, region: "eu-west-2" });
+const workspace = environment({ url: () => process.env.ENVIRONMENT_URL })({ name: "workspace" });
 const tools = [
   read({ env: workspace }),
   edit({ env: workspace }),
@@ -23,9 +23,9 @@ Brain validates and transports that contract; the selected Environment driver mu
 descriptor and perform the operation within its own workspace and resource limits. Brain neither
 installs Node packages nor compiles the implementation.
 
-This package's build also emits the publisher-owned Node 22 bundles and a manifest-digest registry
-used by the AWS MicroVM driver. Those deployment artifacts are not a Brain SDK compiler output and
-are never loaded into the Brain process.
+The build emits Node 22 bundles and a manifest-digest registry for Environment implementations.
+You supply the Environment server and its workspace isolation; this package does not provide a sandbox.
+These runtime bundles execute outside the Brain process.
 
 | Tool | Needs |
 | --- | --- |

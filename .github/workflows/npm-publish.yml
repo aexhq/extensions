@@ -86,9 +86,6 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.97.1"
       - run: npm install --global npm@11.19.0
       - run: npm ci
       - name: Install Tool test dependencies

@@ -1,4 +1,0 @@
-target/*
-!target/release
-target/release/*
-!target/release/environment-guest
