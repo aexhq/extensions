@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runPi } from "../packages/loop-pi/src/logic.mjs";
-import { runCodex } from "../packages/loop-codex/src/logic.mjs";
 
-for (const run of [runPi, runCodex]) {
+export function loopStateTests(run) {
   const input = (configuration = {}) => ({ input: { message: "continue", media: [{ type: "image", url: "https://example.com/view.png" }] }, transcript: [], kv: {}, configuration, tools: [] });
   const host = () => {
     const saved = { transcript: [], kv: {} };
@@ -31,6 +29,20 @@ for (const run of [runPi, runCodex]) {
       return { message: { role: "assistant", content: [{ type: "text", text: "continued" }] }, stop_reason: "end_turn", usage: {} };
     };
     await run({ ...input({ compaction: false }), ...restored }, context);
+  });
+  test(`${run.name} saves Tool errors intact before a later model failure`, async () => {
+    const context = host();
+    const failure = { code: "unavailable", message: "choose another action", retryable: false, details: { environment: "sandbox" } };
+    let modelCalls = 0;
+    let dispatches = 0;
+    context.model = () => {
+      if (modelCalls++ === 0) return { message: { role: "assistant", content: [{ type: "tool_use", id: "call-1", name: "lookup", input: {} }] }, stop_reason: "tool_use", usage: {} };
+      throw new Error("provider disconnected after Tool completion");
+    };
+    context.dispatch = () => { dispatches++; return [{ call_id: "call-1", output: failure, is_error: true }]; };
+    await assert.rejects(run({ ...input({ compaction: false }), tools: [{ name: "lookup", environments: ["sandbox"], input_schema: { type: "object" } }] }, context), /provider disconnected/u);
+    assert.equal(dispatches, 1);
+    assert.deepEqual(context.saved.transcript.at(-1).content, [{ type: "tool_result", tool_use_id: "call-1", content: failure, is_error: true }]);
   });
   for (const stop_reason of ["max_tokens", "refusal", "unknown"]) {
     test(`${run.name} keeps original context when compaction stops with ${stop_reason}`, async () => {

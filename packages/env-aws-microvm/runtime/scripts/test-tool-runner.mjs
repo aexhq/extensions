@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -187,28 +187,13 @@ test("all filesystem Tool bundles preserve their behavior across fresh runner pr
   }
 });
 
-const has = (command, args) => {
-  try {
-    execFileSync(command, args, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 test("the grep bundle drives ripgrep", async () => {
   const directory = await mkdtemp(join(tmpdir(), "environment-runner-grep-"));
   try {
-    if (!has("rg", ["--version"])) {
-      const prepared = await fixture("grep");
-      const ran = await execute(prepared.path, request(prepared, directory, "grep-invalid", { pattern: "" }));
-      assert.equal(ran.status.code, 1);
-      assert.equal(ran.result.ok, false);
-      return;
-    }
     await writeFile(join(directory, "a.txt"), "needle\n");
-    assert.deepEqual(await invoke("grep", directory, "grep", { pattern: "needle" }), {
-      matches: [`${process.platform === "win32" ? ".\\" : ""}a.txt:1:needle`],
+    const found = await invoke("grep", directory, "grep", { pattern: "needle" });
+    assert.deepEqual({ ...found, matches: found.matches.map((line) => line.replace(/^\.[\\/]/u, "")) }, {
+      matches: ["a.txt:1:needle"],
       truncated: false,
     });
     assert.deepEqual(await invoke("grep", directory, "grep-empty", { pattern: "absent" }), {
@@ -224,13 +209,6 @@ test("the grep bundle drives ripgrep", async () => {
 test("the bash bundle executes in its workspace", async () => {
   const directory = await mkdtemp(join(tmpdir(), "environment-runner-bash-"));
   try {
-    if (!has("bash", ["--version"])) {
-      const prepared = await fixture("bash");
-      const ran = await execute(prepared.path, request(prepared, directory, "bash-invalid", { command: "" }));
-      assert.equal(ran.status.code, 1);
-      assert.equal(ran.result.ok, false);
-      return;
-    }
     assert.deepEqual(await invoke("bash", directory, "bash", { command: "printf AEX_BASH_OK" }), {
       exit_code: 0,
       stdout: "AEX_BASH_OK",

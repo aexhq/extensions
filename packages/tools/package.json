@@ -31,7 +31,8 @@
   ],
   "scripts": {
     "build": "node ../../tools/clean-dist.mjs && tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node ../../tools/build-tool-runtimes.mjs",
-    "test": "npm run build && node --test",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:journeys": "node --test test/journeys.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

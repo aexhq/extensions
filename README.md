@@ -69,3 +69,18 @@ and extensions, and recreate sessions with the rebuilt loop Components. A turn r
 result; acknowledged state writes survive later failures. See
 [ADR-045](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-07-01-protocol-freeze.md)
 for the protocol changes, compatibility limits, and deferred work.
+
+## Tests
+
+Each loop owns its factory/logic tests and `test/journeys.mjs`; shared journey fixtures register
+the same contract scenarios separately for Pi and Codex. Tools owns factory tests, built-runtime
+integration tests for all eight Tools, and public-SDK workspace journeys under `packages/tools/test`.
+The Tools journeys use a local HTTP Environment fixture that executes the packaged runtimes;
+they do not provision AWS or validate MicroVM isolation.
+
+Run `npm test` for unit/runtime tests and `npm run package-smoke` for packed consumer composition.
+With the pinned Brain server listening on `127.0.0.1:18092`, token `extension-fixture-token`, and
+model base URL `http://127.0.0.1:18093/v1`, run `npm run test:journeys`. Each of these three packages
+also exposes `npm run test:journeys --workspace <package>`. CI starts the pinned Brain image and
+runs every journey. Bash and ripgrep must be installed; their runtime tests fail if unavailable.
+Scripted model responses make these release gates deterministic; they do not measure live model quality.
