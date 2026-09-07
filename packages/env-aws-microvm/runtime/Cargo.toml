@@ -20,8 +20,8 @@ repository = "https://github.com/aexhq/extensions"
 [workspace.dependencies]
 # The public Environment adapter resolves Brain packages from one immutable source identity so it
 # can build without a sibling checkout and cannot drift across contracts.
-brain = { git = "https://github.com/aexhq/brain.git", rev = "8fcfa8d9b0c9b58e09664fa6b739d80de952e708" }
-brain-protocol = { git = "https://github.com/aexhq/brain.git", rev = "8fcfa8d9b0c9b58e09664fa6b739d80de952e708" }
+brain = { git = "https://github.com/aexhq/brain.git", rev = "039c3b843e83dd5a7fc859bbd91cc4833fe74223" }
+brain-protocol = { git = "https://github.com/aexhq/brain.git", rev = "039c3b843e83dd5a7fc859bbd91cc4833fe74223" }
 anyhow = "1"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "credentials-process", "default-https-client", "rt-tokio", "sso"] }

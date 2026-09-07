@@ -43,3 +43,12 @@ explicit `placements: { toolName: "environmentName" }` option. Set
 `environmentSelection: "model"` to expose each Tool's authorized Environment names in its input
 schema. The loop unwraps that choice before dispatch; Brain validates the selected pair and the
 canonical input. Both modes use the same session Tool placements.
+
+Transcript and kv changes are saved inline through Brain's state services. A later model or
+Tool failure preserves acknowledged writes; turn output contains only the result. Retained
+native model blocks pass through unchanged, and user images enter model context as media.
+Compaction explicitly resets the response format and installs a summary only after `end_turn`;
+a truncated, refused, or unknown summary leaves the original saved context intact.
+
+Rebuild Components against the matching Brain WIT when upgrading. Existing sessions keep their
+immutable loop implementation and must be recreated for this interface change.

@@ -25,6 +25,8 @@ export async function turn(input) {
       system: input.system,
       tools: JSON.parse(input.toolsJson),
     }, {
+      setTranscript: (messages) => hosted(() => host.setTranscript(JSON.stringify(messages))),
+      setKv: (key, value) => hosted(() => host.setKv(key, JSON.stringify(value))),
       events: (after) => JSON.parse(hosted(() => host.events(BigInt(after)))),
       model: (request) => JSON.parse(hosted(() => host.model(JSON.stringify(request)))),
       dispatch: (calls) => JSON.parse(hosted(() => host.dispatch(JSON.stringify(calls)))),
@@ -32,8 +34,6 @@ export async function turn(input) {
       telemetry: (record) => host.telemetry(JSON.stringify(record ?? null)),
     });
     return {
-      transcriptJson: JSON.stringify(output.transcript),
-      kvJson: JSON.stringify(output.kv),
       resultJson: output.result === undefined ? undefined : JSON.stringify(output.result),
     };
   } catch (error) {

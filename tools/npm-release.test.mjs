@@ -23,19 +23,19 @@ test("an unpublished exact version requires a release archive", () => {
   assert.equal(releasePlan("@aexhq/tools", "2.0.0", undefined).shouldPack, true);
 });
 
-test("every private-repository package explicitly disables npm provenance", async () => {
+test("every public-repository package enables npm provenance", async () => {
   for (const workspace of ["env-aws-microvm", "loop-codex", "loop-pi", "tools"]) {
     const document = JSON.parse(await readFile(
       path.join(root, "packages", workspace, "package.json"),
       "utf8",
     ));
-    assert.equal(document.publishConfig.provenance, false, document.name);
+    assert.equal(document.publishConfig.provenance, true, document.name);
   }
 });
 
-test("the private-repository publisher never requests npm provenance", async () => {
+test("the public-repository publisher requests npm provenance with an OIDC grant", async () => {
   const publisher = await readFile(path.join(root, "tools", "publish.mjs"), "utf8");
   const workflow = await readFile(path.join(root, ".github", "workflows", "npm-publish.yml"), "utf8");
-  assert.doesNotMatch(publisher, /--provenance/u);
-  assert.doesNotMatch(workflow, /with provenance/u);
+  assert.match(publisher, /--provenance/u);
+  assert.match(workflow, /id-token: write/u);
 });

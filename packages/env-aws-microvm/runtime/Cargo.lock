@@ -207,7 +207,7 @@ dependencies = [
  "aws-sdk-dynamodb",
  "aws-sdk-kms",
  "aws-sdk-lambdamicrovms",
- "base64",
+ "base64 0.22.1",
  "brain",
  "brain-protocol",
  "environment-core",
@@ -727,7 +727,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
- "base64",
+ "base64 0.22.1",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -786,6 +786,12 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "base64-simd"
@@ -851,9 +857,10 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 [[package]]
 name = "brain"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=8fcfa8d9b0c9b58e09664fa6b739d80de952e708#8fcfa8d9b0c9b58e09664fa6b739d80de952e708"
+source = "git+https://github.com/aexhq/brain.git?rev=039c3b843e83dd5a7fc859bbd91cc4833fe74223#039c3b843e83dd5a7fc859bbd91cc4833fe74223"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "brain-protocol",
  "brain-telemetry",
  "clap",
@@ -875,7 +882,7 @@ dependencies = [
 [[package]]
 name = "brain-protocol"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=8fcfa8d9b0c9b58e09664fa6b739d80de952e708#8fcfa8d9b0c9b58e09664fa6b739d80de952e708"
+source = "git+https://github.com/aexhq/brain.git?rev=039c3b843e83dd5a7fc859bbd91cc4833fe74223#039c3b843e83dd5a7fc859bbd91cc4833fe74223"
 dependencies = [
  "hex",
  "schemars",
@@ -888,7 +895,7 @@ dependencies = [
 [[package]]
 name = "brain-telemetry"
 version = "0.1.0"
-source = "git+https://github.com/aexhq/brain.git?rev=8fcfa8d9b0c9b58e09664fa6b739d80de952e708#8fcfa8d9b0c9b58e09664fa6b739d80de952e708"
+source = "git+https://github.com/aexhq/brain.git?rev=039c3b843e83dd5a7fc859bbd91cc4833fe74223#039c3b843e83dd5a7fc859bbd91cc4833fe74223"
 dependencies = [
  "async-trait",
  "brain-protocol",
@@ -1365,7 +1372,7 @@ dependencies = [
  "aws-microvm-controller",
  "aws-sdk-dynamodb",
  "axum",
- "base64",
+ "base64 0.22.1",
  "brain",
  "brain-protocol",
  "environment-wire",
@@ -1388,7 +1395,7 @@ dependencies = [
 name = "environment-egress-gateway"
 version = "0.1.0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "hickory-resolver",
  "idna",
  "ipnet",
@@ -1407,7 +1414,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64",
+ "base64 0.22.1",
  "brain",
  "brain-protocol",
  "environment-core",
@@ -2000,7 +2007,7 @@ version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -2953,7 +2960,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-core",
  "futures-util",

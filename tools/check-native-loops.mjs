@@ -43,9 +43,11 @@ try {
         tools: [lookup({ env: hostEnv({ name: "left" }), where: "left" }), lookup({ env: hostEnv({ name: "right" }), where: "right" })],
       });
       try {
-        assert.equal((await session.send("lookup on the right")).status, "idle");
+        const media = [{ type: "image", url: "https://example.com/view.png" }];
+        assert.equal((await session.send({ message: "lookup on the right", media })).status, "idle");
         assert.deepEqual(called, ["right"]);
         assert.equal(requests.length, 2);
+        assert.deepEqual(requests[0].messages[0].content[1], { type: "image_url", image_url: { url: media[0].url } });
         const parameters = requests[0].tools[0].function.parameters;
         if (selection === "model") assert.deepEqual(parameters.properties.environment.enum, ["left", "right"]);
         else assert.equal(parameters.properties.environment, undefined);
