@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -98,4 +98,33 @@ test("Tools: a missing-file error lets the model choose the next operation", { t
   await session.send("Read the file, creating it if needed");
   assert.deepEqual(w.executed, ["read", "write"]);
   assert.equal(await readFile(join(w.directory, "new.txt"), "utf8"), "created by explicit model choice");
+});
+
+test("Tools: a todo conflict is journaled and lets the model choose to read instead", { timeout: 30_000 }, async (t) => {
+  const f = await fixture(t, [
+    () => calls(["todo", { action: "set", items: [{ text: "replacement", done: false }] }]),
+    body => {
+      const content = body.messages.at(-1).content;
+      assert.match(content, /^ERROR: /u);
+      assert.match(JSON.parse(content.slice("ERROR: ".length)).message, /Todo write conflict/u);
+      return calls(["todo", { action: "get" }]);
+    },
+    body => {
+      assert.deepEqual(JSON.parse(body.messages.at(-1).content), { items: [{ text: "original", done: false }] });
+      return answer("The write conflicted; the original todo list is still present.");
+    },
+  ]);
+  const w = await workspace(t);
+  await mkdir(join(w.directory, ".aex"));
+  await writeFile(join(w.directory, ".aex/todo.json"), JSON.stringify([{ text: "original", done: false }]));
+  await writeFile(join(w.directory, ".aex/todo.pending"), "another writer owns this file", { flag: "wx" });
+  const session = await f.session(codex, { tools: w.tools });
+  await session.send("Update the todo list; inspect its state if the write conflicts");
+  assert.deepEqual(w.executed, ["todo", "todo"]);
+  const ends = (await collect(session.events())).filter(event => event.type === "tool_call_ended");
+  assert.equal(ends.length, 2);
+  assert.equal(ends[0].data.result.is_error, true);
+  assert.match(ends[0].data.result.output.message, /Todo write conflict/u);
+  assert.equal(ends[1].data.result.is_error, false);
+  assert.equal(await readFile(join(w.directory, ".aex/todo.pending"), "utf8"), "another writer owns this file");
 });

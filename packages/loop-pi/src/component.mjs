@@ -19,14 +19,20 @@ export async function turn(input) {
     const output = await runPi({
       input: JSON.parse(input.inputJson),
       transcript: JSON.parse(input.transcriptJson),
-      kv: JSON.parse(input.kvJson),
       events: JSON.parse(input.eventsJson),
       configuration: JSON.parse(input.configurationJson),
       system: input.system,
       tools: JSON.parse(input.toolsJson),
     }, {
       setTranscript: (messages) => hosted(() => host.setTranscript(JSON.stringify(messages))),
-      setKv: (key, value) => hosted(() => host.setKv(key, JSON.stringify(value))),
+      kv: {
+        read: (key) => {
+          const value = hosted(() => host.kvRead(key));
+          return value === undefined ? undefined : JSON.parse(value);
+        },
+        put: (key, value) => hosted(() => host.kvPut(key, JSON.stringify(value))),
+        delete: (key) => hosted(() => host.kvDelete(key)),
+      },
       events: (after) => JSON.parse(hosted(() => host.events(BigInt(after)))),
       model: (request) => JSON.parse(hosted(() => host.model(JSON.stringify(request)))),
       dispatch: (calls) => JSON.parse(hosted(() => host.dispatch(JSON.stringify(calls)))),

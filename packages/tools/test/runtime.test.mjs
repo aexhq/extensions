@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -62,6 +62,20 @@ test("ls/glob/grep: results are bounded and report truncation and no matches", a
   await assert.rejects(grep.execute({ pattern: "(" }, context), /regex|parse|unclosed/iu);
 });
 
+test("glob: double-star slash matches directories, not basename prefixes", async (t) => {
+  const context = await workspace(t);
+  const write = await runtime("write"), glob = await runtime("glob");
+  for (const path of ["package.json", "notpackage.json", "sub/package.json", "sub/notpackage.json", "sub/deep/package.json"]) {
+    await write.execute({ path, content: "{}" }, context);
+  }
+  assert.deepEqual(await glob.execute({ pattern: "**/package.json" }, context), {
+    paths: ["package.json", "sub/deep/package.json", "sub/package.json"], truncated: false,
+  });
+  assert.deepEqual(await glob.execute({ pattern: "sub/**/package.json" }, context), {
+    paths: ["sub/deep/package.json", "sub/package.json"], truncated: false,
+  });
+});
+
 test("todo: state persists between runtime calls and stays within the selected workspace", async (t) => {
   const first = await workspace(t), second = await workspace(t);
   const todo = await runtime("todo");
@@ -71,6 +85,32 @@ test("todo: state persists between runtime calls and stays within the selected w
   assert.deepEqual(await todo.execute({ action: "get" }, second), { items: [] });
   await writeFile(join(first.workspace, ".aex/todo.json"), "broken JSON");
   await assert.rejects(todo.execute({ action: "get" }, first), SyntaxError);
+});
+
+test("todo: a competing write fails explicitly without changing either file", async (t) => {
+  const context = await workspace(t), todo = await runtime("todo");
+  const original = { items: [{ text: "original", done: false }] };
+  await todo.execute({ action: "set", ...original }, context);
+  const pending = join(context.workspace, ".aex/todo.pending");
+  await writeFile(pending, "another writer owns this file", { flag: "wx" });
+  await assert.rejects(todo.execute({ action: "set", items: [{ text: "replacement" }] }, context), /Todo write conflict/u);
+  assert.deepEqual(await todo.execute({ action: "get" }, context), original);
+  assert.equal(await readFile(pending, "utf8"), "another writer owns this file");
+  await rm(pending);
+  const replacement = { items: [{ text: "explicit retry", done: false }] };
+  assert.deepEqual(await todo.execute({ action: "set", ...replacement }, context), replacement);
+});
+
+test("todo: failed replacement releases its pending write without retrying", async (t) => {
+  const context = await workspace(t), todo = await runtime("todo");
+  const target = join(context.workspace, ".aex/todo.json");
+  await mkdir(target, { recursive: true });
+  await assert.rejects(todo.execute({ action: "set", items: [{ text: "blocked" }] }, context), /EISDIR|EPERM|EACCES/u);
+  await assert.rejects(readFile(join(context.workspace, ".aex/todo.pending")), { code: "ENOENT" });
+  await rm(target, { recursive: true });
+  assert.deepEqual(await todo.execute({ action: "set", items: [{ text: "explicit retry" }] }, context), {
+    items: [{ text: "explicit retry", done: false }],
+  });
 });
 
 test("bash: runs in the workspace and preserves failure output", async (t) => {

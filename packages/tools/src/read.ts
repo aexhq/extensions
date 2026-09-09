@@ -8,6 +8,5 @@ export const read = tool({
   description: "Read UTF-8 text from a file in the Environment workspace.",
   input: readInput,
   output: readOutput,
-  needs: ["file:///workspace"],
   implementation: officialTool("read"),
 });

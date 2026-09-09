@@ -65,11 +65,16 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-Version 4 packages use Brain 0.19.0 and its new Agentloop WIT. Update the server alongside the SDK
-and extensions, and recreate sessions with the rebuilt loop Components. A turn returns only its
-result; acknowledged state writes survive later failures. See
-[ADR-045](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-07-01-protocol-freeze.md)
-for the protocol changes, compatibility limits, and deferred work.
+Version 5 packages use Brain 0.20.0 and its KV read/put/delete WIT. Update the server alongside
+the SDK and rebuilt extensions. Existing sessions keep their immutable loop implementation;
+retain their matching server/artifacts for recovery and explicitly create new sessions for
+this contract. No session data is migrated or deleted by these packages.
+
+Loops use `ctx.kv.read/put/delete`; acknowledged mutations survive later failures. Extension
+factories have no `needs`. The chosen Environment prepares ordinary package dependencies before
+imports and execution, and enforces its explicitly configured grants. There is no installer
+inside Brain and no automatic placement fallback. See
+[ADR-046](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-09-01-minimal-extension-contract.md).
 
 ## Tests
 

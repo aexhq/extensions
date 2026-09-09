@@ -25,9 +25,9 @@ export async function runCodex(input, context) {
   const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
   const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
-  await context.setKv("observed_sequence", observed_sequence);
-  const saved = input.kv.usage;
+  const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
+  await context.kv.put("observed_sequence", observed_sequence);
+  const saved = await context.kv.read("usage");
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
   const shouldCompact = () => options.compaction && usedTokens() >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
@@ -59,13 +59,13 @@ export async function runCodex(input, context) {
     if (shouldCompact()) {
       await compact();
       await context.setTranscript(transcript);
-      await context.setKv("usage", usage);
+      await context.kv.put("usage", usage);
     }
     const response = await context.model({ messages: transcript, tools: placement.definitions });
     usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
     await context.setTranscript(transcript);
-    await context.setKv("usage", usage);
+    await context.kv.put("usage", usage);
     const calls = response.message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));

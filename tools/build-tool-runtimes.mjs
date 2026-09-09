@@ -21,7 +21,6 @@ for (const name of Object.keys(definitions).sort()) {
     description: source.definition.description,
     input_schema: source.definition.inputSchema,
     ...(source.definition.outputSchema === undefined ? {} : { output_schema: source.definition.outputSchema }),
-    needs: [...source.needs],
     implementation: source.implementation,
   };
   const contractDigest = createHash("sha256").update(canonicalJson(manifest)).digest("hex");

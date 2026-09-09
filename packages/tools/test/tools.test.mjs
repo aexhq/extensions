@@ -5,24 +5,24 @@ import { environment, inspectTool } from "@aexhq/brain";
 import { bash, edit, glob, grep, ls, read, todo, write } from "../dist/index.js";
 
 const declarations = {
-  bash: { factory: bash, needs: ["pkg:apt/bash", "file:///workspace?access=write"] },
-  edit: { factory: edit, needs: ["file:///workspace?access=write"] },
-  glob: { factory: glob, needs: ["file:///workspace"] },
-  grep: { factory: grep, needs: ["pkg:apt/ripgrep", "file:///workspace"] },
-  ls: { factory: ls, needs: ["file:///workspace"] },
-  read: { factory: read, needs: ["file:///workspace"] },
-  todo: { factory: todo, needs: ["file:///workspace?access=write"] },
-  write: { factory: write, needs: ["file:///workspace?access=write"] },
+  bash: { factory: bash },
+  edit: { factory: edit },
+  glob: { factory: glob },
+  grep: { factory: grep },
+  ls: { factory: ls },
+  read: { factory: read },
+  todo: { factory: todo },
+  write: { factory: write },
 };
 
 test("official Tool factories bind explicit Environments and opaque implementations", () => {
   const env = environment({ url: () => "https://test.example" })({ name: "test" });
-  for (const [name, { factory, needs }] of Object.entries(declarations)) {
+  for (const [name, { factory }] of Object.entries(declarations)) {
     assert.throws(() => factory(), /requires \{ env \}/u, name);
     const source = inspectTool(factory({ env }));
     assert.equal(source.definition.name, name);
     assert.equal(source.environment, env);
-    assert.deepEqual(source.needs, needs);
+    assert.equal("needs" in source, false);
     assert.deepEqual(source.implementation, { type: "aex_official_tool", version: 1, name });
   }
 });

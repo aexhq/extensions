@@ -7,7 +7,11 @@ export function loopStateTests(run) {
     const saved = { transcript: [], kv: {} };
     return { saved, events: (after) => ({ events: [], next_cursor: after }),
       setTranscript: (messages) => { saved.transcript = structuredClone(messages); },
-      setKv: (key, value) => { saved.kv[key] = structuredClone(value); },
+      kv: {
+        read: (key) => structuredClone(saved.kv[key]),
+        put: (key, value) => { saved.kv[key] = structuredClone(value); },
+        delete: (key) => { delete saved.kv[key]; },
+      },
       emit() {}, telemetry() {},
     };
   };

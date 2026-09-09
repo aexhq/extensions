@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -55,8 +55,9 @@ function globPattern(pattern: string): RegExp {
     if (character === "*") {
       if (normalized[index + 1] === "*") {
         index += 1;
+        source += "(?:[^/]+/)*";
         if (normalized[index + 1] === "/") index += 1;
-        source += "(?:[^/]+/)*[^/]*";
+        else source += "[^/]*";
       } else {
         source += "[^/]*";
       }
@@ -138,9 +139,28 @@ export async function todo(input: { action: "get" } | { action: "set"; items: { 
   const target = workspacePath(context.workspace, ".aex/todo.json");
   if (input.action === "set") {
     await mkdir(directory, { recursive: true });
-    const temporary = workspacePath(context.workspace, `.aex/todo-${process.pid}.json`);
-    await writeFile(temporary, JSON.stringify(input.items));
-    await rename(temporary, target);
+    const temporary = workspacePath(context.workspace, ".aex/todo.pending");
+    const file = await open(temporary, "wx").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "EEXIST") {
+        throw new Error("Todo write conflict: .aex/todo.pending exists. Another write is active or a previous write was interrupted; inspect the todo state before retrying.", { cause: error });
+      }
+      throw error;
+    });
+    try {
+      try {
+        await file.writeFile(JSON.stringify(input.items));
+      } finally {
+        await file.close();
+      }
+      await rename(temporary, target);
+    } catch (error) {
+      try {
+        await unlink(temporary);
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], `Todo write failed: ${error}; cleanup of .aex/todo.pending failed: ${cleanupError}`);
+      }
+      throw error;
+    }
     return { items: input.items };
   }
   try {
