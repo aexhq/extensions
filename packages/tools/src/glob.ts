@@ -8,6 +8,5 @@ export const glob = tool({
   description: "List Environment workspace paths matching a glob pattern.",
   input: globInput,
   output: globOutput,
-  needs: ["file:///workspace"],
   implementation: officialTool("glob"),
 });

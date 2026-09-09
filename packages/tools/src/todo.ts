@@ -8,6 +8,5 @@ export const todo = tool({
   description: "Read or replace the session's to-do list.",
   input: todoInput,
   output: todoOutput,
-  needs: ["file:///workspace?access=write"],
   implementation: officialTool("todo"),
 });

@@ -10,7 +10,11 @@ const host = (responses, { results = {} } = {}) => {
   return {
     record,
     setTranscript(messages) { record.transcript = structuredClone(messages); record.writes.push("transcript"); },
-    setKv(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
+    kv: {
+      read(key) { return structuredClone(record.kv[key]); },
+      put(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
+      delete(key) { delete record.kv[key]; record.writes.push(key); },
+    },
     events: (after) => ({ events: [], next_cursor: after }),
     model(request) {
       record.requests.push(structuredClone(request));

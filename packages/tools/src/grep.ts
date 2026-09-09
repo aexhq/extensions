@@ -8,6 +8,5 @@ export const grep = tool({
   description: "Search text files in the Environment workspace with ripgrep.",
   input: grepInput,
   output: grepOutput,
-  needs: ["pkg:apt/ripgrep", "file:///workspace"],
   implementation: officialTool("grep"),
 });

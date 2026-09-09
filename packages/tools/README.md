@@ -18,7 +18,8 @@ const tools = [
 Each factory requires one placement object containing `env` and any Tool-specific options. It
 returns an immutable Tool binding. There is no implicit Environment and no `.useIn` step.
 
-The package supplies schemas, resource needs, and an opaque official implementation descriptor.
+The package supplies schemas and an opaque official implementation descriptor. The Environment owns runtime preparation
+and resource grants; there is no universal dependency declaration.
 Brain validates and transports that contract; the selected Environment driver must understand the
 descriptor and perform the operation within its own workspace and resource limits. Brain neither
 installs Node packages nor compiles the implementation.
@@ -27,12 +28,21 @@ The build emits Node 22 bundles and a manifest-digest registry for Environment i
 You supply the Environment server and its workspace isolation; this package does not provide a sandbox.
 These runtime bundles execute outside the Brain process.
 
-| Tool | Needs |
+| Tool | Environment prerequisites |
 | --- | --- |
-| `bash` | `pkg:apt/bash`, `file:///workspace?access=write` |
-| `read`, `ls`, `glob` | `file:///workspace` |
-| `write`, `edit`, `todo` | `file:///workspace?access=write` |
-| `grep` | `pkg:apt/ripgrep`, `file:///workspace` |
+| `bash` | Bash and a writable workspace |
+| `read`, `ls`, `glob` | A readable workspace |
+| `write`, `edit`, `todo` | A writable workspace |
+| `grep` | Ripgrep and a readable workspace |
+
+These are runtime prerequisites, not a Brain dependency manifest. Supply them in an image or
+prepare them in the Environment's loader before executing a bundle. A Tool reports missing
+programs, denied access, and write failures; it does not install packages or retry implicitly.
 
 Place the same factory in several named Environments to authorize each pair. The canonical Tool
-definition must match across placements; each pair fixes its own implementation and needs.
+definition must match across placements; each pair fixes its own implementation. Configure access through the chosen Environment.
+
+`todo` rejects a competing write to the same workspace with an explicit conflict; it does not
+queue or retry writes. Reads return the last committed list. A process interrupted during a write
+may leave `.aex/todo.pending`; inspect the list and confirm no writer is active before removing it.
+The Agentloop decides whether to report an error to the model and whether to request another call.

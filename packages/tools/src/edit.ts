@@ -8,6 +8,5 @@ export const edit = tool({
   description: "Replace one exact occurrence of text in an Environment workspace file.",
   input: editInput,
   output: editOutput,
-  needs: ["file:///workspace?access=write"],
   implementation: officialTool("edit"),
 });

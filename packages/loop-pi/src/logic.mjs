@@ -64,9 +64,9 @@ export async function runPi(input, context) {
   };
   const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, input.kv.observed_sequence ?? 0);
-  const saved = input.kv.checkpoint;
-  await context.setKv("observed_sequence", observed_sequence);
+  const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
+  const saved = await context.kv.read("checkpoint");
+  await context.kv.put("observed_sequence", observed_sequence);
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
   const shouldCompact = () =>
@@ -108,12 +108,12 @@ export async function runPi(input, context) {
     if (shouldCompact()) {
       await compact();
       await context.setTranscript(transcript);
-      await context.setKv("checkpoint", checkpoint);
+      await context.kv.put("checkpoint", checkpoint);
     }
     const { message, stop_reason } = await context.model({ messages: transcript, tools: placement.definitions });
     transcript.push(message);
     await context.setTranscript(transcript);
-    await context.setKv("checkpoint", checkpoint);
+    await context.kv.put("checkpoint", checkpoint);
     const calls = message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
