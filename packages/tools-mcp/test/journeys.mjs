@@ -60,7 +60,7 @@ test("MCP bridge: Brain cancellation reaches a real server without replay", { ti
   const session = await f.session(pi, { tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["wait"] }) });
   const running = session.send("wait for cancellation").catch(() => {});
   await eventually(async () => (await mcp.records()).some(record => record.type === "call"));
-  await session.cancel();
+  await session.interrupt();
   await eventually(async () => (await mcp.records()).some(record => record.type === "cancelled"));
   await running;
   assert.equal((await mcp.records()).filter(record => record.type === "call").length, 1);

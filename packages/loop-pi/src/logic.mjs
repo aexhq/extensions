@@ -67,7 +67,6 @@ export async function runPi(input, context) {
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
   const saved = await context.kv.read("checkpoint");
-  await context.kv.put("observed_sequence", observed_sequence);
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
   const shouldCompact = () =>
@@ -104,8 +103,9 @@ export async function runPi(input, context) {
   };
 
   transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
+  await context.setTranscript(transcript);
+  await context.kv.put("observed_sequence", observed_sequence);
   for (;;) {
-    await context.setTranscript(transcript);
     if (shouldCompact()) {
       await compact();
       await context.setTranscript(transcript);
@@ -127,6 +127,7 @@ export async function runPi(input, context) {
         role: "user",
         content: calls.map((call) => ({ type: "tool_result", tool_use_id: call.call_id, content: TRUNCATED_CALL_MESSAGE, is_error: true })),
       });
+      await context.setTranscript(transcript);
       continue;
     }
     const results = await context.dispatch(calls.map(placement.invocation));
@@ -135,6 +136,7 @@ export async function runPi(input, context) {
       role: "user",
       content: calls.map(({ call_id }) => toolResult(call_id, byCall.get(call_id))),
     });
+    await context.setTranscript(transcript);
   }
 }
 

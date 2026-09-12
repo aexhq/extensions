@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop-pi",
-  "version": "6.0.0",
+  "version": "6.1.0",
   "description": "Pi-style parallel-Tool Brain extension",
   "license": "MIT",
   "repository": {
@@ -31,11 +31,13 @@
   "scripts": {
     "build": "node ../../tools/build-agentloop.mjs src/component.mjs src/index.mjs dist",
     "test": "npm run build && node --test *.test.mjs",
+    "test:logic": "node --test loop.test.mjs state.test.mjs",
+    "test:logic:watch": "node --test --watch loop.test.mjs state.test.mjs",
     "test:journeys": "node --test test/journeys.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.23.0",
+    "@aexhq/brain": "0.24.0",
     "zod": "4.4.3"
   },
   "devDependencies": {}

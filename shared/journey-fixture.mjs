@@ -47,6 +47,7 @@ export async function fixture(t, script) {
     try {
       for (const session of sessions) { await session.end(); await session.delete(); }
     } finally {
+      await brain.close();
       await new Promise((resolve) => server.close(resolve));
     }
   });

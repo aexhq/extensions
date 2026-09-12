@@ -1,6 +1,6 @@
 # @aexhq/env-local
 
-A Docker workspace Environment for standalone Brain 0.22. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the existing `@aexhq/tools` implementation descriptors and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.24. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the existing `@aexhq/tools` implementation descriptors and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
 

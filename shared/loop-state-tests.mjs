@@ -34,6 +34,56 @@ export function loopStateTests(run) {
     };
     await run({ ...input({ compaction: false }), ...restored }, context);
   });
+  for (const partial of [false, true]) {
+    test(`${run.name} explains interrupted calls and preserves ${partial ? "partial" : "unanswered"} history`, async () => {
+      const context = host();
+      const native = { type: "native", format: "anthropic.messages.v1", data: { type: "thinking", thinking: "reasoning", signature: "signed" } };
+      const assistant = { role: "assistant", content: [native, ...["image", "text"].map(id => ({ type: "tool_use", id, name: "lookup", input: {} }))] };
+      const existing = { type: "tool_result", tool_use_id: "image", content: "saved image", media: [{ type: "image", url: "https://example.com/saved.png" }], is_error: false };
+      const transcript = [assistant, ...(partial ? [{ role: "user", content: [existing, { type: "text", text: "saved note" }] }] : [])];
+      const original = structuredClone(transcript);
+      context.events = after => after === 0 ? { events: [
+        { event_type: "tool_call_ended", data: { result: { call_id: "text", output: "not reconstructed from Events" } } },
+        { event_type: "turn_failed", data: { code: "cancelled", message: "caller interrupted" } },
+      ], next_cursor: 4 } : { events: [], next_cursor: after };
+      context.dispatch = () => assert.fail("interrupted calls must not be redispatched");
+      context.model = request => {
+        assert.deepEqual(request.messages[0], assistant);
+        const results = request.messages[1].content;
+        assert.deepEqual(results.slice(0, 2).map(block => block.tool_use_id), ["image", "text"]);
+        if (partial) {
+          assert.deepEqual(results[0], existing);
+          assert.equal(results[2].text, "saved note");
+        }
+        for (const result of results.slice(partial ? 1 : 0, 2)) {
+          assert.equal(result.is_error, true);
+          assert.match(result.content, /operation may have run/u);
+          assert.match(result.content, /caller interrupted/u);
+        }
+        assert.equal(JSON.stringify(request.messages).includes("not reconstructed"), false);
+        assert.equal(context.saved.kv.observed_sequence, 4);
+        return { message: { role: "assistant", content: [{ type: "text", text: "continued" }] }, stop_reason: "end_turn", usage: {} };
+      };
+      await run({ ...input({ compaction: false }), transcript }, context);
+      assert.deepEqual(transcript, original);
+    });
+  }
+  test(`${run.name} does not advance observations when saving the transcript fails`, async () => {
+    const context = host();
+    context.events = after => after === 0
+      ? { events: [{ event_type: "turn_failed", data: { message: "interrupted" } }], next_cursor: 7 }
+      : { events: [], next_cursor: after };
+    const save = context.setTranscript;
+    context.setTranscript = () => { throw new Error("store unavailable"); };
+    context.model = () => assert.fail("model must wait for saved observations");
+    await assert.rejects(run(input(), context), /store unavailable/u);
+    assert.equal(context.saved.kv.observed_sequence, undefined);
+    context.setTranscript = save;
+    context.model = () => { throw new Error("provider unavailable"); };
+    await assert.rejects(run(input(), context), /provider unavailable/u);
+    assert.match(context.saved.transcript[0].content[0].text, /interrupted/u);
+    assert.equal(context.saved.kv.observed_sequence, 7);
+  });
   test(`${run.name} saves Tool errors intact before a later model failure`, async () => {
     const context = host();
     const failure = { code: "unavailable", message: "choose another action", retryable: false, details: { environment: "sandbox" } };
