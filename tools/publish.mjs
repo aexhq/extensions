@@ -27,11 +27,11 @@ const registryValue = (spec, field) => {
 };
 const registryTags = (name) => JSON.parse(run(["view", name, "dist-tags", "--json"]));
 const waitFor = async (read, expected, description) => {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     if (read() === expected) return;
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
-  throw new Error(`${description} did not become ${JSON.stringify(expected)} within 60 seconds`);
+  throw new Error(`${description} did not become ${JSON.stringify(expected)} within 5 minutes`);
 };
 const assertRegistryObject = (item) => {
   const spec = `${item.name}@${item.version}`;
