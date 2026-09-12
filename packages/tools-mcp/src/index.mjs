@@ -5,7 +5,7 @@ import { inspectEnvironment, tool } from "@aexhq/brain";
 import { z } from "zod";
 import { toolOutput } from "../../../shared/tool-output.mjs";
 
-export async function connectMcp(transport, { name = "aex-mcp", version = "0.2.0", ...options } = {}) {
+export async function connectMcp(transport, { name = "aex-mcp", version = "0.3.0", ...options } = {}) {
   const client = new Client({ name, version }, { ...options, inputRequired: { autoFulfill: false } });
   try { await client.connect(transport); }
   catch (error) { await client.close(); throw error; }

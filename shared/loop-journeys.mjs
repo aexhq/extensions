@@ -110,6 +110,43 @@ export function loopJourneys(name, loop) {
     assert.equal(messages.at(-1).content[0].text, "finished with supplied value");
   });
 
+  test(`${name}: mixed image, text and failed siblings keep source order through the compiled loop`, { timeout: 30_000 }, async t => {
+    const image = { type: "image", url: "https://example.com/diagram.png" };
+    const releaseImage = Promise.withResolvers();
+    const f = await fixture(t, [
+      () => calls(["lookup", { kind: "image" }], ["lookup", { kind: "text" }], ["lookup", { kind: "error" }]),
+      body => {
+        const results = body.input.filter(item => item.type === "function_call_output");
+        assert.deepEqual(results.map(item => item.call_id), ["call-0", "call-1", "call-2"]);
+        assert.deepEqual(results[0].output, [{ type: "input_text", text: "diagram ready" }, { type: "input_image", image_url: image.url }]);
+        assert.equal(results[1].output, "plain text");
+        assert.match(results[2].output, /^ERROR: .*sibling unavailable/u);
+        return answer("all results understood");
+      },
+    ]);
+    const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({ kind: z.string() }), run: async ({ kind }) => {
+      if (kind === "error") throw new Error("sibling unavailable");
+      if (kind === "text") return "plain text";
+      if (name === "pi") await releaseImage.promise;
+      return { type: "aex_tool_output", version: 1, content: "diagram ready", media: [image] };
+    } });
+    const session = await f.session(loop, { tools: [lookup({ env: hostEnv({ name: "app" }) })] });
+    const laterResults = [];
+    const observe = name === "pi" ? (async () => {
+      for await (const event of session.stream()) {
+        if (event.type !== "tool_call_ended") continue;
+        laterResults.push(event.data.result.call_id);
+        if (laterResults.length === 2) { releaseImage.resolve(); break; }
+      }
+    })() : Promise.resolve();
+    await session.send("lookup all three");
+    await observe;
+    if (name === "pi") assert.deepEqual(laterResults.sort(), ["call-1", "call-2"]);
+    const results = (await session.transcript()).messages.find(message => message.content[0]?.type === "tool_result").content;
+    assert.deepEqual(results[0].media, [image]);
+    assert.equal(results[2].is_error, true);
+  });
+
   test(`${name}: model failure preserves acknowledged input for explicit continuation`, { timeout: 30_000 }, async (t) => {
     const f = await fixture(t, [
       () => ({ error: "provider unavailable" }),
@@ -131,7 +168,15 @@ export function loopJourneys(name, loop) {
     const entered = Promise.withResolvers();
     const aborted = Promise.withResolvers();
     let invocations = 0;
-    const f = await fixture(t, [() => calls(["wait", {}])]);
+    const f = await fixture(t, [() => calls(["wait", {}]), body => {
+      const callIndex = body.input.findIndex(item => item.type === "function_call");
+      const result = body.input[callIndex + 1];
+      assert.equal(result.type, "function_call_output");
+      assert.equal(result.call_id, body.input[callIndex].call_id);
+      assert.match(result.output, /^ERROR: .*Turn interrupted.*operation may have run/u);
+      assert.ok(JSON.stringify(body.input).includes("turn_failed"));
+      return answer("continued after interruption");
+    }]);
     const wait = tool({ name: "wait", description: "Wait", input: z.object({}), run: async (_, context) => {
       invocations++;
       context.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
@@ -142,11 +187,13 @@ export function loopJourneys(name, loop) {
     const session = await f.session(loop, { tools: [wait({ env: hostEnv({ name: "app" }) })] });
     const running = session.send("wait").catch(() => {});
     await entered.promise;
-    await session.cancel();
+    await session.interrupt();
     await aborted.promise;
     await running;
     assert.equal(invocations, 1);
     assert.ok((await collect(session.events())).some(event => event.type === "turn_failed"));
+    await session.send("continue without repeating the operation");
+    assert.equal(invocations, 1);
   });
 
   for (const stop of ["stop", "length"]) {

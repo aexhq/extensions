@@ -27,7 +27,6 @@ export async function runCodex(input, context) {
   const placement = toolPlacement(input.tools, options);
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
-  await context.kv.put("observed_sequence", observed_sequence);
   const saved = await context.kv.read("usage");
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
@@ -55,8 +54,9 @@ export async function runCodex(input, context) {
   };
 
   transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
+  await context.setTranscript(transcript);
+  await context.kv.put("observed_sequence", observed_sequence);
   for (;;) {
-    await context.setTranscript(transcript);
     if (shouldCompact()) {
       await compact();
       await context.setTranscript(transcript);
@@ -80,6 +80,7 @@ export async function runCodex(input, context) {
       results.push(toolResult(call.call_id, result));
     }
     transcript.push({ role: "user", content: results });
+    await context.setTranscript(transcript);
   }
 }
 

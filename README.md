@@ -43,6 +43,11 @@ these HTTP Environments.
 
 Application-resident Tools use the same public factory with `run`. Their code executes in the
 application process, and `ctx.emit` records application-defined events in the session journal.
+Tool schemas describe accepted inputs; defaulted arguments are optional and the runtime applies
+Zod defaults and transforms before invoking the handler. Ordinary objects strip extra fields;
+strict objects reject them. Put client use, including session creation, inside `try/finally`
+and call `await brain.close()` when finished. Use `session.interrupt()` to stop a turn, `end()`
+to finish a conversation, and `delete()` to remove its stored history.
 
 ```ts
 import { hostEnv, tool } from "@aexhq/brain";
@@ -71,8 +76,8 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-The current packages use Brain 0.23.0. Pi, Codex and Tools are version 6.0.0; the MCP, Docker and
-browser extensions are version 0.2.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+The current packages use Brain SDK 0.24.0. Pi, Codex and Tools are version 6.1.0; the MCP, Docker and
+browser extensions are version 0.3.0. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.
@@ -84,6 +89,9 @@ inside Brain and no automatic placement fallback. See
 [ADR-046](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-09-01-minimal-extension-contract.md).
 
 ## Tests
+
+For quick Pi policy edits, use `npm run test:logic:watch -w packages/loop-pi`; it runs the existing
+logic tests without a Component build. Full tests and compiled journeys still gate release.
 
 Each loop owns its factory/logic tests and `test/journeys.mjs`; shared journey fixtures register
 the same contract scenarios separately for Pi and Codex. Tools owns factory tests, built-runtime
