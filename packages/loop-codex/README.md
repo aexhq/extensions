@@ -48,10 +48,13 @@ Transcript changes and `ctx.kv.read/put/delete` use Brain's state services. KV m
 committed inline; missing keys remain distinct from stored JSON null. A later model or
 Tool failure preserves acknowledged writes; turn output contains only the result. Retained
 native model blocks pass through unchanged, and user images enter model context as media.
+Version 5.1 also presents successful Tool outputs shaped as
+`{ type: "aex_tool_output", version: 1, content, media: [{ type: "image", url }] }`
+as Tool-result content and image media. Browser and MCP extensions use this presentation
+convention; ordinary JSON results keep their existing behavior.
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Rebuild Components against the matching Brain WIT when upgrading. Existing sessions keep their
-immutable loop implementation. Keep their matching server/artifacts for recovery and create
-new sessions explicitly when adopting Brain 0.20 / version 5 extensions; do not delete old data
-as an implicit upgrade step.
+Version 5.1 targets Brain 0.22 and preserves the existing WIT. Existing sessions keep their
+immutable loop implementation; create new sessions to adopt the updated loop. Keep matching
+server/artifacts for recovery. An upgrade does not migrate or delete session data.

@@ -1,5 +1,6 @@
 import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
+import { toolResult } from "../../../shared/tool-output.mjs";
 
 const AUTO_COMPACT_RATIO = 0.9;
 const COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000;
@@ -76,12 +77,7 @@ export async function runCodex(input, context) {
     const results = [];
     for (const call of calls) {
       const [result] = await context.dispatch([placement.invocation(call)]);
-      results.push({
-        type: "tool_result",
-        tool_use_id: call.call_id,
-        content: result === undefined ? "Tool produced no result." : result.output,
-        is_error: result === undefined ? true : result.is_error,
-      });
+      results.push(toolResult(call.call_id, result));
     }
     transcript.push({ role: "user", content: results });
   }

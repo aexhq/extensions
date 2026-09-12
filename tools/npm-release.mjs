@@ -10,6 +10,9 @@ const workspaces = [
   "loop-codex",
   "loop-pi",
   "tools",
+  "env-local",
+  "tools-mcp",
+  "env-browser",
 ];
 const root = path.resolve(import.meta.dirname, "..");
 const npmCli = [

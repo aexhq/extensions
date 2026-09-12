@@ -23,7 +23,7 @@ const pack = (directory) => {
 try {
   await mkdir(artifacts);
   await mkdir(consumer);
-  const packages = ["loop-codex", "loop-pi", "tools"]
+  const packages = ["loop-codex", "loop-pi", "tools", "env-local", "tools-mcp", "env-browser"]
     .map((name) => pack(path.join(root, "packages", name)));
   if (process.env.BRAIN_PACKAGE_ARCHIVE !== undefined) packages.unshift(path.resolve(process.env.BRAIN_PACKAGE_ARCHIVE));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
@@ -38,9 +38,22 @@ import {
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
 import { read } from "@aexhq/tools";
+import { local } from "@aexhq/env-local";
+import { createLocalEnvironment } from "@aexhq/env-local/server";
+import { browser, browserTools } from "@aexhq/env-browser";
+import { createBrowserEnvironment } from "@aexhq/env-browser/server";
+import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
 import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
+assert.equal(typeof createLocalEnvironment, "function");
+assert.equal(typeof createBrowserEnvironment, "function");
+assert.equal(typeof connectMcp, "function");
+assert.equal(typeof mcpTools, "function");
+const localEnv = local({ name: "local", url: "https://local.example", token: "fixture", profile: "coding" });
+assert.equal(inspectTool(read({ env: localEnv })).environment, localEnv);
+const browserEnv = browser({ name: "browser", url: "https://browser.example", token: "fixture", profile: "web" });
+assert.equal(browserTools({ env: browserEnv }).length, 5);
 const resident = tool({
   name: "create_invoice",
   description: "Create an invoice.",
@@ -77,6 +90,19 @@ console.log("packed extension packages compose through the public Brain contract
   await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash, read, write } from "@aexhq/tools";
+import { local } from "@aexhq/env-local";
+import { createLocalEnvironment } from "@aexhq/env-local/server";
+import { browser, browserTools } from "@aexhq/env-browser";
+import { createBrowserEnvironment } from "@aexhq/env-browser/server";
+import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
+import { chromium } from "playwright";
+
+void createLocalEnvironment({ directory: "/tmp/local", profiles: { coding: { image: "fixture", workspace: "write" } } });
+void createBrowserEnvironment({ profiles: { web: () => chromium.launch({ chromiumSandbox: true }) } });
+void local({ name: "local", url: "https://local.example", token: "fixture", profile: "coding" });
+void browserTools({ env: browser({ name: "browser", url: "https://browser.example", token: "fixture", profile: "web" }) });
+void connectMcp;
+void mcpTools;
 
 const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const loopRuntime = brainEnv({ name: "brain" });
