@@ -87,7 +87,7 @@ console.log("packed extension packages compose through the public Brain contract
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
   assert.match(output, /public Brain contracts/u);
-  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment } from "@aexhq/brain";
+  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment, hostEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash, read, write } from "@aexhq/tools";
 import { local } from "@aexhq/env-local";
@@ -98,11 +98,20 @@ import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
 import { chromium } from "playwright";
 
 void createLocalEnvironment({ directory: "/tmp/local", profiles: { coding: { image: "fixture", workspace: "write" } } });
-void createBrowserEnvironment({ profiles: { web: () => chromium.launch({ chromiumSandbox: true }) } });
+void createBrowserEnvironment({ profiles: { web: () => chromium.launch({ chromiumSandbox: true }) },
+  publishMedia: async ({ bytes, mediaType, index }, { sessionId, sequence, signal }) => {
+    signal.throwIfAborted();
+    return "https://media.example/" + [sessionId, sequence, index, bytes.byteLength, mediaType].join("/");
+  } });
 void local({ name: "local", url: "https://local.example", token: "fixture", profile: "coding" });
 void browserTools({ env: browser({ name: "browser", url: "https://browser.example", token: "fixture", profile: "web" }) });
 void connectMcp;
-void mcpTools;
+declare const client: Parameters<typeof mcpTools>[0]["client"];
+void mcpTools({ client, env: hostEnv({ name: "app" }), names: ["read_report"],
+  publishMedia: async ({ bytes, mediaType, index }, { sessionId, sequence, signal }) => {
+    signal.throwIfAborted();
+    return "https://media.example/" + [sessionId, sequence, index, bytes.byteLength, mediaType].join("/");
+  } });
 
 const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const loopRuntime = brainEnv({ name: "brain" });

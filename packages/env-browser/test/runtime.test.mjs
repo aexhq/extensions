@@ -7,7 +7,7 @@ import { browserFixture } from "./fixture.mjs";
 const invocation = (name, input = {}, deadline_ms = 10_000) => ({ implementation: { type: "aex_browser_tool", version: 1, name: `browser_${name}` }, input, deadline_ms });
 
 test("real browser state is retained, isolated, serialized and rendered as image media", { timeout: 45_000 }, async t => {
-  const { env, url, launched } = await browserFixture(t);
+  const { env, url, launched, published } = await browserFixture(t);
   const first = commands();
   const other = commands();
   for (const command of [first, other]) assert.equal((await env.handle(command("setup", { configuration: { profile: "test" } }))).receipt.type, "accepted");
@@ -25,7 +25,8 @@ test("real browser state is retained, isolated, serialized and rendered as image
   assert.equal(launched.length, 1);
   const screenshot = (await env.handle(first("execute", invocation("screenshot")))).receipt.output;
   assert.equal(screenshot.type, "aex_tool_output");
-  const png = Buffer.from(screenshot.media[0].url.split(",")[1], "base64");
+  assert.equal(screenshot.media[0].url, "https://example.com/screenshot.png");
+  const png = published[0];
   assert.equal(png.subarray(1, 4).toString(), "PNG");
   await env.handle(other("execute", invocation("navigate", { url })));
   assert.equal(await launched[1].contexts()[0].pages()[0].evaluate(() => localStorage.getItem("name")), null);

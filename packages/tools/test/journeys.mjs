@@ -58,7 +58,7 @@ test("Tools: create, inspect, edit, search, verify, and track work through the p
       ["todo", { action: "get" }],
     ),
     body => {
-      const results = body.messages.filter(message => message.role === "tool").map(message => JSON.parse(message.content));
+      const results = body.input.filter(message => message.type === "function_call_output").map(message => JSON.parse(message.output));
       assert.equal(results.length, 9);
       assert.equal(results[1].content, "colour: blue\n");
       assert.equal(results[2].replacements, 1);
@@ -83,7 +83,7 @@ test("Tools: a missing-file error lets the model choose the next operation", { t
   const f = await fixture(t, [
     () => calls(["read", { path: "new.txt", offset: 0, limit: 262144 }]),
     body => {
-      const content = body.messages.at(-1).content;
+      const content = body.input.at(-1).output;
       assert.match(content, /^ERROR: /u);
       const result = JSON.parse(content.slice("ERROR: ".length));
       assert.equal(result.code, "tool_error");
@@ -104,13 +104,13 @@ test("Tools: a todo conflict is journaled and lets the model choose to read inst
   const f = await fixture(t, [
     () => calls(["todo", { action: "set", items: [{ text: "replacement", done: false }] }]),
     body => {
-      const content = body.messages.at(-1).content;
+      const content = body.input.at(-1).output;
       assert.match(content, /^ERROR: /u);
       assert.match(JSON.parse(content.slice("ERROR: ".length)).message, /Todo write conflict/u);
       return calls(["todo", { action: "get" }]);
     },
     body => {
-      assert.deepEqual(JSON.parse(body.messages.at(-1).content), { items: [{ text: "original", done: false }] });
+      assert.deepEqual(JSON.parse(body.input.at(-1).output), { items: [{ text: "original", done: false }] });
       return answer("The write conflicted; the original todo list is still present.");
     },
   ]);

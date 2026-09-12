@@ -47,9 +47,9 @@ const blockText = (block) => {
   if (block.type === "text") return block.text;
   if (block.type === "tool_use") return `[tool_use ${block.name}] ${JSON.stringify(block.input)}`;
   if (block.type === "native") return `[provider continuation state: ${block.format}]`;
-  if (block.type === "image") return block.url.startsWith("https://") ? `[image ${block.url}]` : "[embedded image]";
+  if (block.type === "image" || block.type === "file") return `[${block.type} ${block.url}]`;
   const output = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
-  return `[tool_result${block.is_error ? " (error)" : ""}] ${output.length > 2000 ? `${output.slice(0, 2000)}…` : output}`;
+  return `[tool_result${block.is_error ? " (error)" : ""}] ${output.length > 2000 ? `${output.slice(0, 2000)}â€¦` : output}`;
 };
 
 const serializeConversation = (messages) =>
@@ -94,7 +94,7 @@ export async function runPi(input, context) {
     const { message, stop_reason } = await context.model({
       response_format: null,
       tools: [],
-      messages: [{ role: "user", content: [{ type: "text", text: `${previous}${serializeConversation(messages.slice(0, cut))}\n\n${prompt}` }] }],
+      messages: [{ role: "user", content: [{ type: "text", text: `${previous}${serializeConversation(messages.slice(0, cut))}\n\n${prompt}` }, ...messages.slice(0, cut).flatMap(message => message.content.flatMap(block => block.type === "image" || block.type === "file" ? [block] : block.type === "tool_result" ? block.media ?? [] : []))] }],
     });
     if (stop_reason !== "end_turn") throw new Error(`Compaction did not complete: ${stop_reason}`);
     checkpoint.summary = text(message);

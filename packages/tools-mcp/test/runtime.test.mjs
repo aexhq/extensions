@@ -13,10 +13,34 @@ function context(signal = new AbortController().signal) {
     emit: async (type, data) => { events.push({ type, data }); return events.length; } };
 }
 
+test("MCP publishes PDF bytes before retaining success or error evidence and never repeats a completed tool", async () => {
+  for (const isError of [false, true]) {
+    let calls = 0;
+    const bytes = Buffer.from("%PDF-1.7\nfixture");
+    const client = { listTools: async () => ({ tools: [{ name: "report", inputSchema: { type: "object" } }] }), callTool: async () => {
+      calls++;
+      return { isError, content: [{ type: "resource", resource: { uri: "report:///one", mimeType: "application/pdf", blob: bytes.toString("base64") } }] };
+    } };
+    for (const publisher of [undefined, async () => { throw new Error("publication failed"); }, async input => {
+      assert.deepEqual(Buffer.from(input.bytes), bytes);
+      return "https://example.com/report.pdf";
+    }]) {
+      const [source] = (await mcpTools({ client, env: hostEnv({ name: "app" }), names: ["report"], publishMedia: publisher })).map(inspectTool);
+      const call = context();
+      const before = calls;
+      await source.handler({}, call);
+      assert.equal(calls, before + 1);
+      assert.equal(JSON.stringify(call.events).includes(bytes.toString("base64")), false);
+      assert.ok(["mcp_result", "mcp_media_failed"].includes(call.events[0].type));
+      if (call.events[0].type === "mcp_result") assert.equal(call.events[0].data.result.media[0].media_type, "application/pdf");
+    }
+  }
+});
+
 test("real MCP discovery freezes selected schemas and preserves evidence, errors and images", { timeout: 30_000 }, async t => {
   const { client, records } = await mcpFixture(t);
   const env = hostEnv({ name: "app" });
-  const placed = await mcpTools({ client, env, prefix: "service_", names: ["lookup", "failure", "image", "change", "continuation"] });
+  const placed = await mcpTools({ client, env, prefix: "service_", publishMedia: async ({ bytes, mediaType }) => { assert.ok(bytes.length); assert.equal(mediaType, "image/png"); return "https://example.com/mcp.png"; }, names: ["lookup", "failure", "image", "change", "continuation"] });
   const sources = placed.map(inspectTool);
   assert.deepEqual(sources.map(source => source.definition.name), ["service_lookup", "service_failure", "service_image", "service_change", "service_continuation"]);
   assert.ok((await records()).some(record => record.type === "list" && record.cursor === "second"));
@@ -36,7 +60,7 @@ test("real MCP discovery freezes selected schemas and preserves evidence, errors
   assert.deepEqual(failureOutcome.error.details, failed.events[0].data.result);
   assert.equal(failed.events[0].data.result.structuredContent.code, "permission_denied");
   const media = await image.handler({}, context());
-  assert.match(media.media[0].url, /^data:image\/png;base64,/u);
+  assert.equal(media.media[0].url, "https://example.com/mcp.png");
   assert.equal(media.content.content.length, 0);
   await change.handler({}, context());
   assert.ok((await client.listTools(undefined, { cacheMode: "refresh" })).tools.some(tool => tool.name === "added"));

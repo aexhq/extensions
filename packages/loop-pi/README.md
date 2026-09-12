@@ -58,3 +58,6 @@ a truncated, refused, or unknown summary leaves the original saved context intac
 Version 5.1 targets Brain 0.22 and preserves the existing WIT. Existing sessions keep their
 immutable loop implementation; create new sessions to adopt the updated loop. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
+
+Image and PDF blocks remain native media in compaction requests. The JSON-length estimate used
+for new context does not measure image/PDF tokens; provider context-limit failures remain explicit.

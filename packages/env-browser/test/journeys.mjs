@@ -16,12 +16,12 @@ for (const [name, loop] of [["pi", pi], ["codex", codex]]) {
       () => calls(["browser_click", { selector: "#save" }]),
       () => calls(["browser_screenshot", {}]),
       body => {
-        const blocks = body.messages.flatMap(message => Array.isArray(message.content) ? message.content : []);
-        assert.ok(blocks.some(block => block.type === "image_url" && block.image_url.url.startsWith("data:image/png;base64,")));
+        const blocks = body.input.flatMap(message => Array.isArray(message.content) ? message.content : Array.isArray(message.output) ? message.output : []);
+        assert.ok(blocks.some(block => block.type === "input_image" && block.image_url === "https://example.com/screenshot.png"));
         return answer("form captured");
       },
       () => calls(["browser_inspect", {}]),
-      body => { assert.match(body.messages.at(-1).content, /Ada/u); return answer("state retained"); },
+      body => { assert.match(body.input.at(-1).output, /Ada/u); return answer("state retained"); },
     ]);
     const b = await browserFixture(t);
     website = b.url;

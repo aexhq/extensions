@@ -25,9 +25,9 @@ test("Local Environment: edit and test a real program, then read it in a later t
     () => calls(["write", { path: "app.mjs", content: "console.log(1 + 1)" }]),
     () => calls(["edit", { path: "app.mjs", old_text: "1 + 1", new_text: "1 + 2" }]),
     () => calls(["bash", { command: "node app.mjs" }]),
-    body => { assert.match(body.messages.at(-1).content, /3\\n/u); return answer("verified"); },
+    body => { assert.match(body.input.at(-1).output, /3\\n/u); return answer("verified"); },
     () => calls(["read", { path: "app.mjs", offset: 0, limit: 262144 }]),
-    body => { assert.match(body.messages.at(-1).content, /1 \+ 2/u); return answer("retained"); },
+    body => { assert.match(body.input.at(-1).output, /1 \+ 2/u); return answer("retained"); },
   ]);
   const runtime = await workspace(t);
   const server = await serveEnvironment(runtime.handle, { token: "local-fixture" });
@@ -44,8 +44,8 @@ test("Local Environment: edit and test a real program, then read it in a later t
 test("Local Environment: losing an HTTP response after a write produces unknown without replay", { timeout: 60_000 }, async t => {
   const f = await fixture(t, [
     () => calls(["write", { path: "once", content: "committed externally" }]),
-    body => { assert.match(body.messages.at(-1).content, /unknown/u); return calls(["read", { path: "once", offset: 0, limit: 262144 }]); },
-    body => { assert.match(body.messages.at(-1).content, /committed externally/u); return answer("inspected uncertain write"); },
+    body => { assert.match(body.input.at(-1).output, /unknown/u); return calls(["read", { path: "once", offset: 0, limit: 262144 }]); },
+    body => { assert.match(body.input.at(-1).output, /committed externally/u); return answer("inspected uncertain write"); },
   ]);
   const runtime = await workspace(t);
   let writes = 0;

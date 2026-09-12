@@ -4,10 +4,10 @@ import { createServer } from "node:http";
 import { Brain, brainEnv } from "@aexhq/brain";
 
 export const collect = async (events) => Array.fromAsync(events);
-export const answer = (text, extra = {}) => ({ delta: { content: text }, stop: "stop", ...extra });
-export const calls = (...values) => ({ delta: { tool_calls: values.map(([name, input], index) => ({
-  index, id: `call-${index}`, type: "function", function: { name, arguments: JSON.stringify(input) },
-})) }, stop: "tool_calls" });
+export const answer = (text, extra = {}) => ({ text, ...extra });
+export const calls = (...values) => ({ output: values.map(([name, input], index) => ({
+  type: "function_call", call_id: `call-${index}`, name, arguments: JSON.stringify(input),
+})) });
 
 export async function fixture(t, script) {
   const requests = [];
@@ -26,7 +26,16 @@ export async function fixture(t, script) {
         return;
       }
       response.writeHead(200, { "content-type": "text/event-stream" });
-      response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: next.delta, finish_reason: next.stop }], usage: next.usage })}\n\ndata: [DONE]\n\n`);
+      const output = [...(next.native ?? []), ...(next.output ?? [])];
+      const frames = output.map((item, output_index) => ({ type: "response.output_item.done", output_index, item }));
+      if (next.text !== undefined) {
+        frames.push({ type: "response.output_text.delta", output_index: output.length, delta: next.text });
+        frames.push({ type: "response.output_item.done", output_index: output.length, item: { type: "message", content: [{ type: "output_text", text: next.text }] } });
+      }
+      frames.push({ type: next.stop === "length" ? "response.incomplete" : "response.completed", response: {
+        output, usage: next.usage, ...(next.stop === "length" ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
+      } });
+      response.end(frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join(""));
     } catch (error) {
       errors.push(error);
       response.writeHead(500).end(String(error));

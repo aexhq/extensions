@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tools-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Selected MCP Tools in a Brain application host",
   "license": "MIT",
   "type": "module",
@@ -10,6 +10,6 @@
   "exports": { ".": { "types": "./index.d.ts", "import": "./dist/index.mjs" }, "./package.json": "./package.json" },
   "files": ["dist", "index.d.ts", "README.md"],
   "scripts": { "build": "node ../../tools/build-environment.mjs", "test": "npm run build && node --test test/*.test.mjs", "test:journeys": "node --test test/journeys.mjs", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.22.0", "@modelcontextprotocol/client": "2.0.0", "zod": "4.4.3" },
+  "dependencies": { "@aexhq/brain": "0.23.0", "@modelcontextprotocol/client": "2.0.0", "zod": "4.4.3" },
   "devDependencies": { "@modelcontextprotocol/server": "2.0.0" }
 }
