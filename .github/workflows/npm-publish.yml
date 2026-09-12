@@ -94,6 +94,7 @@ jobs:
           sudo apt-get install --yes --no-install-recommends ripgrep
       - run: npx playwright install-deps chromium
       - run: npm run test:prepare
+      - run: bash tools/ci-browser-sandbox.sh
       - run: npm test
 
   stage-package-smoke:

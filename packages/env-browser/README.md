@@ -18,6 +18,8 @@ const server = await serveEnvironment(runtime.handle, {
 
 Install Chromium and its OS dependencies with `npx playwright install --with-deps chromium`. Run Chromium as a non-root user with its sandbox available. A production launcher must supply an isolated browser process, enforce its network authority at the deployment boundary, and supervise cleanup after controller loss. Browser contexts separate cookies and storage; they are not a hostile-tenant execution sandbox. The local launcher above grants the browser the operator process's network reachability. Do not use it as a public multi-tenant browsing service.
 
+Ubuntu's AppArmor policy may require a [user-namespace profile for downloaded Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). CI installs a profile for its Playwright headless-shell path and keeps Chromium sandboxing enabled.
+
 Compose it through the public SDK:
 
 ```js

@@ -40,6 +40,7 @@ jobs:
           echo "BRAIN_PACKAGE_ARCHIVE=$RUNNER_TEMP/$brain_archive" >> "$GITHUB_ENV"
       - run: npx playwright install-deps chromium
       - run: npm run test:prepare
+      - run: bash tools/ci-browser-sandbox.sh
       - run: npm test
       - run: npm run package-smoke
       - name: Run each extension's journeys through the pinned Brain image
