@@ -76,8 +76,8 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-The current packages use Brain SDK 0.24.0. Pi, Codex and Tools are version 6.1.0; the MCP, Docker and
-browser extensions are version 0.3.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+The current packages use Brain SDK 0.24.2. Pi, Codex and Tools are version 6.1.1; the MCP, Docker and
+browser extensions are version 0.3.1. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.
