@@ -71,12 +71,11 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-The current packages use Brain 0.22.0. Pi, Codex and Tools are version 5.1.0; the MCP, Docker and
-browser extensions are version 0.1.0. Brain 0.22 preserves the existing KV read/put/delete WIT and
-adds direct host Outcomes with structured failures. Deploy the updated runtime with the SDK so
-Tool deadlines produce `timeout` and cancellation produces `cancelled`. Unknown remains reserved
-for missing reliable results after dispatch. Existing sessions retain their immutable extension
-implementations; no session data is migrated or deleted by these packages.
+The current packages use Brain 0.23.0. Pi, Codex and Tools are version 6.0.0; the MCP, Docker and
+browser extensions are version 0.2.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
+media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
+sessions keep their immutable implementations and require a compatibility check before upgrading.
 
 Loops use `ctx.kv.read/put/delete`; acknowledged mutations survive later failures. Extension
 factories have no `needs`. The chosen Environment prepares ordinary package dependencies before

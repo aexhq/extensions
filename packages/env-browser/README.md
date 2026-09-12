@@ -1,6 +1,6 @@
 # @aexhq/env-browser
 
-A Playwright Environment and five Tools for Brain 0.22: `browser_navigate`, `browser_inspect`, `browser_click`, `browser_fill` and `browser_screenshot`.
+A Playwright Environment and five Tools for Brain: `browser_navigate`, `browser_inspect`, `browser_click`, `browser_fill` and `browser_screenshot`.
 
 The operator supplies a launcher for each allowed profile. Every binding receives a dedicated browser instance, context and page. For a local development deployment:
 
@@ -10,6 +10,7 @@ import { createBrowserEnvironment, serveEnvironment } from "@aexhq/env-browser/s
 
 const runtime = createBrowserEnvironment({
   profiles: { web: () => chromium.launch({ chromiumSandbox: true }) },
+  publishMedia: publishScreenshot,
 });
 const server = await serveEnvironment(runtime.handle, {
   token: process.env.ENVIRONMENT_TOKEN, host: "127.0.0.1", port: 8091,
@@ -30,7 +31,7 @@ const web = browser({ name: "web", url: "http://127.0.0.1:8091",
 const tools = browserTools({ env: web });
 ```
 
-Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280×720 viewport as PNG.
+Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280Ã—720 viewport as PNG.
 
 ## State and cancellation
 
@@ -42,7 +43,19 @@ Browser crash/closure is reported on the next operation. The execution token is 
 
 ## Image presentation
 
-Use Pi or Codex **5.1.0 or later**. Screenshot output uses the official `aex_tool_output` version 1 presentation convention. These loops map its image into Brain's existing Tool-result `media`, while the journal retains the raw output. Older loops treat the result as ordinary JSON and do not provide a visual workflow. A custom loop can perform the same mapping; this package introduces no new Brain protocol.
+Supply `publishMedia({ bytes, mediaType, index }, { sessionId, sequence, signal })` when creating
+the Environment. It must store the bytes and return an HTTPS URL reachable by the model provider.
+The screenshot call fails explicitly if publication is unavailable or fails. The callback runs
+before output is returned; PNG bytes never enter the retained Tool result.
+
+The host owns storage, expiry and publication credentials. It may use Aex's attachment upload API
+or another store. Keep credentials in the Environment operator process and use the supplied signal
+to cancel publication. Use session ID, invocation sequence and media index to scope upload
+idempotency. Reattaching or observing an uncertain call does not take another screenshot.
+
+Use the matching URL-media releases of Pi or Codex. Screenshot output uses `aex_tool_output`
+version 1; these loops map its URL into Brain Tool-result `media`. A custom loop can perform the
+same mapping. URLs must stay available for later turns that need the image.
 
 ## Verification
 

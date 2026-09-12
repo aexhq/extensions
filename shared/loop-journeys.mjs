@@ -5,18 +5,38 @@ import { z } from "zod";
 import { answer, calls, collect, fixture } from "./journey-fixture.mjs";
 
 export function loopJourneys(name, loop) {
+  test(`${name}: user PDFs and selected Tool PDFs reach the provider as native files`, { timeout: 30_000 }, async t => {
+    const file = { type: "file", media_type: "application/pdf", url: "https://example.com/report.pdf" };
+    const f = await fixture(t, [
+      body => {
+        assert.ok(body.input.some(item => item.content?.[0]?.file_url === file.url));
+        return calls(["report", {}]);
+      },
+      body => {
+        assert.deepEqual(body.input.at(-1).output, [{ type: "input_text", text: "report ready" }, { type: "input_file", file_url: file.url }]);
+        return answer("report understood");
+      },
+    ]);
+    const report = tool({ name: "report", description: "Read report", input: z.object({}), run: () => ({ type: "aex_tool_output", version: 1, content: "report ready", media: [file] }) });
+    const session = await f.session(loop, { tools: [report({ env: hostEnv({ name: "app" }) })] });
+    await session.send({ message: "Read this report", media: [file] });
+    const messages = (await session.transcript()).messages;
+    assert.deepEqual(messages[0].content[1], file);
+    assert.deepEqual(messages.find(message => message.content[0]?.type === "tool_result").content[0].media, [file]);
+  });
+
   for (const selection of ["hidden", "model"]) {
     test(`${name}: image input and ${selection} placement reach the selected Tool`, { timeout: 30_000 }, async (t) => {
       const invoked = [];
       const f = await fixture(t, [
         (body) => {
-          assert.deepEqual(body.messages[0].content[1], { type: "image_url", image_url: { url: "https://example.com/view.png" } });
-          const schema = body.tools[0].function.parameters;
+          assert.deepEqual(body.input[1].content[0], { type: "input_image", image_url: "https://example.com/view.png" });
+          const schema = body.tools[0].parameters;
           if (selection === "model") assert.deepEqual(schema.properties.environment.enum, ["left", "right"]);
           else assert.equal(schema.properties.environment, undefined);
           return calls(["lookup", selection === "model" ? { environment: "right", input: {} } : {}]);
         },
-        (body) => { assert.match(body.messages.at(-1).content, /right/u); return answer("done"); },
+        (body) => { assert.match(body.input.at(-1).output, /right/u); return answer("done"); },
       ]);
       const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({}),
         options: z.object({ where: z.string() }),
@@ -42,7 +62,7 @@ export function loopJourneys(name, loop) {
     const f = await fixture(t, [
       () => calls(["lookup", { value: "first" }], ["lookup", { value: "second" }]),
       body => {
-        assert.deepEqual(body.messages.filter(message => message.role === "tool").map(message => message.content), ["first", "second"]);
+        assert.deepEqual(body.input.filter(message => message.type === "function_call_output").map(message => message.output), ["first", "second"]);
         return answer("batch complete");
       },
     ]);
@@ -66,15 +86,15 @@ export function loopJourneys(name, loop) {
   test(`${name}: Tool errors reach the model once and native history survives the next turn`, { timeout: 30_000 }, async (t) => {
     let invocations = 0;
     const f = await fixture(t, [
-      () => { const response = calls(["lookup", {}]); response.delta.reasoning_content = "retain reasoning"; return response; },
+      () => { const response = calls(["lookup", {}]); response.native = [{ type: "reasoning", encrypted_content: "retain reasoning", summary: [] }]; return response; },
       (body) => {
-        assert.match(body.messages.at(-1).content, /lookup unavailable/u);
-        assert.equal(body.messages.find(message => message.role === "assistant").reasoning_content, "retain reasoning");
+        assert.match(body.input.at(-1).output, /lookup unavailable/u);
+        assert.equal(body.input.find(message => message.type === "reasoning").encrypted_content, "retain reasoning");
         return answer("please supply the missing value");
       },
       (body) => {
-        assert.ok(body.messages.some(message => message.reasoning_content === "retain reasoning"));
-        assert.ok(body.messages.some(message => message.content === "please supply the missing value"));
+        assert.ok(body.input.some(message => message.type === "reasoning" && message.encrypted_content === "retain reasoning"));
+        assert.ok(body.input.some(message => message.content === "please supply the missing value"));
         return answer("finished with supplied value");
       },
     ]);
@@ -94,8 +114,8 @@ export function loopJourneys(name, loop) {
     const f = await fixture(t, [
       () => ({ error: "provider unavailable" }),
       (body) => {
-        assert.ok(JSON.stringify(body.messages).includes("original request"));
-        assert.ok(JSON.stringify(body.messages).includes("turn_failed"));
+        assert.ok(JSON.stringify(body.input).includes("original request"));
+        assert.ok(JSON.stringify(body.input).includes("turn_failed"));
         return answer("continued");
       },
     ]);
@@ -136,17 +156,18 @@ export function loopJourneys(name, loop) {
         : { compaction: true, contextWindow: 300 };
       const script = [(body) => {
         assert.ok(!body.tools?.length);
-        assert.equal(body.response_format, undefined);
+        assert.equal(body.text?.format, undefined);
+        assert.ok(body.input.some(item => item.content?.[0]?.file_url === "https://example.com/diagram.pdf"));
         return answer("checkpoint: preserve cyan", { stop });
       }];
       if (stop === "stop") script.push(body => {
-        assert.match(JSON.stringify(body.messages), /checkpoint: preserve cyan/u);
+        assert.match(JSON.stringify(body.input), /checkpoint: preserve cyan/u);
         return answer("continued after compaction");
       });
       const f = await fixture(t, script);
       const session = await f.session(loop, { configuration });
       const original = "original task cyan ".repeat(100);
-      await session.send(original).catch(() => {});
+      await session.send({ message: original, media: [{ type: "file", media_type: "application/pdf", url: "https://example.com/diagram.pdf" }] }).catch(() => {});
       const messages = (await session.transcript()).messages;
       if (stop === "length") {
         assert.equal(messages[0].content[0].text, original);

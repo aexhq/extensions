@@ -13,11 +13,12 @@ export async function browserFixture(t) {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const launched = [];
-  const env = createBrowserEnvironment({ profiles: { test: async () => {
+  const published = [];
+  const env = createBrowserEnvironment({ publishMedia: async ({ bytes, mediaType }) => { if (mediaType !== "image/png" || bytes.length === 0) throw new Error("invalid screenshot"); published.push(Buffer.from(bytes)); return "https://example.com/screenshot.png"; }, profiles: { test: async () => {
     const browser = await chromium.launch({ chromiumSandbox: true });
     launched.push(browser);
     return browser;
   } } });
   t.after(async () => { await env.close(); await new Promise(resolve => server.close(resolve)); });
-  return { env, launched, url: `http://127.0.0.1:${server.address().port}` };
+  return { env, launched, published, url: `http://127.0.0.1:${server.address().port}` };
 }

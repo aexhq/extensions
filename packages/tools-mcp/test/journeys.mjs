@@ -11,16 +11,16 @@ import { schemaFixtures } from "./schema-fixtures.mjs";
 test("MCP bridge: structured success, full error evidence and image output through the public SDK", { timeout: 60_000 }, async t => {
   const f = await fixture(t, [
     () => calls(["lookup", { value: "Ada" }]),
-    body => { assert.match(body.messages.at(-1).content, /Ada/u); return calls(["failure", {}]); },
-    body => { assert.match(body.messages.at(-1).content, /permission denied/u); return calls(["protocol_failure", {}]); },
-    body => { assert.match(body.messages.at(-1).content, /mcp_protocol_error/u); return calls(["image", {}]); },
+    body => { assert.match(body.input.at(-1).output, /Ada/u); return calls(["failure", {}]); },
+    body => { assert.match(body.input.at(-1).output, /permission denied/u); return calls(["protocol_failure", {}]); },
+    body => { assert.match(body.input.at(-1).output, /mcp_protocol_error/u); return calls(["image", {}]); },
     body => {
-      assert.ok(body.messages.flatMap(message => Array.isArray(message.content) ? message.content : []).some(block => block.type === "image_url"));
+      assert.ok(body.input.flatMap(message => Array.isArray(message.content) ? message.content : Array.isArray(message.output) ? message.output : []).some(block => block.type === "input_image"));
       return answer("evidence inspected");
     },
   ]);
   const mcp = await mcpFixture(t);
-  const tools = await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["lookup", "failure", "protocol_failure", "image"] });
+  const tools = await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), publishMedia: async () => "https://example.com/mcp.png", names: ["lookup", "failure", "protocol_failure", "image"] });
   const session = await f.session(pi, { tools });
   await session.send("look up and inspect evidence");
   const events = await collect(session.events());
@@ -40,7 +40,7 @@ test("MCP bridge: structured success, full error evidence and image output throu
 test("MCP bridge: transport loss returns unknown without marking the host unreachable or replaying", { timeout: 45_000 }, async t => {
   const f = await fixture(t, [
     () => calls(["disconnect", {}]),
-    body => { assert.match(body.messages.at(-1).content, /outcome unknown/u); return answer("external result needs inspection"); },
+    body => { assert.match(body.input.at(-1).output, /outcome unknown/u); return answer("external result needs inspection"); },
   ]);
   const mcp = await mcpFixture(t);
   const session = await f.session(pi, { tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["disconnect"] }) });
@@ -75,7 +75,7 @@ test("MCP bridge: original JSON Schemas validate through Brain before any remote
   const steps = [];
   for (const schema of schemaFixtures) {
     steps.push(() => calls([schema.name, schema.invalid[0]]));
-    steps.push(body => { assert.match(body.messages.at(-1).content, /invalid_input/u); return calls([schema.name, schema.valid[0]]); });
+    steps.push(body => { assert.match(body.input.at(-1).output, /invalid_input/u); return calls([schema.name, schema.valid[0]]); });
   }
   steps.push(() => answer("schemas validated"));
   const f = await fixture(t, steps);

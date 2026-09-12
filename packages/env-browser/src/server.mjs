@@ -1,3 +1,4 @@
+import { publish } from "../../../shared/media.mjs";
 import { z } from "zod";
 import { definitions } from "./definitions.mjs";
 import { toolOutput } from "../../../shared/tool-output.mjs";
@@ -7,7 +8,7 @@ export { serveEnvironment } from "../../../shared/environment-server.mjs";
 const configuration = z.strictObject({ profile: z.string().min(1) });
 const descriptor = z.strictObject({ type: z.literal("aex_browser_tool"), version: z.literal(1), name: z.enum(Object.keys(definitions)) });
 
-export function createBrowserEnvironment({ profiles }) {
+export function createBrowserEnvironment({ profiles, publishMedia }) {
   const launchers = new Map(Object.entries(profiles));
   for (const launch of launchers.values()) if (typeof launch !== "function") throw new TypeError("each browser profile must supply a launcher");
   const bindings = new Map();
@@ -57,7 +58,7 @@ export function createBrowserEnvironment({ profiles }) {
       if (name === "browser_fill") await page.locator(input.selector).fill(input.value);
       if (name === "browser_screenshot") {
         const png = await page.screenshot({ type: "png", timeout: op.request.deadline_ms });
-        return result(toolOutput({ url: page.url(), title: await page.title() }, [{ type: "image", url: `data:image/png;base64,${png.toString("base64")}` }]));
+        return result(toolOutput({ url: page.url(), title: await page.title() }, [await publish(publishMedia, png, "image/png", 0, { sessionId: op.session_id, sequence: op.sequence, signal: controller.signal })]));
       }
       const output = { url: page.url(), title: await page.title() };
       if (name === "browser_inspect") {

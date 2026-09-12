@@ -13,5 +13,5 @@ test("official media presentation preserves ordinary JSON and failure status", (
   const ordinary = { media: [image] };
   assert.equal(toolResult("call", { output: ordinary, is_error: false }).content, ordinary);
   assert.equal(toolResult("call", undefined).is_error, true);
-  assert.throws(() => toolResult("call", { output: toolOutput({}, [{ type: "audio" }]), is_error: false }), /image blocks/u);
+  assert.throws(() => toolResult("call", { output: toolOutput({}, [{ type: "audio" }]), is_error: false }), /image or PDF URL blocks/u);
 });

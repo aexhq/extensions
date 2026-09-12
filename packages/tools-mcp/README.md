@@ -1,6 +1,6 @@
 # @aexhq/tools-mcp
 
-Connect selected MCP Tools to Brain 0.22 through application `hostEnv`. The application owns the MCP connection, authentication and lifecycle. The bridge never accepts arbitrary model-selected Tool names.
+Connect selected MCP Tools to Brain through application `hostEnv`. The application owns the MCP connection, authentication and lifecycle. The bridge never accepts arbitrary model-selected Tool names.
 
 ```js
 import { hostEnv } from "@aexhq/brain";
@@ -23,11 +23,27 @@ The client SDK owns transport and protocol negotiation. `connectMcp` disables au
 
 ## Results and failures
 
-Every returned MCP result is first committed as an `mcp_result` Event with Tool provenance. Successful text, structured content and resource links are presented to the model. PNG, JPEG, GIF and WebP images use the official `aex_tool_output` version 1 convention; Pi/Codex 5.1.0 map them into Brain Tool-result media. Audio, binary embedded resources, asynchronous tasks and interactive continuations are explicitly unsupported.
+MCP images and embedded image/PDF resources require a caller-supplied
+`publishMedia({ bytes, mediaType, index }, context)` callback on `mcpTools`. Return an HTTPS URL
+reachable by the model provider. `context` supplies the session ID, invocation sequence, deadline
+and cancellation signal. The application owns upload authorization and expiry, and can bind this
+callback to Aex's attachment SDK or another store.
 
-An optional `project(output, toolName)` selects a smaller model-visible JSON representation. Its input includes `content`, optional `structuredContent`, and the committed `evidenceSequence`; raw evidence remains in the Event. Image media is carried separately. Brain's existing emitted-Event and model-input limits still apply; exceeding them is an explicit failure.
+Known binary media is published before the normalized `mcp_result` Event is committed, including
+MCP error results. The retained evidence contains URL media and the remaining MCP content;
+image/base64 and resource blobs are removed. A missing or failed publisher produces
+`mcp_media_failed` evidence and a failed Tool result. The completed MCP tool is never repeated to
+repair publication. Audio, other binary resource types, asynchronous tasks and interactive
+continuations fail explicitly.
 
-MCP `isError` becomes a failed Brain Tool result with code `mcp_tool_error`, `retryable: false` and the complete MCP result in `details`. JSON-RPC failures use `mcp_protocol_error` and retain the original numeric code and data in `details`. Known MCP SDK failures use `mcp_sdk_error`; unsupported continuations use `mcp_unsupported_result`. Protocol/transport errors also produce `mcp_failure` evidence while the invocation is active.
+Successful text, structured content and resource links are presented to the model. Published PNG,
+JPEG, GIF, WebP and PDF inputs use `aex_tool_output` version 1. Use the matching URL-media Pi/Codex
+release to map them into Brain Tool-result media. Unsupported binary fields inside arbitrary Tool
+JSON are not recursively transformed.
+
+An optional `project(output, toolName)` selects a smaller model-visible JSON representation. Its input includes `content`, optional `structuredContent`, and the committed `evidenceSequence`; normalized evidence remains in the Event. Image and PDF media is carried separately. Brain's existing emitted-Event and model-input limits still apply; exceeding them is an explicit failure.
+
+MCP `isError` becomes a failed Brain Tool result with code `mcp_tool_error`, `retryable: false` and the normalized MCP result in `details`. JSON-RPC failures use `mcp_protocol_error` and retain the original numeric code and data in `details`. Known MCP SDK failures use `mcp_sdk_error`; unsupported continuations use `mcp_unsupported_result`. Protocol/transport errors also produce `mcp_failure` evidence while the invocation is active.
 
 Invocation deadlines and MCP request timeouts produce `timeout`; explicit SDK cancellation produces `cancelled`. The bridge returns `unknown` only when an invocation may have been dispatched and no reliable terminal result is available, such as connection loss after a mutation. The terminal result has `is_error: true` and code `unknown`; its evidence Event retains the structured transport cause. Timeout and cancellation describe why waiting ended and do not promise rollback. The bridge never automatically repeats a call.
 

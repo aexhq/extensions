@@ -1,17 +1,18 @@
+import { publish } from "../../../shared/media.mjs";
 import { Client, ProtocolError, SdkError, SdkErrorCode } from "@modelcontextprotocol/client";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/client/validators/ajv";
 import { inspectEnvironment, tool } from "@aexhq/brain";
 import { z } from "zod";
 import { toolOutput } from "../../../shared/tool-output.mjs";
 
-export async function connectMcp(transport, { name = "aex-mcp", version = "0.1.0", ...options } = {}) {
+export async function connectMcp(transport, { name = "aex-mcp", version = "0.2.0", ...options } = {}) {
   const client = new Client({ name, version }, { ...options, inputRequired: { autoFulfill: false } });
   try { await client.connect(transport); }
   catch (error) { await client.close(); throw error; }
   return client;
 }
 
-export async function mcpTools({ client, names, env, prefix = "", project }) {
+export async function mcpTools({ client, names, env, prefix = "", project, publishMedia }) {
   if (inspectEnvironment(env).driver.driver !== "host") throw new TypeError("MCP Tools must be placed in hostEnv");
   z.array(z.string().min(1)).min(1).parse(names);
   if (new Set(names).size !== names.length) throw new TypeError("select each MCP Tool once");
@@ -53,23 +54,32 @@ export async function mcpTools({ client, names, env, prefix = "", project }) {
             code: details.code, message, details: details.data });
           return outcome;
         }
-        const evidenceSequence = await context.emit("mcp_result", { tool: definition.name, result: response });
-        if (response.resultType && response.resultType !== "complete") {
-          return failure("mcp_unsupported_result", `MCP ${definition.name} requires unsupported continuation (${response.resultType}); evidence ${evidenceSequence}`, response);
-        }
-        if (response.isError) {
-          const message = response.content?.filter(block => block.type === "text").map(block => block.text).join("\n");
-          return failure("mcp_tool_error", `MCP ${definition.name}: ${message || "Tool failed"}; evidence ${evidenceSequence}`, response);
-        }
         const media = [];
         const content = [];
-        for (const block of response.content ?? []) {
-          if (block.type === "image") {
-            if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(block.mimeType)) throw new Error(`unsupported MCP image type: ${block.mimeType}`);
-            media.push({ type: "image", url: `data:${block.mimeType};base64,${block.data}` });
-          } else if (block.type === "text" || block.type === "resource_link" || (block.type === "resource" && typeof block.resource?.text === "string")) {
-            content.push(block);
-          } else throw new Error(`unsupported MCP content type: ${block.type}; evidence ${evidenceSequence}`);
+        try {
+          for (const block of response.content ?? []) {
+            const encoded = block.type === "image" ? block.data : block.type === "resource" ? block.resource?.blob : undefined;
+            if (encoded !== undefined) {
+              const bytes = Buffer.from(encoded, "base64");
+              if (bytes.toString("base64") !== encoded) throw new TypeError("invalid MCP media base64");
+              media.push(await publish(publishMedia, bytes, block.mimeType ?? block.resource?.mimeType, media.length, context));
+            } else if (block.type === "text" || block.type === "resource_link" || (block.type === "resource" && typeof block.resource?.text === "string")) {
+              content.push(block);
+            } else throw new TypeError(`unsupported MCP content type: ${block.type}`);
+          }
+        } catch (error) {
+          if (context.signal.aborted) throw error;
+          await context.emit("mcp_media_failed", { tool: definition.name, published: media });
+          return failure("mcp_media_failed", String(error.message), { published: media });
+        }
+        const retained = { ...response, content, ...(media.length ? { media } : {}) };
+        const evidenceSequence = await context.emit("mcp_result", { tool: definition.name, result: retained });
+        if (response.resultType && response.resultType !== "complete") {
+          return failure("mcp_unsupported_result", `MCP ${definition.name} requires unsupported continuation (${response.resultType}); evidence ${evidenceSequence}`, retained);
+        }
+        if (response.isError) {
+          const message = content.filter(block => block.type === "text").map(block => block.text).join("\n");
+          return failure("mcp_tool_error", `MCP ${definition.name}: ${message || "Tool failed"}; evidence ${evidenceSequence}`, retained);
         }
         const presented = { content, ...(response.structuredContent === undefined ? {} : { structuredContent: response.structuredContent }), evidenceSequence };
         return toolOutput(project ? await project(presented, definition.name) : presented, media);
