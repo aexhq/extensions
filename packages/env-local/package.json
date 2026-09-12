@@ -1,0 +1,14 @@
+{
+  "name": "@aexhq/env-local",
+  "version": "0.1.0",
+  "description": "Docker workspace Environment for Brain",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/env-local" },
+  "publishConfig": { "access": "public", "provenance": true, "tag": "next" },
+  "exports": { ".": { "types": "./index.d.ts", "import": "./dist/index.mjs" }, "./server": { "types": "./server.d.ts", "import": "./dist/server.mjs" }, "./package.json": "./package.json" },
+  "files": ["dist", "index.d.ts", "server.d.ts", "image", "README.md"],
+  "scripts": { "build": "node ../../tools/build-environment.mjs", "test": "npm run build && node --test test/*.test.mjs", "test:journeys": "node --test test/journeys.mjs", "prepack": "npm run build" },
+  "dependencies": { "@aexhq/brain": "0.22.0", "zod": "4.4.3" }
+}

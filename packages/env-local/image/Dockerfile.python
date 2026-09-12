@@ -1,0 +1,8 @@
+ARG WORKSPACE_IMAGE=aex-workspace:test
+FROM ghcr.io/astral-sh/uv:0.8.15 AS uv
+FROM ${WORKSPACE_IMAGE}
+COPY --from=uv /uv /usr/local/bin/uv
+COPY packages/env-local/image/python /opt/aex/python-example
+RUN uv sync --locked --python /usr/bin/python3 --project /opt/aex/python-example && \
+    uv run --no-sync --directory /opt/aex/python-example python -m prepare && \
+    printf '{"versions":{"directory":"/opt/aex/python-example","module":"versions"}}' > /opt/aex/python-projects.json

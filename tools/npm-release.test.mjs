@@ -24,7 +24,7 @@ test("an unpublished exact version requires a release archive", () => {
 });
 
 test("every public-repository package enables npm provenance", async () => {
-  for (const workspace of ["loop-codex", "loop-pi", "tools"]) {
+  for (const workspace of ["loop-codex", "loop-pi", "tools", "env-local", "tools-mcp", "env-browser"]) {
     const document = JSON.parse(await readFile(
       path.join(root, "packages", workspace, "package.json"),
       "utf8",

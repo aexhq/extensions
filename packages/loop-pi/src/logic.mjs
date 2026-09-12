@@ -1,5 +1,6 @@
 import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
+import { toolResult } from "../../../shared/tool-output.mjs";
 
 const CHECKPOINT_PREFIX = "Context checkpoint from earlier in this conversation:\n\n";
 
@@ -132,15 +133,7 @@ export async function runPi(input, context) {
     const byCall = new Map(results.map((result) => [result.call_id, result]));
     transcript.push({
       role: "user",
-      content: calls.map(({ call_id }) => {
-        const result = byCall.get(call_id);
-        return {
-          type: "tool_result",
-          tool_use_id: call_id,
-          content: result === undefined ? "Tool produced no result." : result.output,
-          is_error: result === undefined ? true : result.is_error,
-        };
-      }),
+      content: calls.map(({ call_id }) => toolResult(call_id, byCall.get(call_id))),
     });
   }
 }

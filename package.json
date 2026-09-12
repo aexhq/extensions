@@ -1,7 +1,7 @@
 {
   "name": "aex-extension",
   "private": true,
-  "description": "Official Agentloop and Tool extensions built against public Brain contracts",
+  "description": "Official Agentloop, Tool and Environment extensions built against public Brain contracts",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -11,13 +11,14 @@
     "packages/*"
   ],
   "scripts": {
+    "test:prepare": "node tools/prepare-runtime-tests.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
-    "test:journeys": "node --test --test-concurrency=1 packages/loop-pi/test/journeys.mjs packages/loop-codex/test/journeys.mjs packages/tools/test/journeys.mjs",
+    "test:journeys": "node --test --test-concurrency=1 packages/loop-pi/test/journeys.mjs packages/loop-codex/test/journeys.mjs packages/tools/test/journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.20.0",
+    "@aexhq/brain": "0.22.0",
     "@bytecodealliance/componentize-js": "0.19.3",
     "@bytecodealliance/jco": "1.17.9",
     "@types/node": "^24.3.0",
