@@ -31,7 +31,7 @@ const web = browser({ name: "web", url: "http://127.0.0.1:8091",
 const tools = browserTools({ env: web });
 ```
 
-Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280Ã—720 viewport as PNG.
+Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280×720 viewport as PNG.
 
 ## State and cancellation
 
