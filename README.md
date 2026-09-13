@@ -7,7 +7,14 @@ Official Agentloop, Tool and Environment extensions for Aex. They use only the p
 | --- | --- |
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
-| `@aexhq/tools` | Model-visible Tool definitions with Environment-side implementations |
+| [`@aexhq/tool-bash`](packages/tool-bash/README.md) | Run Bash commands |
+| [`@aexhq/tool-edit`](packages/tool-edit/README.md) | Replace one exact text occurrence |
+| [`@aexhq/tool-glob`](packages/tool-glob/README.md) | Find workspace paths by glob pattern |
+| [`@aexhq/tool-grep`](packages/tool-grep/README.md) | Search workspace text with ripgrep |
+| [`@aexhq/tool-ls`](packages/tool-ls/README.md) | List directory entries |
+| [`@aexhq/tool-read`](packages/tool-read/README.md) | Read UTF-8 text |
+| [`@aexhq/tool-todo`](packages/tool-todo/README.md) | Read or replace the workspace to-do list |
+| [`@aexhq/tool-write`](packages/tool-write/README.md) | Write UTF-8 files |
 | [`@aexhq/env-local`](packages/env-local/README.md) | Docker workspace Environment with retained files and prepared Python projects |
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
@@ -19,7 +26,8 @@ Tools require an Environment that executes their implementation descriptors, suc
 ```ts
 import { brainEnv, environment } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
-import { bash, read } from "@aexhq/tools";
+import { bash } from "@aexhq/tool-bash";
+import { read } from "@aexhq/tool-read";
 
 const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => process.env.ENVIRONMENT_URL! })({ name: "workspace" });
@@ -76,7 +84,7 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-The current packages use Brain SDK 0.24.3. Pi, Codex and Tools are version 6.1.2; the MCP, Docker and
+The current packages use Brain SDK 0.24.3. Pi, Codex and the individual Tools are version 6.1.2; the MCP, Docker and
 browser extensions are version 0.3.2. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
@@ -94,17 +102,17 @@ For quick Pi policy edits, use `npm run test:logic:watch -w packages/loop-pi`; i
 logic tests without a Component build. Full tests and compiled journeys still gate release.
 
 Each loop owns its factory/logic tests and `test/journeys.mjs`; shared journey fixtures register
-the same contract scenarios separately for Pi and Codex. Tools owns factory tests, built-runtime
-integration tests for all eight Tools, and public-SDK workspace journeys under `packages/tools/test`.
-The Tools journeys use a local HTTP Environment fixture that executes the packaged runtimes
-and verifies their results through Brain.
+the same contract scenarios separately for Pi and Codex. Each `packages/tool-*` package owns its
+factory, schemas, runtime and tests; it builds and publishes without depending on another Tool.
+Public-SDK workspace journeys under `test/tools-journeys.mjs` compose all eight packages through
+a local HTTP Environment fixture and verify their results through Brain.
 
 Install Docker, bash and ripgrep, then run `npx playwright install-deps chromium` and
 `npm run test:prepare` to build fixture images and install Chromium. Run `npm test` for
 unit/runtime tests and `npm run package-smoke` for packed consumer composition.
 With the pinned Brain server listening on `127.0.0.1:18092`, token `extension-fixture-token`, and
-model base URL `http://127.0.0.1:18093/v1`, run `npm run test:journeys`. Each of these six packages
-also exposes `npm run test:journeys --workspace <package>`. CI starts the pinned Brain image and
+model base URL `http://127.0.0.1:18093/v1`, run `npm run test:journeys`. The loop, Environment and MCP packages
+also expose `npm run test:journeys --workspace <package>`. CI starts the pinned Brain image and
 runs every journey. Bash and ripgrep must be installed; their runtime tests fail if unavailable.
 Scripted model responses make these release gates deterministic; they do not measure live model quality.
 

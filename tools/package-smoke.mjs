@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { packageWorkspaces } from "./workspaces.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const npmCli = process.env.npm_execpath;
@@ -23,7 +24,9 @@ const pack = (directory) => {
 try {
   await mkdir(artifacts);
   await mkdir(consumer);
-  const packages = ["loop-codex", "loop-pi", "tools", "env-local", "tools-mcp", "env-browser"]
+  const workspaces = await packageWorkspaces();
+  const toolNames = workspaces.filter(name => name.startsWith("tool-")).map(name => name.slice("tool-".length));
+  const packages = workspaces
     .map((name) => pack(path.join(root, "packages", name)));
   if (process.env.BRAIN_PACKAGE_ARCHIVE !== undefined) packages.unshift(path.resolve(process.env.BRAIN_PACKAGE_ARCHIVE));
   await writeFile(path.join(consumer, "package.json"), `${JSON.stringify({
@@ -37,7 +40,7 @@ import {
 } from "@aexhq/brain";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
-import { read } from "@aexhq/tools";
+${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
 import { local } from "@aexhq/env-local";
 import { createLocalEnvironment } from "@aexhq/env-local/server";
 import { browser, browserTools } from "@aexhq/env-browser";
@@ -71,11 +74,23 @@ assert.equal(readSource.environment, workspace);
 assert.deepEqual(readSource.implementation, { type: "aex_official_tool", version: 1, name: "read" });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
-const toolsPackage = new URL(import.meta.resolve("@aexhq/tools/package.json"));
-const registry = JSON.parse(await readFile(new URL("./dist/runtime/registry.json", toolsPackage), "utf8"));
-const todoRuntime = (await import(new URL("./dist/runtime/todo.mjs", toolsPackage))).default;
-assert.equal(todoRuntime.contractDigest, registry.todo.contract_digest);
-assert.deepEqual(registry.read.manifest.implementation, readSource.implementation);
+for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
+  const toolPackage = new URL(import.meta.resolve("@aexhq/tool-" + name + "/package.json"));
+  const document = JSON.parse(await readFile(toolPackage, "utf8"));
+  assert.ok(!Object.keys(document.dependencies).some(dependency => dependency.startsWith("@aexhq/tool")));
+  const registry = JSON.parse(await readFile(new URL("./dist/runtime/registry.json", toolPackage), "utf8"));
+  assert.deepEqual(Object.keys(registry), [name]);
+  const runtime = (await import(new URL("./dist/runtime/" + name + ".mjs", toolPackage))).default;
+  assert.equal(runtime.contractDigest, registry[name].contract_digest);
+  const source = inspectTool(factory({ env: workspace }));
+  assert.deepEqual(registry[name].manifest, {
+    name: source.definition.name, description: source.definition.description,
+    input_schema: source.definition.inputSchema, output_schema: source.definition.outputSchema,
+    implementation: source.implementation,
+  });
+}
+const todoPackage = new URL(import.meta.resolve("@aexhq/tool-todo/package.json"));
+const todoRuntime = (await import(new URL("./dist/runtime/todo.mjs", todoPackage))).default;
 assert.deepEqual(
   await todoRuntime.execute(
     { action: "set", items: [{ text: "packed", done: false }] },
@@ -89,7 +104,7 @@ console.log("packed extension packages compose through the public Brain contract
   assert.match(output, /public Brain contracts/u);
   await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment, hostEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
-import { bash, read, write } from "@aexhq/tools";
+${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
 import { local } from "@aexhq/env-local";
 import { createLocalEnvironment } from "@aexhq/env-local/server";
 import { browser, browserTools } from "@aexhq/env-browser";
@@ -119,7 +134,7 @@ const workspace = environment({ url: () => "https://environment.example" })({ na
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
   agentloop: pi({ env: loopRuntime }),
-  tools: [read({ env: workspace }), write({ env: workspace }), bash({ env: workspace })],
+  tools: [${toolNames.map(name => `${name}({ env: workspace })`).join(", ")}],
 });
 `);
   runNpm(["exec", "--", "tsc", "--noEmit", "--strict", "--target", "ES2023", "--module", "NodeNext", "--moduleResolution", "NodeNext", "smoke.ts"], { cwd: consumer });

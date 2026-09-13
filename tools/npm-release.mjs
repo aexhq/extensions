@@ -5,15 +5,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { packageWorkspaces } from "./workspaces.mjs";
 
-const workspaces = [
-  "loop-codex",
-  "loop-pi",
-  "tools",
-  "env-local",
-  "tools-mcp",
-  "env-browser",
-];
 const root = path.resolve(import.meta.dirname, "..");
 const npmCli = [
   process.env.npm_execpath,
@@ -74,7 +67,7 @@ const manifest = async (filename) => {
 async function pack(directory) {
   await mkdir(directory, { recursive: false });
   const packages = [];
-  for (const workspace of workspaces) {
+  for (const workspace of await packageWorkspaces()) {
     const packageDocument = await document(workspace);
     if (packageDocument.publishConfig?.access !== "public" ||
         packageDocument.publishConfig?.tag !== "next" ||
@@ -132,7 +125,7 @@ async function pack(directory) {
   }
   const value = { schema: 1, source: process.env.GITHUB_SHA ?? "local", packages };
   await writeFile(path.join(directory, "manifest.json"), `${JSON.stringify(value, null, 2)}\n`);
-  for (const filename of ["npm-release.mjs", "verify-dependencies.mjs", "publish.mjs"]) {
+  for (const filename of ["npm-release.mjs", "workspaces.mjs", "verify-dependencies.mjs", "publish.mjs"]) {
     await writeFile(path.join(directory, filename), await readFile(path.join(root, "tools", filename)));
   }
 }

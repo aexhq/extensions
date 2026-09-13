@@ -5,14 +5,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { releasePlan } from "./npm-release.mjs";
+import { packageWorkspaces } from "./workspaces.mjs";
 
 const root = path.join(import.meta.dirname, "..");
 
 test("an existing exact release trusts its immutable registry integrity without rebuilding", () => {
   assert.deepEqual(
-    releasePlan("@aexhq/tools", "2.0.0", "sha512-registry"),
+    releasePlan("@aexhq/tool-bash", "2.0.0", "sha512-registry"),
     {
-      filename: "aexhq-tools-2.0.0.tgz",
+      filename: "aexhq-tool-bash-2.0.0.tgz",
       integrity: "sha512-registry",
       shouldPack: false,
     },
@@ -20,11 +21,11 @@ test("an existing exact release trusts its immutable registry integrity without 
 });
 
 test("an unpublished exact version requires a release archive", () => {
-  assert.equal(releasePlan("@aexhq/tools", "2.0.0", undefined).shouldPack, true);
+  assert.equal(releasePlan("@aexhq/tool-bash", "2.0.0", undefined).shouldPack, true);
 });
 
 test("every public-repository package enables npm provenance", async () => {
-  for (const workspace of ["loop-codex", "loop-pi", "tools", "env-local", "tools-mcp", "env-browser"]) {
+  for (const workspace of await packageWorkspaces()) {
     const document = JSON.parse(await readFile(
       path.join(root, "packages", workspace, "package.json"),
       "utf8",
