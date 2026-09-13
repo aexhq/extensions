@@ -7,7 +7,10 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { local } from "../dist/index.mjs";
 import { createLocalEnvironment, serveEnvironment } from "../dist/server.mjs";
-import { write, read, edit, bash } from "../../tools/dist/index.js";
+import { bash } from "../../tool-bash/dist/index.js";
+import { edit } from "../../tool-edit/dist/index.js";
+import { read } from "../../tool-read/dist/index.js";
+import { write } from "../../tool-write/dist/index.js";
 import { codex } from "../../loop-codex/dist/index.mjs";
 import { fixture, calls, answer, collect } from "../../../shared/journey-fixture.mjs";
 

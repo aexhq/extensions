@@ -1,12 +1,12 @@
 # @aexhq/env-local
 
-A Docker workspace Environment using Brain SDK 0.24. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the existing `@aexhq/tools` implementation descriptors and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.24. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the `@aexhq/tool-*` implementation descriptors and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
 
 ```sh
 npm ci
-npm run build --workspace @aexhq/tools
+npm run build
 docker build -t my-workspace -f packages/env-local/image/Dockerfile .
 ```
 
@@ -33,7 +33,9 @@ Compose Tools in the application:
 
 ```js
 import { local } from "@aexhq/env-local";
-import { read, write, bash } from "@aexhq/tools";
+import { bash } from "@aexhq/tool-bash";
+import { read } from "@aexhq/tool-read";
+import { write } from "@aexhq/tool-write";
 
 const workspace = local({ name: "workspace", url: "http://127.0.0.1:8090",
   token: process.env.ENVIRONMENT_TOKEN, profile: "coding" });

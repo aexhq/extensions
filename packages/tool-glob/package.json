@@ -1,0 +1,45 @@
+{
+  "name": "@aexhq/tool-glob",
+  "version": "6.1.2",
+  "description": "List Environment workspace paths matching a glob pattern.",
+  "license": "MIT",
+  "homepage": "https://aex.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aexhq/extensions.git",
+    "directory": "packages/tool-glob"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../tools/clean-dist.mjs && tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node ../../tools/build-tool-runtime.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@aexhq/brain": "0.24.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}
