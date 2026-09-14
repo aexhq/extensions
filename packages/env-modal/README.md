@@ -2,8 +2,8 @@
 
 A finite Modal Sandbox Environment using Brain's public `environment/v1` protocol.
 The controller holds provider credentials; commands run as UID/GID 1000 with no inherited
-capabilities or privilege escalation. Commands receive only their JSON input on stdin and
-return one JSON value on stdout. Brain's offered invocation callback is not passed to commands.
+capabilities or privilege escalation. Commands receive one JSON packet on stdin and return
+one JSON value on stdout. Brain's offered invocation callback is not passed to commands.
 
 ```js
 import { modal } from "@aexhq/env-modal";
@@ -21,6 +21,14 @@ The operator publishes a Modal image and fixed command catalog before exposing a
 Images must contain `/usr/bin/setpriv`, their runtime and data, and a working directory writable
 by UID/GID 1000. Use immutable `im-…` IDs. The controller never installs dependencies or accepts
 customer image names, arguments, environment variables, secrets, volumes or network rules.
+
+The stdin packet is `{input, configuration, invocation: {sessionId, environment, sequence}}`.
+`input` is the model-supplied Tool argument; optional `implementation.configuration` is bound by
+the application at session creation (otherwise `null`). The controller supplies invocation identity.
+Commands validate both their arguments and configuration. This supports a run-scoped application
+callback credential without giving commands a database administrator or provider key. Application
+configuration cannot change the image, command, resource size or network profile. It is not stored
+in the controller's invocation table; Brain retains the Tool binding and result.
 
 ```js
 import { createModalEnvironment, serveEnvironment } from "@aexhq/env-modal/server";

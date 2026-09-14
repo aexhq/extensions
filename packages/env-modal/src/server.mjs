@@ -16,7 +16,7 @@ const profileSchema = z.strictObject({ image: z.string().regex(/^im-[A-Za-z0-9]+
   workdir: z.string().startsWith("/").default("/workspace"), region: z.string().min(1),
   outboundDomains: z.array(z.string().regex(/^(\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u)).default([]),
   maxOutputBytes: z.number().int().positive().max(16 * 1024 * 1024).default(4 * 1024 * 1024) });
-const descriptor = z.strictObject({ type: z.literal("modal_command"), name: identifier });
+const descriptor = z.strictObject({ type: z.literal("modal_command"), name: identifier, configuration: z.unknown().optional() });
 const unprivileged = ["/usr/bin/setpriv", "--reuid=1000", "--regid=1000", "--clear-groups", "--no-new-privs",
   "--inh-caps=-all", "--bounding-set=-all", "--ambient-caps=-all", "--"];
 
@@ -173,7 +173,11 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
         }
         return output;
       };
-      const write = async () => { await child.stdin.writeText(JSON.stringify(op.request.input)); await child.stdin.close(); };
+      const write = async () => {
+        await child.stdin.writeText(JSON.stringify({ input: op.request.input, configuration: parsed.data.configuration ?? null,
+          invocation: { sessionId: state.sessionId, environment: state.environment, sequence: op.sequence } }));
+        await child.stdin.close();
+      };
       const [, stdout, stderr, exitCode] = await Promise.all([write(), read(child.stdout), read(child.stderr), child.wait()]);
       if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
       else if (exitCode !== 0) receipt = failure("command_failed", `Modal command exited ${exitCode}: ${stderr.slice(0, 2048)}`);

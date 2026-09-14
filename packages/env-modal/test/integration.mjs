@@ -8,7 +8,8 @@ import { createModalClient, createModalEnvironment, serveEnvironment } from "../
 
 const python = `import json,os,socket,sys,time,subprocess
 from pathlib import Path
-data=json.load(sys.stdin)
+packet=json.load(sys.stdin)
+data=packet["input"]
 op=data["op"]
 if op=="write":
  Path("value").write_text(data["value"])
@@ -23,7 +24,7 @@ elif op=="probe":
    denied.append(False)
   except OSError: denied.append(True)
  keys=["MODAL_TOKEN_ID","MODAL_TOKEN_SECRET","MODAL_IDENTITY_TOKEN","AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY","AEX_API_KEY","SUPABASE_SECRET_KEY"]
- print(json.dumps({"uid":os.getuid(),"network_denied":denied,"privileged_credentials":any(key in os.environ for key in keys)}))
+ print(json.dumps({"uid":os.getuid(),"network_denied":denied,"privileged_credentials":any(key in os.environ for key in keys),"configuration":packet["configuration"],"invocation":packet["invocation"]}))
 elif op=="hang":
  subprocess.Popen([sys.executable,"-c","import time; from pathlib import Path; time.sleep(45); Path('late').write_text('side effect')"])
  Path("started").write_text("yes")
@@ -60,7 +61,7 @@ async function integration(t) {
     assert.equal(response.status, 200);
     return (await response.json()).receipt;
   };
-  const execute = (id, input, deadline_ms = 30_000) => call(id, "execute", { implementation: { type: "modal_command", name: "fixture" }, input, deadline_ms });
+  const execute = (id, input, deadline_ms = 30_000) => call(id, "execute", { implementation: { type: "modal_command", name: "fixture", configuration: { scope: "one-run" } }, input, deadline_ms });
   const started = Date.now();
   t.after(async () => {
     try {
@@ -78,7 +79,8 @@ async function integration(t) {
   const write = await execute(sessions[0], { op: "write", value: "retained" });
   assert.equal(write.type, "result", JSON.stringify(write));
   assert.deepEqual((await execute(sessions[0], { op: "probe" })).output,
-    { uid: 1000, network_denied: [true, true], privileged_credentials: false });
+    { uid: 1000, network_denied: [true, true], privileged_credentials: false, configuration: { scope: "one-run" },
+      invocation: { sessionId: sessions[0], environment: "cpu", sequence: sequences.get(sessions[0]) } });
   assert.deepEqual((await execute(sessions[1], { op: "read" })).output, { value: null });
   await server.close(); env.close(); await open();
   assert.deepEqual((await execute(sessions[0], { op: "read" })).output, { value: "retained" });

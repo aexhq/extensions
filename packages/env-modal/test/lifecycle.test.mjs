@@ -33,7 +33,9 @@ async function fixture(t, options = {}) {
             const wait = new Promise(resolve => { finish = () => { output?.close(); resolve(137); }; });
             return {
               stdin: new WritableStream({ write(chunk) {
-                const input = JSON.parse(chunk);
+                const packet = JSON.parse(chunk);
+                executions.at(-1).packet = packet;
+                const input = packet.input;
                 if (!input.hang) { output.enqueue(JSON.stringify(input)); output.close(); finish = undefined; }
               } }),
               stdout: new ReadableStream({ start(controller) { output = controller; } }),
@@ -113,9 +115,13 @@ test("admission, immutable configuration and command catalog deny widening befor
   const arbitrary = execute(); arbitrary.operation.request.implementation.name = "arbitrary";
   assert.equal((await f.env.handle(arbitrary)).receipt.code, "unsupported");
   const callback = execute(); callback.operation.request.callback = { url: "https://example.com", token: "privileged", methods: [] };
+  callback.operation.request.implementation.configuration = { callback: "application-scoped", cpu: 999 };
   // Brain offers invocation callbacks, but command processes receive only their JSON input.
   assert.deepEqual((await f.env.handle(callback)).receipt.output, {});
   assert.equal(f.executions[0].opts.env, undefined);
+  assert.deepEqual(f.executions[0].packet, { input: {}, configuration: { callback: "application-scoped", cpu: 999 },
+    invocation: { sessionId: "first", environment: "workspace", sequence: 2 } });
+  assert.equal(f.created[0].cpu, 1);
   active = false;
   assert.equal((await f.env.handle(execute("first", 3))).receipt.type, "failure");
   assert.equal(f.executions.length, 1);
