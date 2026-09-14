@@ -127,3 +127,16 @@ The new journeys exercise Docker workspace recovery and lost replies, MCP eviden
 and retained browser state with screenshot media through both compiled loops. Runtime tests also
 exercise actual process cancellation and resource loss. No runtime tests are skipped when a
 dependency is unavailable.
+
+## npm publishing
+
+Each package's npm trusted publisher must allow `npm publish` from GitHub organization
+`aexhq`, repository `extensions`, workflow filename `npm-publish.yml`, and environment
+`npm-production`. Configuring this relationship requires interactive npm authentication;
+bypass-2FA access tokens do not authorize `npm trust` operations. See the
+[npm setup guide](https://docs.npmjs.com/trusted-publishers/) and
+[authentication requirements](https://docs.npmjs.com/cli/v11/commands/npm-trust/#prerequisites).
+
+The [publish workflow](.github/workflows/npm-publish.yml) requires an immutable release tag,
+successful source CI and the real Modal integration check before staging exact package
+archives under `next`. Promotion reuses those archives without rebuilding them.
