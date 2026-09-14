@@ -3,6 +3,10 @@
 Official Agentloop, Tool and Environment extensions for Aex. They use only the public
 `@aexhq/brain` extension API.
 
+Environment providers are independent of Aex hosting. For example, env-modal accepts the
+application's own Modal client and API credentials; Aex's managed keys, admission and billing
+are optional composition outside the extension. See the [standalone Modal example](packages/env-modal/README.md).
+
 | package | role |
 | --- | --- |
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |

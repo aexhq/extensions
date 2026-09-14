@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ModalClient } from "modal";
 import { createModalClient, createModalEnvironment, serveEnvironment } from "../dist/server.mjs";
 
 const python = `import json,os,socket,sys,time,subprocess
@@ -34,11 +35,16 @@ else: raise ValueError("unknown operation")`;
 
 async function integration(t) {
   assert.ok(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET, "Modal credentials are required");
-  const client = createModalClient();
+  const credentials = { tokenId: process.env.MODAL_TOKEN_ID, tokenSecret: process.env.MODAL_TOKEN_SECRET };
+  const client = createModalClient(credentials);
   const appName = "aex-environment-integration";
-  const app = await client.apps.fromName(appName, { createIfMissing: true });
-  const image = await client.images.fromRegistry("python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea")
-    .dockerfileCommands(["RUN mkdir -p /workspace && chown 1000:1000 /workspace", "WORKDIR /workspace", "USER 1000:1000"]).build(app);
+  const builder = new ModalClient(credentials);
+  let image;
+  try {
+    const app = await builder.apps.fromName(appName, { createIfMissing: true });
+    image = await builder.images.fromRegistry("python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea")
+      .dockerfileCommands(["RUN mkdir -p /workspace && chown 1000:1000 /workspace", "WORKDIR /workspace", "USER 1000:1000"]).build(app);
+  } finally { await builder.close(); }
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-integration-"));
   const profiles = { cpu: { image: image.imageId, commands: { fixture: ["python", "-c", python] },
     cpu: 1, memoryMiB: 1024, maxLifetimeMs: 90_000, region: "us", maxOutputBytes: 8192 } };
