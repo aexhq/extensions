@@ -18,7 +18,9 @@
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.24.4",
+    "@aexhq/brain": "0.25.1",
+    "@babel/core": "8.0.5",
+    "@babel/plugin-transform-unicode-property-regex": "8.0.1",
     "@bytecodealliance/componentize-js": "0.19.3",
     "@bytecodealliance/jco": "1.17.9",
     "@types/node": "^24.3.0",

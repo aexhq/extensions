@@ -9,6 +9,8 @@ const options = z.object({
   reserveTokens: z.number().int().positive().default(16_384),
   keepRecentTokens: z.number().int().positive().default(20_000),
   compaction: z.boolean().default(true),
+  output: z.strictObject({ schema: z.union([z.boolean(), z.record(z.string(), z.unknown())]),
+    maxCorrections: z.number().int().min(0).max(10).default(2) }).optional(),
 }).strict();
 
 export const pi = agentloop({

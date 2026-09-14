@@ -1,6 +1,7 @@
 import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
 import { toolResult } from "../../../shared/tool-output.mjs";
+import { structuredOutput } from "../../../shared/structured-output.mjs";
 
 const AUTO_COMPACT_RATIO = 0.9;
 const COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000;
@@ -25,6 +26,7 @@ const isPlainUserMessage = (message) =>
 export async function runCodex(input, context) {
   const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
   const placement = toolPlacement(input.tools, options);
+  const output = structuredOutput(options.output);
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
   const saved = await context.kv.read("usage");
@@ -62,7 +64,7 @@ export async function runCodex(input, context) {
       await context.setTranscript(transcript);
       await context.kv.put("usage", usage);
     }
-    const response = await context.model({ messages: transcript, tools: placement.definitions });
+    const response = await context.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
     usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
     await context.setTranscript(transcript);
@@ -71,9 +73,16 @@ export async function runCodex(input, context) {
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
+      const final = output?.accept(messageText(response.message), response.stop_reason);
+      if (final?.correction) {
+        transcript.push(final.correction);
+        await context.setTranscript(transcript);
+        continue;
+      }
       await context.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
-      return {};
+      return final ? { result: final.value } : {};
     }
+    if (output?.correcting) output.rejectTools();
     const results = [];
     for (const call of calls) {
       const [result] = await context.dispatch([placement.invocation(call)]);

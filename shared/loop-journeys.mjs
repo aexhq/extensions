@@ -5,6 +5,33 @@ import { z } from "zod";
 import { answer, calls, collect, fixture } from "./journey-fixture.mjs";
 
 export function loopJourneys(name, loop) {
+  test(`${name}: hosted output correction finishes inside an asynchronously submitted turn`, { timeout: 30_000 }, async t => {
+    const f = await fixture(t, [
+      () => calls(["calculate", {}]),
+      () => answer("not JSON"),
+      body => { assert.equal(body.tools?.length ?? 0, 0); return answer('{"answer":"42"}'); },
+      body => { assert.equal(body.tools?.length ?? 0, 0); return answer('{"answer":42}'); },
+    ]);
+    let effects = 0;
+    const calculate = tool({ name: "calculate", description: "Calculate", input: z.object({}), run: () => { effects++; return 42; } });
+    const session = await f.session(loop, { configuration: { output: { schema: {
+      type: "object", properties: { answer: { type: "integer" } }, required: ["answer"], additionalProperties: false,
+    } } }, tools: [calculate({ env: hostEnv({ name: "app" }) })] });
+    const receipt = await session.submit("calculate", { idempotencyKey: "structured-submit" });
+    assert.ok(receipt.sequence > 0);
+    for await (const event of session.stream()) {
+      if (event.sequence < receipt.sequence) continue;
+      assert.notEqual(event.type, "turn_failed", JSON.stringify(event.data));
+      if (event.type === "turn_ended") break;
+    }
+    const events = await collect(session.events());
+    assert.equal(events.filter(event => event.type === "turn_started").length, 1);
+    const outputs = events.filter(event => event.type === "output_emitted" && event.data.type === "assistant_message");
+    assert.equal(outputs.length, 1);
+    assert.deepEqual(JSON.parse(outputs[0].data.message), { answer: 42 });
+    assert.equal(effects, 1);
+  });
+
   test(`${name}: user PDFs and selected Tool PDFs reach the provider as native files`, { timeout: 30_000 }, async t => {
     const file = { type: "file", media_type: "application/pdf", url: "https://example.com/report.pdf" };
     const f = await fixture(t, [

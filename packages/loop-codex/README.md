@@ -59,6 +59,20 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Version 6.1 targets Brain SDK 0.24 and preserves the 0.23 WIT and URL-media contract. Existing sessions keep their
+Version 6.2 targets Brain SDK 0.25 and preserves the 0.23 WIT and URL-media contract. Existing sessions keep their
 immutable loop implementation; create new sessions to adopt the updated loop. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
+
+## Hosted structured output
+
+Set `output: { schema: jsonSchema, maxCorrections: 2 }` on the loop to validate JSON Schema
+2020-12 inside the hosted turn. `z.toJSONSchema(schema)` supplies a schema from Zod. Schemas
+compile strictly before model effects: unknown keywords, unresolved external references and
+unsupported patterns fail explicitly. Standard formats are validated without coercion.
+
+Corrections run without tools and retain previous results. They finish in the same turn when
+using `session.submit()`, without a client process driving extra turns. Only a valid final
+answer emits `assistant_message`; its parsed value is the turn result. Refusal, truncation,
+provider failure and cancellation do not trigger formatting retries. Corrections default to
+two, with a supported range of zero through ten. Application business rules still belong in
+its tools or persistence boundary.

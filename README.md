@@ -16,12 +16,16 @@ Official Agentloop, Tool and Environment extensions for Aex. They use only the p
 | [`@aexhq/tool-todo`](packages/tool-todo/README.md) | Read or replace the workspace to-do list |
 | [`@aexhq/tool-write`](packages/tool-write/README.md) | Write UTF-8 files |
 | [`@aexhq/env-local`](packages/env-local/README.md) | Docker workspace Environment with retained files and prepared Python projects |
+| [`@aexhq/env-modal`](packages/env-modal/README.md) | Finite isolated Modal Sandbox with fixed command profiles and cumulative resource usage |
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
 
 Every placed Agentloop and Tool names its Environment explicitly. The loop packages ship
 precompiled WebAssembly Components and run in Brain's built-in Wasmtime Environment; workspace
 Tools require an Environment that executes their implementation descriptors, such as `env-local`.
+Both official loops support hosted JSON Schema output correction in the same turn, including
+turns started with `session.submit()`. Configure `output: { schema, maxCorrections: 2 }` on the loop;
+correction requests have no tools and only a valid final answer emits `assistant_message`.
 
 ```ts
 import { brainEnv, environment } from "@aexhq/brain";
@@ -45,9 +49,9 @@ Environment owns execution and resource enforcement.
 
 The workspace example requires a running Environment server. `env-local` supplies a Docker
 implementation; its operator configures trusted images and workspace grants. `env-browser`
-requires an operator-supplied browser launcher and deployment isolation. Hosted Aex currently
-supports Brain's Wasm Environment and application `hostEnv` Tools; use standalone Brain for
-these HTTP Environments.
+requires an operator-supplied browser launcher and deployment isolation. Hosted Aex admits
+its published managed Environment catalog, Brain's Wasm Environment and application `hostEnv`
+Tools. Use standalone Brain for your own HTTP Environment endpoints.
 
 Application-resident Tools use the same public factory with `run`. Their code executes in the
 application process, and `ctx.emit` records application-defined events in the session journal.
@@ -84,8 +88,7 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-The current packages use Brain SDK 0.24.3. Pi, Codex and the individual Tools are version 6.1.2; the MCP, Docker and
-browser extensions are version 0.3.2. Images and PDFs use HTTPS URLs in user input and Tool results.
+Packages pin their Brain SDK dependency in their manifests. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.

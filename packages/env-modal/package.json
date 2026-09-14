@@ -1,0 +1,14 @@
+{
+  "name": "@aexhq/env-modal",
+  "version": "0.1.0",
+  "description": "Finite Modal Sandbox Environment for Brain",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/env-modal" },
+  "publishConfig": { "access": "public", "provenance": true, "tag": "next" },
+  "exports": { ".": { "types": "./index.d.ts", "import": "./dist/index.mjs" }, "./server": { "types": "./server.d.ts", "import": "./dist/server.mjs" }, "./package.json": "./package.json" },
+  "files": ["dist", "index.d.ts", "server.d.ts", "README.md"],
+  "scripts": { "build": "node ../../tools/build-environment.mjs", "test": "npm run build && node --test test/*.test.mjs", "test:integration": "node --test --test-force-exit test/integration.mjs", "prepack": "npm run build" },
+  "dependencies": { "@aexhq/brain": "0.25.1", "modal": "0.10.1", "zod": "4.4.3" }
+}

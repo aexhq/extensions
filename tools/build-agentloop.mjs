@@ -1,5 +1,6 @@
 import { componentize } from "@bytecodealliance/componentize-js";
 import { build } from "esbuild";
+import { transformAsync } from "@babel/core";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +21,7 @@ try {
     bundle: true,
     format: "esm",
     platform: "neutral",
+    mainFields: ["module", "main"],
     external: ["brain:agentloop/host@0.1.0"],
     write: false,
     legalComments: "none",
@@ -27,7 +29,10 @@ try {
   const source = bundled.outputFiles[0];
   if (source === undefined) throw new Error("esbuild produced no Agentloop source");
   const sourcePath = path.join(work, "agentloop.mjs");
-  await writeFile(sourcePath, source.contents);
+  // The embedded JS engine has no ICU property tables; compile those regexes into ordinary ranges.
+  const compatible = await transformAsync(source.text, { babelrc: false, configFile: false,
+    plugins: ["@babel/plugin-transform-unicode-property-regex"] });
+  await writeFile(sourcePath, compatible.code);
   const witPath = fileURLToPath(new URL(import.meta.resolve("@aexhq/brain/contracts/agentloop.wit")));
   const built = await componentize({
     sourcePath,
