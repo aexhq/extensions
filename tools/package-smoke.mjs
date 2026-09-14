@@ -43,6 +43,8 @@ import { pi } from "@aexhq/agentloop-pi";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
 import { local } from "@aexhq/env-local";
 import { createLocalEnvironment } from "@aexhq/env-local/server";
+import { modal } from "@aexhq/env-modal";
+import { createModalEnvironment } from "@aexhq/env-modal/server";
 import { browser, browserTools } from "@aexhq/env-browser";
 import { createBrowserEnvironment } from "@aexhq/env-browser/server";
 import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
@@ -50,6 +52,10 @@ import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
 assert.equal(typeof createLocalEnvironment, "function");
+assert.equal(typeof createModalEnvironment, "function");
+const modalEnv = modal({ name: "modal", url: "https://modal.example", token: "fixture", profile: "cpu", lifetimeMs: 300000 });
+const calculate = tool({ name: "calculate", description: "Calculate", input: z.object({}), implementation: { type: "modal_command", name: "calculate" } });
+assert.equal(inspectTool(calculate({ env: modalEnv })).environment, modalEnv);
 assert.equal(typeof createBrowserEnvironment, "function");
 assert.equal(typeof connectMcp, "function");
 assert.equal(typeof mcpTools, "function");

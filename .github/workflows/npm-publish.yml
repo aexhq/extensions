@@ -67,6 +67,8 @@ jobs:
             [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
           else
             test -z "$STAGE_RUN_ID"
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$EXPECTED_COMMIT&event=push" --jq '.workflow_runs | any(.status == "completed" and .conclusion == "success")' | grep -x true
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/modal-integration.yml/runs?head_sha=$EXPECTED_COMMIT&event=workflow_dispatch" --jq '.workflow_runs | any(.status == "completed" and .conclusion == "success")' | grep -x true
           fi
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
 

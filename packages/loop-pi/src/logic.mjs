@@ -1,6 +1,7 @@
 import { toolPlacement } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
 import { toolResult } from "../../../shared/tool-output.mjs";
+import { structuredOutput } from "../../../shared/structured-output.mjs";
 
 const CHECKPOINT_PREFIX = "Context checkpoint from earlier in this conversation:\n\n";
 
@@ -64,6 +65,7 @@ export async function runPi(input, context) {
     ...input.configuration,
   };
   const placement = toolPlacement(input.tools, options);
+  const output = structuredOutput(options.output);
   const transcript = cloneJson(input.transcript);
   const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
   const saved = await context.kv.read("checkpoint");
@@ -111,7 +113,7 @@ export async function runPi(input, context) {
       await context.setTranscript(transcript);
       await context.kv.put("checkpoint", checkpoint);
     }
-    const { message, stop_reason } = await context.model({ messages: transcript, tools: placement.definitions });
+    const { message, stop_reason } = await context.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
     transcript.push(message);
     await context.setTranscript(transcript);
     await context.kv.put("checkpoint", checkpoint);
@@ -119,9 +121,16 @@ export async function runPi(input, context) {
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
     if (calls.length === 0) {
+      const final = output?.accept(text(message), stop_reason);
+      if (final?.correction) {
+        transcript.push(final.correction);
+        await context.setTranscript(transcript);
+        continue;
+      }
       await context.emit("output_emitted", { type: "assistant_message", message: text(message) });
-      return {};
+      return final ? { result: final.value } : {};
     }
+    if (output?.correcting) output.rejectTools();
     if (stop_reason === "max_tokens") {
       transcript.push({
         role: "user",
