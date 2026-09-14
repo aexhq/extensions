@@ -86,6 +86,25 @@ test("lazy allocation, shared binding, durable invocation identity and terminal 
   assert.equal((await f.env.handle(execute("first", 6))).receipt.code, "resource_lost");
   assert.equal(f.reports.at(-1).terminal, true);
   assert.ok(f.reports.at(-1).unitsMs <= 1000);
+  const delivered = f.reports.length;
+  f.env.close(); await f.open();
+  await f.env.reconcile();
+  assert.equal(f.reports.length, delivered);
+});
+
+test("a failed terminal report is retried until acknowledged after restart", async t => {
+  let attempts = 0;
+  const f = await fixture(t, { hooks: { report: async usage => {
+    if (usage.terminal && ++attempts === 1) throw new Error("billing response lost");
+  } } });
+  await f.env.handle(setup());
+  await f.env.handle(execute());
+  assert.equal((await f.env.handle(command("first", 3, "teardown"))).receipt.type, "unknown");
+  assert.equal(await f.resources.get("sb-1").poll(), 137);
+  f.env.close(); await f.open();
+  assert.ok((await f.env.reconcile()).every(item => !item.error));
+  await f.env.reconcile();
+  assert.equal(attempts, 2);
 });
 
 test("unknown allocation is never recreated after controller restart", async t => {

@@ -52,8 +52,10 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
   async function publish(state) {
     const unitsMs = units(state);
     const terminal = state.phase === "stopped";
+    if (terminal && state.reported) return;
     await report({ sessionId: state.sessionId, environment: state.environment, authorization: state.configuration.authorization,
       profile: state.configuration.profile, sandboxId: state.sandboxId, unitsMs, terminal });
+    if (terminal) { state.reported = true; save(state); }
   }
   async function ended(state) {
     state.phase = "stopped";
