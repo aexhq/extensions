@@ -1,6 +1,8 @@
 # @aexhq/env-modal
 
 A finite Modal Sandbox Environment using Brain's public `environment/v1` protocol.
+It works with the caller's own Modal account and API credentials. Aex hosting, accounts,
+credits and managed credentials are optional product integrations, not dependencies.
 The controller holds provider credentials; commands run as UID/GID 1000 with no inherited
 capabilities or privilege escalation. Commands receive one JSON packet on stdin and return
 one JSON value on stdout. Brain's offered invocation callback is not passed to commands.
@@ -31,10 +33,14 @@ configuration cannot change the image, command, resource size or network profile
 in the controller's invocation table; Brain retains the Tool binding and result.
 
 ```js
-import { createModalEnvironment, serveEnvironment } from "@aexhq/env-modal/server";
+import { createModalClient, createModalEnvironment, serveEnvironment } from "@aexhq/env-modal/server";
 
+const client = createModalClient({
+  tokenId: process.env.MODAL_TOKEN_ID,
+  tokenSecret: process.env.MODAL_TOKEN_SECRET,
+});
 const environment = await createModalEnvironment({
-  directory: "/var/lib/environment", appName: "application-tools",
+  client, directory: "/var/lib/environment", appName: "application-tools",
   profiles: { analysis: {
     image: process.env.MODAL_IMAGE_ID,
     commands: { calculate: ["python", "/tools/calculate.py"], search: ["python", "/tools/search.py"] },
@@ -48,6 +54,14 @@ Create the named Modal App during provisioning. Configure `MODAL_TOKEN_ID` and
 `MODAL_TOKEN_SECRET` only on the controller. `createModalClient()` supplies bounded calls with
 automatic retries disabled; use it if injecting a real client. The stable Sandbox backend is
 required (`MODAL_SANDBOX_V2` must be disabled).
+
+The App and image must belong to the workspace accessible to those credentials. The
+`ENVIRONMENT_TOKEN` authenticates Brain to the controller; it is separate from the Modal API
+credentials. No Aex service is contacted by the example. An omitted `client` uses the controller's
+Modal environment settings, so a hosted product can retain its managed credential default.
+When supplying a client, close it after stopping the HTTP server and closing the environment.
+Use the official `new ModalClient(...)` for image builds; the bounded runtime client is for
+execution and lifecycle control, not long-running image-build streams.
 
 Profiles fix both requested and maximum CPU/memory. Network access is blocked by default;
 an explicit `outboundDomains` list can grant selected destinations. No tunnels, private
