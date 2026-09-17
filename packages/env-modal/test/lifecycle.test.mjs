@@ -4,6 +4,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createModalEnvironment } from "../dist/server.mjs";
+import { modal } from "../dist/index.mjs";
+import { inspectEnvironment } from "@aexhq/brain";
+
+test("the same Modal factory works with caller-owned and hosted controller credentials", () => {
+  const options = { name: "workspace", url: "https://environment.example", profile: "analysis", lifetimeMs: 2000 };
+  const hosted = inspectEnvironment(modal(options));
+  assert.deepEqual(hosted.driver, { driver: "http", url: options.url });
+  assert.deepEqual(hosted.configuration, { profile: "analysis", lifetimeMs: 2000 });
+  assert.equal(inspectEnvironment(modal({ ...options, token: "controller-token" })).driver.credential, "controller-token");
+  assert.throws(() => modal({ ...options, token: "" }));
+});
 
 const profile = { image: "im-fixture", commands: { calculate: ["python", "/tools/calculate.py"] },
   cpu: 1, memoryMiB: 1024, region: "us", maxLifetimeMs: 2000, maxOutputBytes: 128 };
@@ -105,6 +116,25 @@ test("a failed terminal report is retried until acknowledged after restart", asy
   assert.ok((await f.env.reconcile()).every(item => !item.error));
   await f.env.reconcile();
   assert.equal(attempts, 2);
+});
+
+test("turn completion terminates the configured sandbox and never allocates an unused one", async t => {
+  const f = await fixture(t, { hooks: { profiles: { cpu: { ...profile, terminateAfterTurn: true } } } });
+  const registered = { type: "accepted", on_turn_end: "terminate" };
+  assert.deepEqual((await f.env.handle(setup())).receipt, registered);
+  f.env.close(); await f.open();
+  assert.deepEqual((await f.env.handle(setup())).receipt, registered);
+  assert.equal((await f.env.handle(execute())).receipt.type, "result");
+  const end = id => command(id, 3, "call", { name: "terminate", input: { sequence: 1 } });
+  assert.deepEqual((await f.env.handle(end("first"))).receipt, { type: "result", output: null });
+  assert.equal(await f.resources.get("sb-1").poll(), 137);
+  assert.equal(f.reports.at(-1).terminal, true);
+  assert.equal((await f.env.handle(execute("first", 4))).receipt.code, "resource_lost");
+  await f.env.handle(setup("unused"));
+  assert.equal((await f.env.handle(end("unused"))).receipt.type, "result");
+  assert.equal(f.created.length, 1);
+  assert.equal(f.reports.at(-1).unitsMs, 0);
+  assert.equal(f.reports.at(-1).terminal, true);
 });
 
 test("unknown allocation is never recreated after controller restart", async t => {

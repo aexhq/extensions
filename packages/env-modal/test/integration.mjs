@@ -47,7 +47,7 @@ async function integration(t) {
   } finally { await builder.close(); }
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-integration-"));
   const profiles = { cpu: { image: image.imageId, commands: { fixture: ["python", "-c", python] },
-    cpu: 1, memoryMiB: 1024, maxLifetimeMs: 90_000, region: "us", maxOutputBytes: 8192 } };
+    cpu: 1, memoryMiB: 1024, maxLifetimeMs: 90_000, region: "us", maxOutputBytes: 8192, terminateAfterTurn: true } };
   const reports = [];
   let env;
   let server;
@@ -57,7 +57,7 @@ async function integration(t) {
     server = await serveEnvironment(env.handle, { token });
   };
   await open();
-  const sessions = [randomUUID(), randomUUID(), randomUUID()];
+  const sessions = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const sequences = new Map();
   const call = async (session_id, type, extra = {}) => {
     const sequence = (sequences.get(session_id) ?? 0) + 1;
@@ -113,8 +113,15 @@ async function integration(t) {
   assert.notEqual(await expiring.wait(), null);
   assert.equal((await env.reconcile()).some(item => item.error), false);
   assert.equal((await execute(sessions[2], { op: "read" })).code, "resource_lost");
+  assert.deepEqual(await call(sessions[3], "setup", { configuration: { profile: "cpu", lifetimeMs: 30_000 } }),
+    { type: "accepted", on_turn_end: "terminate" });
+  assert.equal((await execute(sessions[3], { op: "read" })).type, "result");
+  assert.deepEqual(await call(sessions[3], "call", { name: "terminate", input: { sequence: 1 } }), { type: "result", output: null });
+  const completed = await client.sandboxes.fromId(reports.find(item => item.sessionId === sessions[3]).sandboxId);
+  assert.notEqual(await completed.poll(), null);
+  assert.equal((await execute(sessions[3], { op: "read" })).code, "resource_lost");
   const finals = reports.filter(item => item.terminal);
-  assert.equal(new Set(finals.map(item => item.sessionId)).size, 3);
+  assert.equal(new Set(finals.map(item => item.sessionId)).size, 4);
   assert.ok(finals.every(item => item.unitsMs >= 0 && item.unitsMs <= 90_000));
   t.diagnostic(JSON.stringify({ image: image.imageId, elapsedMs: Date.now() - started,
     resources: [...new Set(finals.map(item => item.sandboxId))], usage: finals.map(({ sessionId, unitsMs }) => ({ sessionId, unitsMs })) }));
