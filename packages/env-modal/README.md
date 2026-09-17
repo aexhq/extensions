@@ -44,7 +44,7 @@ const environment = await createModalEnvironment({
   profiles: { analysis: {
     image: process.env.MODAL_IMAGE_ID,
     commands: { calculate: ["python", "/tools/calculate.py"], search: ["python", "/tools/search.py"] },
-    cpu: 1, memoryMiB: 1024, maxLifetimeMs: 300_000, region: "us",
+    cpu: 1, memoryMiB: 1024, maxLifetimeMs: 300_000, region: "us", terminateAfterTurn: true,
   } },
 });
 const server = await serveEnvironment(environment.handle, { token: process.env.ENVIRONMENT_TOKEN });
@@ -76,6 +76,17 @@ binding share that resource. Different bindings have different writable files. M
 whole-second timeouts, so remaining lifetime and execution deadlines are rounded down; less
 than one second remaining cannot start work.
 
+`terminateAfterTurn: true` registers the `terminate` method during setup. Brain calls it after
+saving the turn's answer, including failed and cancelled turns. The method terminates the
+sandbox and reports final usage; its outcome appears in Brain's journal. The default is false.
+This option belongs to the Modal Environment, and does not end the Brain session or discard
+its transcript. A later turn that needs tools requires a new binding because this sandbox is
+finite.
+
+For a hosted Environment, import the same `modal` factory and use the host's URL and granted
+profile name. Omit `token` when the host supplies the controller credential during admission.
+Provider provisioning stays with Modal and this extension; Brain requires no deploy command.
+
 `cancel`, `detach` and `teardown` terminate the entire sandbox and await provider confirmation,
 including other active commands. A stopped, expired or lost binding is never recreated. Treat
 its workspace as temporary; persist business results outside the sandbox before ending it.
@@ -105,7 +116,7 @@ retain state for reconciliation. The extension has no account database, wallet o
 
 `npm test --workspace @aexhq/env-modal` covers durable identities, concurrent first use, uncertain
 creation, isolation, admission, cancellation and output limits. `npm run test:integration
---workspace @aexhq/env-modal` requires real Modal credentials and creates three sandboxes with
+--workspace @aexhq/env-modal` requires real Modal credentials and creates four sandboxes with
 lifetimes of at most 90 seconds. It verifies filesystem sharing/isolation, controller restart,
 network/credential restrictions, non-root execution, descendant cancellation and provider expiry.
 All created compute is terminated and checked. The test runner exits after completed hooks

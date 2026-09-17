@@ -13,6 +13,7 @@ const profileSchema = z.strictObject({ image: z.string().regex(/^im-[A-Za-z0-9]+
   commands: z.record(identifier, z.array(z.string().min(1)).min(1)),
   cpu: z.number().positive(), memoryMiB: z.number().int().positive(),
   maxLifetimeMs: z.number().int().positive().max(86_400_000),
+  terminateAfterTurn: z.boolean().default(false),
   workdir: z.string().startsWith("/").default("/workspace"), region: z.string().min(1),
   outboundDomains: z.array(z.string().regex(/^(\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u)).default([]),
   maxOutputBytes: z.number().int().positive().max(16 * 1024 * 1024).default(4 * 1024 * 1024) });
@@ -203,7 +204,8 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
       const existing = states.get(key);
       if (existing) {
         if (JSON.stringify(existing.configuration) !== JSON.stringify(config)) fail("conflict", "binding configuration is immutable");
-        return existing.phase === "stopped" ? failure("resource_lost", "binding has stopped") : accepted();
+        if (existing.phase === "stopped") return failure("resource_lost", "binding has stopped");
+        return { type: "accepted", ...(existing.profile.terminateAfterTurn ? { on_turn_end: "terminate" } : {}) };
       }
       if (!Object.hasOwn(configured, config.profile)) fail("unsupported", "unknown Modal profile");
       const profile = configured[config.profile];
@@ -215,16 +217,17 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
         profile, name: `aex-${randomUUID()}`, phase: "new", expiresAt, startedAt: null, stoppedAt: null, sandboxId: null };
       db.prepare("INSERT INTO bindings VALUES(?,?)").run(key, JSON.stringify(state));
       states.set(key, state);
-      return accepted();
+      return { type: "accepted", ...(profile.terminateAfterTurn ? { on_turn_end: "terminate" } : {}) };
     }
     const state = binding(key);
     if (request.type === "execute") return execute(op, state);
-    if (["cancel", "detach", "teardown"].includes(request.type)) {
+    const terminate = request.type === "call" && request.name === "terminate";
+    if (terminate || ["cancel", "detach", "teardown"].includes(request.type)) {
       if (request.type === "cancel" && !db.prepare("SELECT 1 FROM invocations WHERE binding=? AND sequence=?").get(key, request.target_sequence)) return accepted();
-      try { await stop(state); return accepted(); }
+      try { await stop(state); return terminate ? result(null) : accepted(); }
       catch (error) { return unknown(`sandbox termination could not be confirmed: ${error.message}`); }
     }
-    fail("unsupported", "Modal Environment calls are not supported");
+    fail("unsupported", "unknown Modal Environment operation");
   });
   return {
     handle,
