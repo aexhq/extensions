@@ -17,10 +17,9 @@ export function loopJourneys(name, loop) {
     const session = await f.session(loop, { configuration: { output: { schema: {
       type: "object", properties: { answer: { type: "integer" } }, required: ["answer"], additionalProperties: false,
     } } }, tools: [calculate({ env: hostEnv({ name: "app" }) })] });
-    const receipt = await session.submit("calculate", { idempotencyKey: "structured-submit" });
-    assert.ok(receipt.sequence > 0);
-    for await (const event of session.stream()) {
-      if (event.sequence < receipt.sequence) continue;
+    const sequence = await session.submit("calculate", { idempotencyKey: "structured-submit" });
+    assert.ok(Number.isSafeInteger(sequence) && sequence > 0);
+    for await (const event of session.stream(sequence)) {
       assert.notEqual(event.type, "turn_failed", JSON.stringify(event.data));
       if (event.type === "turn_ended") break;
     }
