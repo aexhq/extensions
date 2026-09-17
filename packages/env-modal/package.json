@@ -41,7 +41,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.25.1",
+    "@aexhq/brain": "0.27.0",
     "modal": "0.10.1",
     "zod": "4.4.3"
   }
