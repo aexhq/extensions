@@ -1,3 +1,4 @@
+import { finishCallback, completionGrant } from "../../../shared/environment-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -22,7 +23,7 @@ const command = (session_id, sequence, type, extra = {}) => ({ contract: "enviro
   operation: { session_id, environment: "workspace", sequence, request: { type, ...extra } } });
 const setup = (id = "first", extra = {}) => command(id, 1, "setup", { configuration: { profile: "cpu", lifetimeMs: 2000, ...extra } });
 const execute = (id = "first", sequence = 2, input = {}) => command(id, sequence, "execute", {
-  implementation: { type: "modal_command", name: "calculate" }, input, deadline_ms: 1900 });
+  implementation: { type: "modal_command", name: "calculate" }, input, deadline_ms: 1900, callback: completionGrant });
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-test-"));
   const resources = new Map();
@@ -68,7 +69,7 @@ async function fixture(t, options = {}) {
       },
     } };
   let env;
-  const open = async () => env = await createModalEnvironment({ directory, appName: "fixture", profiles: { cpu: profile }, client,
+  const open = async () => env = await createModalEnvironment({ fetch: finishCallback, directory, appName: "fixture", profiles: { cpu: profile }, client,
     report: async value => reports.push(value), ...options.hooks });
   await open();
   t.after(async () => { env.close(); await rm(directory, { recursive: true, force: true }); });
@@ -163,7 +164,7 @@ test("admission, immutable configuration and command catalog deny widening befor
   assert.equal((await f.env.handle(setup("first", { authorization: "approved", lifetimeMs: 900 }))).receipt.code, "conflict");
   const arbitrary = execute(); arbitrary.operation.request.implementation.name = "arbitrary";
   assert.equal((await f.env.handle(arbitrary)).receipt.code, "unsupported");
-  const callback = execute(); callback.operation.request.callback = { url: "https://example.com", token: "privileged", methods: [] };
+  const callback = execute();
   callback.operation.request.implementation.configuration = { callback: "application-scoped", cpu: 999 };
   // Brain offers invocation callbacks, but command processes receive only their JSON input.
   assert.deepEqual((await f.env.handle(callback)).receipt.output, {});

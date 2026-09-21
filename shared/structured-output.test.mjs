@@ -1,3 +1,4 @@
+import { finishedResult } from "./loop-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runPi } from "../packages/loop-pi/src/logic.mjs";
@@ -12,11 +13,11 @@ function host(responses) {
   const calls = [];
   const emitted = [];
   const invocations = [];
-  const context = { calls, emitted, invocations, kv: { read() {}, put() {} }, events: after => ({ events: [], next_cursor: after }),
+  const context = { calls, emitted, invocations, acknowledge() {}, kv: { read() {}, put() {} }, events: after => ({ events: [], next_cursor: after }),
     setTranscript(transcript) { context.transcript = structuredClone(transcript); },
     model(request) { calls.push(structuredClone(request)); const response = responses.shift(); if (response instanceof Error) throw response; assert.ok(response, "unexpected model call"); return response; },
     emit(type, data) { emitted.push({ type, data }); },
-    dispatch(request) { invocations.push(request); return [{ call_id: "call-1", output: 42, is_error: false }]; } };
+    dispatch(request) { invocations.push(request); return [finishedResult({ call_id: "call-1", output: 42, is_error: false })]; } };
   return context;
 }
 for (const run of [runPi, runCodex]) {

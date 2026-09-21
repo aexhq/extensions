@@ -4,7 +4,7 @@ import { resolve, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ModalClient, InvalidError } from "modal";
 import { z } from "zod";
-import { environmentHandler, bindingKey, identifier, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { finishExecution, environmentHandler, bindingKey, identifier, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const configuration = z.strictObject({ profile: identifier, lifetimeMs: z.number().int().positive().max(86_400_000),
@@ -29,7 +29,7 @@ export function createModalClient(options = {}) {
 }
 
 export async function createModalEnvironment({ directory, appName, profiles, client,
-  authorize, report = async () => {} }) {
+  authorize, report = async () => {}, fetch = globalThis.fetch }) {
   const root = resolve(z.string().min(1).parse(directory));
   const configured = z.record(identifier, profileSchema).parse(profiles);
   z.string().min(1).parse(appName);
@@ -150,7 +150,7 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
     let dispatched = false;
     let receipt;
     let timeoutStop;
-    const deadline = Date.now() + op.request.deadline_ms;
+    const deadline = op.request.deadline_ms === undefined ? Infinity : Date.now() + op.request.deadline_ms;
     try {
       if (authorize) {
         const expiresAt = await authorize({ sessionId: state.sessionId, environment: state.environment, configuration: state.configuration });
@@ -220,7 +220,7 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
       return { type: "accepted", ...(profile.terminateAfterTurn ? { on_turn_end: "terminate" } : {}) };
     }
     const state = binding(key);
-    if (request.type === "execute") return execute(op, state);
+    if (request.type === "execute") return finishExecution(op, await execute(op, state), fetch);
     const terminate = request.type === "call" && request.name === "terminate";
     if (terminate || ["cancel", "detach", "teardown"].includes(request.type)) {
       if (request.type === "cancel" && !db.prepare("SELECT 1 FROM invocations WHERE binding=? AND sequence=?").get(key, request.target_sequence)) return accepted();

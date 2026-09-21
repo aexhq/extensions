@@ -17,6 +17,7 @@ export interface ModalEnvironment {
 }
 export declare function createModalEnvironment(options: {
   directory: string; appName: string; profiles: Record<string, ModalProfile>; client?: ModalClient;
+  fetch?: typeof globalThis.fetch;
   authorize?(binding: { sessionId: string; environment: string; configuration: ModalConfiguration }): Promise<number>;
   report?(usage: ResourceUsage): Promise<void>;
 }): Promise<ModalEnvironment>;

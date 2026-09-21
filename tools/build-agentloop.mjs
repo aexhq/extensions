@@ -22,7 +22,7 @@ try {
     format: "esm",
     platform: "neutral",
     mainFields: ["module", "main"],
-    external: ["brain:agentloop/host@0.1.0"],
+    external: ["brain:agentloop/host@0.2.0"],
     write: false,
     legalComments: "none",
   });

@@ -67,7 +67,7 @@ export async function runPi(input, context) {
   const placement = toolPlacement(input.tools, options);
   const output = structuredOutput(options.output);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
+  let observed = await observeEvents(context, transcript, input.kv?.["brain.last_activation"] ?? 0);
   const saved = await context.kv.read("checkpoint");
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
@@ -104,9 +104,10 @@ export async function runPi(input, context) {
       ...messages.slice(cut));
   };
 
-  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
+  if (input.input != null) transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
   await context.setTranscript(transcript);
-  await context.kv.put("observed_sequence", observed_sequence);
+  await context.acknowledge(observed.through);
+  if (input.input == null && !observed.actionable) return {};
   for (;;) {
     if (shouldCompact()) {
       await compact();
@@ -145,7 +146,9 @@ export async function runPi(input, context) {
       role: "user",
       content: calls.map(({ call_id }) => toolResult(call_id, byCall.get(call_id))),
     });
+    observed = await observeEvents(context, transcript, observed.through, new Set(results.flatMap(result => result.events.map(event => event.sequence))));
     await context.setTranscript(transcript);
+    await context.acknowledge(observed.through);
   }
 }
 

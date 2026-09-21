@@ -13,7 +13,7 @@ export function loopJourneys(name, loop) {
       body => { assert.equal(body.tools?.length ?? 0, 0); return answer('{"answer":42}'); },
     ]);
     let effects = 0;
-    const calculate = tool({ name: "calculate", description: "Calculate", input: z.object({}), run: () => { effects++; return 42; } });
+    const calculate = tool({ name: "calculate", description: "Calculate", input: z.object({}), run: (_, context) => { effects++; return context.finish(42); } });
     const session = await f.session(loop, { configuration: { output: { schema: {
       type: "object", properties: { answer: { type: "integer" } }, required: ["answer"], additionalProperties: false,
     } } }, tools: [calculate({ env: hostEnv({ name: "app" }) })] });
@@ -43,7 +43,7 @@ export function loopJourneys(name, loop) {
         return answer("report understood");
       },
     ]);
-    const report = tool({ name: "report", description: "Read report", input: z.object({}), run: () => ({ type: "aex_tool_output", version: 1, content: "report ready", media: [file] }) });
+    const report = tool({ name: "report", description: "Read report", input: z.object({}), run: (_, context) => context.finish({ type: "aex_tool_output", version: 1, content: "report ready", media: [file] }) });
     const session = await f.session(loop, { tools: [report({ env: hostEnv({ name: "app" }) })] });
     await session.send({ message: "Read this report", media: [file] });
     const messages = (await session.transcript()).messages;
@@ -66,7 +66,7 @@ export function loopJourneys(name, loop) {
       ]);
       const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({}),
         options: z.object({ where: z.string() }),
-        run: (_, context) => { invoked.push(context.options.where); return { where: context.options.where }; },
+        run: (_, context) => { invoked.push(context.options.where); return context.finish({ where: context.options.where }); },
       });
       const session = await f.session(loop, {
         configuration: { environmentSelection: selection, placements: { lookup: "right" } },
@@ -92,10 +92,10 @@ export function loopJourneys(name, loop) {
         return answer("batch complete");
       },
     ]);
-    const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({ value: z.string() }), run: async ({ value }) => {
+    const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({ value: z.string() }), run: async ({ value }, context) => {
       if (++entered === 2) bothEntered.resolve();
       if (name === "pi") await bothEntered.promise;
-      return value;
+      return context.finish(value);
     } });
     const session = await f.session(loop, { tools: [lookup({ env: hostEnv({ name: "app" }) })] });
     await session.send("lookup both values");
@@ -150,18 +150,20 @@ export function loopJourneys(name, loop) {
         return answer("all results understood");
       },
     ]);
-    const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({ kind: z.string() }), run: async ({ kind }) => {
+    const lookup = tool({ name: "lookup", description: "Lookup", input: z.object({ kind: z.string() }), run: async ({ kind }, context) => {
       if (kind === "error") throw new Error("sibling unavailable");
-      if (kind === "text") return "plain text";
+      if (kind === "text") return context.finish("plain text");
       if (name === "pi") await releaseImage.promise;
-      return { type: "aex_tool_output", version: 1, content: "diagram ready", media: [image] };
+      return context.finish({ type: "aex_tool_output", version: 1, content: "diagram ready", media: [image] });
     } });
     const session = await f.session(loop, { tools: [lookup({ env: hostEnv({ name: "app" }) })] });
     const laterResults = [];
     const observe = name === "pi" ? (async () => {
+      const starts = new Map();
       for await (const event of session.stream()) {
+        if (event.type === "tool_call_started") starts.set(event.sequence, event.data.invocation.call_id);
         if (event.type !== "tool_call_ended") continue;
-        laterResults.push(event.data.result.call_id);
+        laterResults.push(starts.get(event.data.sequence));
         if (laterResults.length === 2) { releaseImage.resolve(); break; }
       }
     })() : Promise.resolve();
@@ -171,6 +173,38 @@ export function loopJourneys(name, loop) {
     const results = (await session.transcript()).messages.find(message => message.content[0]?.type === "tool_result").content;
     assert.deepEqual(results[0].media, [image]);
     assert.equal(results[2].is_error, true);
+  });
+
+  test(`${name}: a returned Tool finishes later and wakes the compiled loop without user input`, { timeout: 30_000 }, async t => {
+    let execution;
+    const f = await fixture(t, [
+      () => calls(["background", {}]),
+      body => {
+        assert.deepEqual(JSON.parse(body.input.at(-1).output), { status: "running", results: [{ content: "started", is_error: false }] });
+        return answer("work is running");
+      },
+      body => {
+        assert.match(JSON.stringify(body.input), /late result/u);
+        assert.match(JSON.stringify(body.input), /tool_call_ended/u);
+        return answer("background work completed");
+      },
+    ]);
+    const background = tool({ name: "background", description: "Start work", input: z.object({}),
+      run: (_, context) => { execution = context; return "started"; } });
+    const session = await f.session(loop, { tools: [background({ env: hostEnv({ name: "app" }) })] });
+    await session.send("start work");
+    const before = (await collect(session.events())).at(-1).sequence;
+    await execution.finish("late result");
+    for await (const event of session.stream(before)) {
+      assert.notEqual(event.type, "turn_failed", JSON.stringify(event.data));
+      if (event.type === "turn_ended") break;
+    }
+    const events = await collect(session.events());
+    assert.equal(events.filter(event => event.type === "tool_result_emitted").length, 2);
+    assert.equal(events.filter(event => event.type === "tool_call_ended").length, 1);
+    assert.equal(events.filter(event => event.type === "turn_started").at(-1).data.trigger, "events");
+    assert.equal((await session.transcript()).messages.at(-1).content[0].text, "background work completed");
+    assert.equal(f.requests.length, 3);
   });
 
   test(`${name}: model failure preserves acknowledged input for explicit continuation`, { timeout: 30_000 }, async (t) => {

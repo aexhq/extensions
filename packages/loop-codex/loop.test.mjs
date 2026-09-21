@@ -1,3 +1,4 @@
+import { finishedResult } from "../../shared/loop-test-fixture.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -15,6 +16,7 @@ const host = (responses, { results = {} } = {}) => {
       put(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
       delete(key) { delete record.kv[key]; record.writes.push(key); },
     },
+    acknowledge(through) { record.kv["brain.last_activation"] = through; record.writes.push("brain.last_activation"); },
     events: (after) => ({ events: [], next_cursor: after }),
     model(request) {
       record.requests.push(structuredClone(request));
@@ -25,7 +27,7 @@ const host = (responses, { results = {} } = {}) => {
     dispatch(calls) {
       assert(calls.every((call) => call.environment === "sandbox"));
       record.dispatches.push(calls.map((call) => call.call_id));
-      return calls.map((call) => ({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false }));
+      return calls.map((call) => finishedResult({ call_id: call.call_id, output: results[call.call_id] ?? "", is_error: false }));
     },
     emit(kind, payload) {
       record.emitted.push({ kind, payload });
@@ -118,7 +120,7 @@ test("pages runtime failures into context and preserves the observation cursor a
   assert.match(fake.record.requests[0].messages[0].content[0].text, /interrupted/u);
   assert.match(fake.record.requests[0].messages[1].content[0].text, /env_browser/u);
   assert.deepEqual(fake.record.dispatches, []);
-  assert.equal(first.kv.observed_sequence, 2);
+  assert.equal(first.kv["brain.last_activation"], 2);
   const next = host([assistant([{ type: "text", text: "still here" }])]);
   next.events = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
   const second = await turn("next", next, first);

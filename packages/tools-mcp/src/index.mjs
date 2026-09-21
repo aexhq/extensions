@@ -5,8 +5,15 @@ import { inspectEnvironment, tool } from "@aexhq/brain";
 import { z } from "zod";
 import { toolOutput } from "../../../shared/tool-output.mjs";
 
-export async function connectMcp(transport, { name = "aex-mcp", version = "0.3.0", ...options } = {}) {
-  const client = new Client({ name, version }, { ...options, inputRequired: { autoFulfill: false } });
+class SignalClient extends Client {
+  _setupTimeout(messageId, timeout, ...options) {
+    // MCP 2.0 has no timer-disable option; Brain's signal owns Tool deadlines.
+    if (timeout !== Infinity) super._setupTimeout(messageId, timeout, ...options);
+  }
+}
+
+export async function connectMcp(transport, { name = "aex-mcp", version = "0.4.0", ...options } = {}) {
+  const client = new SignalClient({ name, version }, { ...options, inputRequired: { autoFulfill: false } });
   try { await client.connect(transport); }
   catch (error) { await client.close(); throw error; }
   return client;
@@ -33,10 +40,15 @@ export async function mcpTools({ client, names, env, prefix = "", project, publi
     return tool({ name: `${prefix}${definition.name}`, description: definition.description || definition.name, input,
       run: async (arguments_, context) => {
         context.signal.throwIfAborted();
+        const timeout = client instanceof SignalClient ? Infinity
+          : context.deadline === undefined ? Infinity : Math.max(1, context.deadline.getTime() - Date.now());
+        if (!(client instanceof SignalClient) && timeout > 2_147_483_647) {
+          throw new TypeError("use connectMcp for unlimited or long Tool deadlines; the MCP SDK timer cannot represent them");
+        }
         let response;
         try {
           response = await client.callTool({ name: definition.name, arguments: arguments_ }, {
-            signal: context.signal, timeout: Math.max(1, context.deadline.getTime() - Date.now()),
+            signal: context.signal, timeout,
             toolDefinition: definition, allowInputRequired: true,
           });
         } catch (error) {
@@ -52,7 +64,7 @@ export async function mcpTools({ client, names, env, prefix = "", project, publi
                 : { status: "unknown", message: `MCP ${definition.name}: outcome unknown; ${message}` };
           await context.emit("mcp_failure", { tool: definition.name, outcome: outcome.status,
             code: details.code, message, details: details.data });
-          return outcome;
+          return context.finish(outcome);
         }
         const media = [];
         const content = [];
@@ -70,19 +82,19 @@ export async function mcpTools({ client, names, env, prefix = "", project, publi
         } catch (error) {
           if (context.signal.aborted) throw error;
           await context.emit("mcp_media_failed", { tool: definition.name, published: media });
-          return failure("mcp_media_failed", String(error.message), { published: media });
+          return context.finish(failure("mcp_media_failed", String(error.message), { published: media }));
         }
         const retained = { ...response, content, ...(media.length ? { media } : {}) };
         const evidenceSequence = await context.emit("mcp_result", { tool: definition.name, result: retained });
         if (response.resultType && response.resultType !== "complete") {
-          return failure("mcp_unsupported_result", `MCP ${definition.name} requires unsupported continuation (${response.resultType}); evidence ${evidenceSequence}`, retained);
+          return context.finish(failure("mcp_unsupported_result", `MCP ${definition.name} requires unsupported continuation (${response.resultType}); evidence ${evidenceSequence}`, retained));
         }
         if (response.isError) {
           const message = content.filter(block => block.type === "text").map(block => block.text).join("\n");
-          return failure("mcp_tool_error", `MCP ${definition.name}: ${message || "Tool failed"}; evidence ${evidenceSequence}`, retained);
+          return context.finish(failure("mcp_tool_error", `MCP ${definition.name}: ${message || "Tool failed"}; evidence ${evidenceSequence}`, retained));
         }
         const presented = { content, ...(response.structuredContent === undefined ? {} : { structuredContent: response.structuredContent }), evidenceSequence };
-        return toolOutput(project ? await project(presented, definition.name) : presented, media);
+        return context.finish(toolOutput(project ? await project(presented, definition.name) : presented, media));
       },
     })({ env });
   });

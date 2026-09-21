@@ -31,8 +31,13 @@ const session = await brain.sessions.create({
 The component is built by this package's publisher. Brain consumes the resulting Component and
 does not compile its JavaScript source.
 
-The loop reads paginated session Events before each turn and saves its observation cursor in
-kv after saving those observations in the transcript. For unanswered calls in the last saved
+The loop reads paginated session Events on user and background activations. After saving
+selected observations in the transcript, it acknowledges Brain's durable processed-through
+sequence (`brain.last_activation`). Return ends a Tool's synchronous part; explicit finish ends
+its whole execution. A dispatch reply presents the observed results and whether the Tool is
+still running. Later results and finish are presented as observations and wake a model call,
+without inserting a user prompt. An activation with no new actionable observations only
+acknowledges its cursor. Results already consumed during dispatch are not presented again. For unanswered calls in the last saved
 assistant message, it inserts error Tool results explaining that the turn was interrupted and
 the operation may have run. Saved results, media and native provider state are preserved.
 Interrupted turns and environment failures also enter the transcript as runtime observations.
@@ -59,8 +64,9 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Version 6.2 targets Brain SDK 0.25 and preserves the 0.23 WIT and URL-media contract. Existing sessions keep their
-immutable loop implementation; create new sessions to adopt the updated loop. Keep matching
+Version 7.0 targets Brain SDK 0.28 and `brain:agentloop@0.2.0`. The Tool return/completion
+contract is breaking. Existing sessions retain their immutable loop implementation; the
+server upgrade preflight refuses unclosed sessions from the previous contract. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
 
 ## Hosted structured output

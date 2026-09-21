@@ -75,7 +75,7 @@ const notify = tool({
   input: z.object({ message: z.string() }),
   run: async ({ message }, ctx) => {
     await ctx.emit("notification_sent", { message });
-    return { delivered: true };
+    return ctx.finish({ delivered: true });
   },
 });
 
@@ -87,6 +87,18 @@ const tools = [notify({ env: hostEnv({ name: "app" }) })];
 These packages consume Brain's public SDK and contracts. Brain is independently usable without
 this repository or Aex. The loops run in fresh Wasm stores, save transcript and kv inline through
 Brain's durable state services, and read interruption/environment Events before asking the model to continue.
+Brain SDK 0.28 separates Tool return from completion. Return releases the synchronous caller;
+`ctx.emitResult(value)` can supply observations before or after return, and `ctx.finish(value)`
+commits the final optional result and completion. Use `return ctx.finish(value)` for ordinary
+Tools. A Tool that forgets to finish remains open until its original deadline, cancellation or
+Environment loss; without a deadline it can remain open indefinitely.
+
+Results and completion always enter the ordered journal. Pi and Codex choose their model
+messages, save them, then explicitly acknowledge the processed sequence. An event activation
+has no user input. Both loops ask the model to consider new background results and completion;
+an activation containing only already-consumed events is acknowledged without a model call.
+Brain coalesces wakeups for five milliseconds from the first pending event without delaying
+commits. Interrupt cancels unfinished Tools even between turns.
 Callers control Environment lifetime through setup, detach, and teardown. Providers implement
 those operations and enforce their physical resource ceilings. A Tool can be declared in several
 named Environments; the loop either selects a configured placement or presents authorized choices

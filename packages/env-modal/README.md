@@ -7,6 +7,13 @@ The controller holds provider credentials; commands run as UID/GID 1000 with no 
 capabilities or privilege escalation. Commands receive one JSON packet on stdin and return
 one JSON value on stdout. Brain's offered invocation callback is not passed to commands.
 
+This release requires Brain SDK/runtime 0.28. The controller commits successful Tool
+completion through the invocation's `finish` callback before returning its execution receipt.
+The callback is required before execution; a lost completion acknowledgement remains `unknown`
+and never causes a repeated effect. Results and completion enter the session journal in order.
+An absent invocation deadline means no invocation timer; configured resource lifetime and
+cancellation still apply. Finite deadlines retain their full duration without a ten-minute cap.
+
 ```js
 import { modal } from "@aexhq/env-modal";
 import { tool } from "@aexhq/brain";

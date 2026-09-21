@@ -28,7 +28,7 @@ export async function runCodex(input, context) {
   const placement = toolPlacement(input.tools, options);
   const output = structuredOutput(options.output);
   const transcript = cloneJson(input.transcript);
-  const observed_sequence = await observeEvents(context, transcript, (await context.kv.read("observed_sequence")) ?? 0);
+  let observed = await observeEvents(context, transcript, input.kv?.["brain.last_activation"] ?? 0);
   const saved = await context.kv.read("usage");
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
@@ -55,9 +55,10 @@ export async function runCodex(input, context) {
     usage.lastTokens = 0;
   };
 
-  transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
+  if (input.input != null) transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
   await context.setTranscript(transcript);
-  await context.kv.put("observed_sequence", observed_sequence);
+  await context.acknowledge(observed.through);
+  if (input.input == null && !observed.actionable) return {};
   for (;;) {
     if (shouldCompact()) {
       await compact();
@@ -84,12 +85,16 @@ export async function runCodex(input, context) {
     }
     if (output?.correcting) output.rejectTools();
     const results = [];
+    const consumed = new Set();
     for (const call of calls) {
       const [result] = await context.dispatch([placement.invocation(call)]);
       results.push(toolResult(call.call_id, result));
+      for (const event of result.events) consumed.add(event.sequence);
     }
     transcript.push({ role: "user", content: results });
+    observed = await observeEvents(context, transcript, observed.through, consumed);
     await context.setTranscript(transcript);
+    await context.acknowledge(observed.through);
   }
 }
 

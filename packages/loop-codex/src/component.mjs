@@ -1,4 +1,4 @@
-import * as host from "brain:agentloop/host@0.1.0";
+import * as host from "brain:agentloop/host@0.2.0";
 
 import { runCodex } from "./logic.mjs";
 
@@ -18,6 +18,7 @@ export async function turn(input) {
   try {
     const output = await runCodex({
       input: JSON.parse(input.inputJson),
+      kv: JSON.parse(input.kvJson),
       transcript: JSON.parse(input.transcriptJson),
       events: JSON.parse(input.eventsJson),
       configuration: JSON.parse(input.configurationJson),
@@ -33,6 +34,7 @@ export async function turn(input) {
         put: (key, value) => hosted(() => host.kvPut(key, JSON.stringify(value))),
         delete: (key) => hosted(() => host.kvDelete(key)),
       },
+      acknowledge: (through) => hosted(() => host.acknowledge(BigInt(through))),
       events: (after) => JSON.parse(hosted(() => host.events(BigInt(after)))),
       model: (request) => JSON.parse(hosted(() => host.model(JSON.stringify(request)))),
       dispatch: (calls) => JSON.parse(hosted(() => host.dispatch(JSON.stringify(calls)))),

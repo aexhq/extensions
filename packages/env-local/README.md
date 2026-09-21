@@ -1,8 +1,15 @@
 # @aexhq/env-local
 
-A Docker workspace Environment using Brain SDK 0.24. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the `@aexhq/tool-*` implementation descriptors and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.28. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the `@aexhq/tool-*` implementation descriptors and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
+
+This release requires Brain SDK/runtime 0.28. The controller commits successful Tool
+completion through the invocation's `finish` callback before returning its execution receipt.
+The callback is required before execution; a lost completion acknowledgement remains `unknown`
+and never causes a repeated effect. Results and completion enter the session journal in order.
+An absent invocation deadline means no invocation timer; configured resource lifetime and
+cancellation still apply. Finite deadlines retain their full duration without a ten-minute cap.
 
 ```sh
 npm ci
