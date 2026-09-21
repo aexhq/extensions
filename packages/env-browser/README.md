@@ -4,6 +4,13 @@ A Playwright Environment and five Tools for Brain: `browser_navigate`, `browser_
 
 The operator supplies a launcher for each allowed profile. Every binding receives a dedicated browser instance, context and page. For a local development deployment:
 
+This release requires Brain SDK/runtime 0.28. The controller commits successful Tool
+completion through the invocation's `finish` callback before returning its execution receipt.
+The callback is required before execution; a lost completion acknowledgement remains `unknown`
+and never causes a repeated effect. Results and completion enter the session journal in order.
+An absent invocation deadline means no invocation timer; configured resource lifetime and
+cancellation still apply. Finite deadlines retain their full duration without a ten-minute cap.
+
 ```js
 import { chromium } from "playwright";
 import { createBrowserEnvironment, serveEnvironment } from "@aexhq/env-browser/server";

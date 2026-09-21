@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { chromium } from "playwright";
 import { createBrowserEnvironment } from "../dist/server.mjs";
 
-export async function browserFixture(t) {
+export async function browserFixture(t, { fetch } = {}) {
   const server = createServer((request, response) => {
     if (request.url === "/hanging") { response.writeHead(200, { "content-type": "text/html" }); response.write("<!doctype html><html>"); return; }
     response.end(`<!doctype html><title>Browser fixture</title>
@@ -14,7 +14,7 @@ export async function browserFixture(t) {
   await once(server, "listening");
   const launched = [];
   const published = [];
-  const env = createBrowserEnvironment({ publishMedia: async ({ bytes, mediaType }) => { if (mediaType !== "image/png" || bytes.length === 0) throw new Error("invalid screenshot"); published.push(Buffer.from(bytes)); return "https://example.com/screenshot.png"; }, profiles: { test: async () => {
+  const env = createBrowserEnvironment({ fetch, publishMedia: async ({ bytes, mediaType }) => { if (mediaType !== "image/png" || bytes.length === 0) throw new Error("invalid screenshot"); published.push(Buffer.from(bytes)); return "https://example.com/screenshot.png"; }, profiles: { test: async () => {
     const browser = await chromium.launch({ chromiumSandbox: true });
     launched.push(browser);
     return browser;

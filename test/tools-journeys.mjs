@@ -16,6 +16,7 @@ import { todo } from "../packages/tool-todo/dist/index.js";
 import { write } from "../packages/tool-write/dist/index.js";
 import { codex } from "../packages/loop-codex/dist/index.mjs";
 import { answer, calls, collect, fixture } from "../shared/journey-fixture.mjs";
+import { finishExecution } from "../shared/environment-server.mjs";
 
 const tools = { bash, edit, glob, grep, ls, read, todo, write };
 
@@ -36,7 +37,7 @@ async function workspace(t) {
         assert.ok(Object.hasOwn(tools, name));
         executed.push(name);
         const runtime = (await import(`../packages/tool-${name}/dist/runtime/${name}.mjs`)).default;
-        receipt = { type: "result", output: await runtime.execute(operation.input, { workspace: directory, signal: AbortSignal.timeout(10_000) }) };
+        receipt = await finishExecution(command.operation, { type: "result", output: await runtime.execute(operation.input, { workspace: directory, signal: AbortSignal.timeout(10_000) }) });
       } else {
         assert.ok(["setup", "detach", "teardown"].includes(operation.type));
         receipt = { type: "result", output: {} };
@@ -132,8 +133,8 @@ test("Tools: a todo conflict is journaled and lets the model choose to read inst
   assert.deepEqual(w.executed, ["todo", "todo"]);
   const ends = (await collect(session.events())).filter(event => event.type === "tool_call_ended");
   assert.equal(ends.length, 2);
-  assert.equal(ends[0].data.result.is_error, true);
-  assert.match(ends[0].data.result.output.message, /Todo write conflict/u);
-  assert.equal(ends[1].data.result.is_error, false);
+  assert.equal(ends[0].data.outcome.status, "error");
+  assert.match(ends[0].data.outcome.error.message, /Todo write conflict/u);
+  assert.equal(ends[1].data.outcome.status, "ok");
   assert.equal(await readFile(join(w.directory, ".aex/todo.pending"), "utf8"), "another writer owns this file");
 });

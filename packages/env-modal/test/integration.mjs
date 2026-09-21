@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModalClient } from "modal";
 import { createModalClient, createModalEnvironment, serveEnvironment } from "../dist/server.mjs";
+import { completionGrant, finishCallback } from "../../../shared/environment-test-fixture.mjs";
 
 const python = `import json,os,socket,sys,time,subprocess
 from pathlib import Path
@@ -53,7 +54,7 @@ async function integration(t) {
   let server;
   const token = randomUUID();
   const open = async () => {
-    env = await createModalEnvironment({ directory, appName, profiles, client, report: async usage => reports.push(usage) });
+    env = await createModalEnvironment({ directory, appName, profiles, client, fetch: finishCallback, report: async usage => reports.push(usage) });
     server = await serveEnvironment(env.handle, { token });
   };
   await open();
@@ -67,7 +68,7 @@ async function integration(t) {
     assert.equal(response.status, 200);
     return (await response.json()).receipt;
   };
-  const execute = (id, input, deadline_ms = 30_000) => call(id, "execute", { implementation: { type: "modal_command", name: "fixture", configuration: { scope: "one-run" } }, input, deadline_ms });
+  const execute = (id, input, deadline_ms = 30_000) => call(id, "execute", { implementation: { type: "modal_command", name: "fixture", configuration: { scope: "one-run" } }, input, deadline_ms, callback: completionGrant });
   const started = Date.now();
   t.after(async () => {
     try {

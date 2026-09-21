@@ -4,14 +4,15 @@ import { z } from "zod";
 
 export const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
 const sequence = z.number().int().positive().safe();
-const callback = z.strictObject({ url: z.url(), token: z.string().min(1), methods: z.array(z.string()) });
+const callback = z.strictObject({ url: z.url(), token: z.string().min(1), methods: z.array(z.string()) })
+  .refine(grant => grant.methods.includes("finish"), "Tool completion service must be granted");
 const command = z.strictObject({
   contract: z.literal("environment/v1"),
   operation: z.strictObject({ session_id: identifier, environment: identifier, sequence,
     request: z.discriminatedUnion("type", [
       z.strictObject({ type: z.literal("setup"), configuration: z.unknown() }),
       z.strictObject({ type: z.literal("execute"), implementation: z.unknown(), input: z.unknown(),
-        deadline_ms: sequence.max(2_147_483_647), callback: callback.optional() }),
+        deadline_ms: sequence.optional(), callback }),
       z.strictObject({ type: z.literal("call"), name: identifier, input: z.unknown() }),
       z.strictObject({ type: z.literal("cancel"), target_sequence: sequence }),
       z.strictObject({ type: z.literal("detach") }), z.strictObject({ type: z.literal("teardown") }),
@@ -29,6 +30,32 @@ export const failure = (code, message, details) => ({ type: "failure", code,
   message: String(message).slice(0, 4096), retryable: false, ...(details === undefined ? {} : { details }) });
 export const unknown = message => ({ type: "unknown", message: String(message).slice(0, 4096) });
 export const bindingKey = op => `${op.session_id}/${op.environment}`;
+
+export async function finishExecution(op, receipt, fetch = globalThis.fetch) {
+  if (receipt.type !== "result") return receipt;
+  const grant = op.request.callback;
+  try {
+    const response = await fetch(grant.url, { method: "POST",
+      headers: { authorization: `Bearer ${grant.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ method: "finish", input: { status: "ok", value: receipt.output } }) });
+    if (!response.ok) return unknown(`Tool completion acknowledgement was lost: ${response.status}`);
+    sequence.parse(await response.json());
+    return receipt;
+  } catch (error) { return unknown(`Tool completion acknowledgement was lost: ${error.message}`); }
+}
+
+export function deadlineTimer(milliseconds, expire) {
+  let timer;
+  const deadline = milliseconds === undefined ? undefined : Date.now() + milliseconds;
+  const schedule = () => {
+    if (deadline === undefined) return;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) expire();
+    else timer = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
+  };
+  schedule();
+  return () => clearTimeout(timer);
+}
 
 export function environmentHandler(handle) {
   return async raw => {

@@ -1,3 +1,4 @@
+import { finishCallback } from "../../../shared/environment-test-fixture.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFile } from "node:child_process";
@@ -16,7 +17,7 @@ const invocation = (name, input, deadline_ms = 15_000) => ({ implementation: { t
 test("Docker workspace retains files, enforces profiles, cancels descendants and reports lost resources", { timeout: 120_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "aex-local-test-"));
   const profiles = { writer: { image, workspace: "write" }, reader: { image, workspace: "read" } };
-  const env = await createLocalEnvironment({ directory, profiles });
+  const env = await createLocalEnvironment({ fetch: finishCallback, directory, profiles });
   const command = commands();
   const reader = commands();
   t.after(async () => {
@@ -34,7 +35,7 @@ test("Docker workspace retains files, enforces profiles, cancels descendants and
   const state = saved.find(value => value.profileName === "writer");
   assert.equal(state.phase, "ready");
   assert.equal((await env.handle(command("detach"))).receipt.type, "accepted");
-  const restarted = await createLocalEnvironment({ directory, profiles });
+  const restarted = await createLocalEnvironment({ fetch: finishCallback, directory, profiles });
   assert.equal((await restarted.handle(command("execute", invocation("read", { path: "first" })))).receipt.output.content, "first");
   assert.equal((await env.handle(reader("execute", invocation("write", { path: "forbidden", content: "x" })))).receipt.type, "failure");
   assert.equal((await env.handle(reader("execute", invocation("read", { path: "first" })))).receipt.type, "failure");
@@ -68,7 +69,7 @@ test("Docker workspace retains files, enforces profiles, cancels descendants and
 
 test("a preprepared locked Python project runs offline before any import-time dependency is needed", { timeout: 30_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "aex-python-test-"));
-  const env = await createLocalEnvironment({ directory, profiles: {
+  const env = await createLocalEnvironment({ fetch: finishCallback, directory, profiles: {
     python: { image: process.env.BRAIN_PYTHON_IMAGE ?? "aex-workspace-python:test", workspace: "read" },
   } });
   const command = commands();
@@ -88,7 +89,7 @@ test("Docker cleanup failure retains execution evidence and teardown can reclaim
   const wrapper = join(directory, "docker-fixture");
   await writeFile(wrapper, '#!/bin/sh\nif [ "$1" = rm ] && [ -f "$0.fail" ]; then echo "fixture Docker cleanup unavailable" >&2; exit 1; fi\nexec docker "$@"\n', { mode: 0o700 });
   await writeFile(`${wrapper}.fail`, "");
-  const env = await createLocalEnvironment({ directory, docker: wrapper, profiles: { test: { image, workspace: "write" } } });
+  const env = await createLocalEnvironment({ fetch: finishCallback, directory, docker: wrapper, profiles: { test: { image, workspace: "write" } } });
   const command = commands();
   t.after(async () => {
     await rm(`${wrapper}.fail`, { force: true });

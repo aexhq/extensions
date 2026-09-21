@@ -10,6 +10,7 @@ import { schemaFixtures } from "./schema-fixtures.mjs";
 function context(signal = new AbortController().signal) {
   const events = [];
   return { events, signal, deadline: new Date(Date.now() + 15_000), sequence: 1,
+    finish: async value => value,
     emit: async (type, data) => { events.push({ type, data }); return events.length; } };
 }
 
@@ -126,11 +127,16 @@ test("MCP SDK timeouts and known local failures have specific terminal outcomes"
   }
 });
 
-test("a real MCP request deadline returns timeout and cancels the remote wait", async t => {
+test("Brain's deadline signal cancels the real MCP wait", async t => {
   const { client, records } = await mcpFixture(t);
   const [source] = (await mcpTools({ client, env: hostEnv({ name: "app" }), names: ["wait"] })).map(inspectTool);
-  const call = { ...context(), deadline: new Date(Date.now() + 100) };
-  assert.deepEqual(await source.handler({}, call), { status: "timeout" });
+  const controller = new AbortController();
+  const call = { ...context(controller.signal), deadline: undefined };
+  const running = source.handler({}, call);
+  const rejected = assert.rejects(running);
+  await eventually(async () => (await records()).some(record => record.type === "call" && record.name === "wait"));
+  controller.abort(new Error("deadline reached"));
+  await rejected;
   await eventually(async () => (await records()).some(record => record.type === "cancelled"));
   assert.equal((await records()).filter(record => record.type === "call").length, 1);
 });

@@ -66,9 +66,8 @@ test("MCP bridge: Brain cancellation reaches a real server without replay", { ti
   assert.equal((await mcp.records()).filter(record => record.type === "call").length, 1);
   const events = await collect(session.events());
   assert.ok(events.some(event => event.type === "turn_failed"));
-  const result = events.find(event => event.type === "tool_call_ended").data.result;
-  assert.equal(result.is_error, true);
-  assert.equal(result.output.code, "cancelled");
+  const outcome = events.find(event => event.type === "tool_call_ended").data.outcome;
+  assert.equal(outcome.status, "cancelled");
 });
 
 test("MCP bridge: original JSON Schemas validate through Brain before any remote effects", { timeout: 60_000 }, async t => {
@@ -85,5 +84,5 @@ test("MCP bridge: original JSON Schemas validate through Brain before any remote
   const remoteCalls = (await mcp.records()).filter(record => record.type === "call");
   assert.deepEqual(remoteCalls.map(record => record.input), schemaFixtures.map(schema => schema.valid[0]));
   const events = await collect(session.events());
-  assert.equal(events.filter(event => event.type === "tool_call_ended" && event.data.result.output.code === "invalid_input").length, schemaFixtures.length);
+  assert.equal(events.filter(event => event.type === "tool_call_ended" && event.data.outcome.error?.code === "invalid_input").length, schemaFixtures.length);
 });

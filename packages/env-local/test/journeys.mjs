@@ -14,9 +14,9 @@ import { write } from "../../tool-write/dist/index.js";
 import { codex } from "../../loop-codex/dist/index.mjs";
 import { fixture, calls, answer, collect } from "../../../shared/journey-fixture.mjs";
 
-async function workspace(t) {
+async function workspace(t, fetch = globalThis.fetch) {
   const directory = await mkdtemp(join(tmpdir(), "aex-local-journey-"));
-  const runtime = await createLocalEnvironment({ directory, profiles: {
+  const runtime = await createLocalEnvironment({ directory, fetch, profiles: {
     coding: { image: process.env.BRAIN_WORKSPACE_IMAGE ?? "aex-workspace:test", workspace: "write" },
   } });
   t.after(() => rm(directory, { recursive: true }));
@@ -44,13 +44,17 @@ test("Local Environment: edit and test a real program, then read it in a later t
   assert.equal(events.filter(event => event.type === "tool_call_ended").length, 4);
 });
 
-test("Local Environment: losing an HTTP response after a write produces unknown without replay", { timeout: 60_000 }, async t => {
+for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP reply with ${lostCompletion ? "missing" : "committed"} completion preserves the known outcome without replay`, { timeout: 60_000 }, async t => {
   const f = await fixture(t, [
     () => calls(["write", { path: "once", content: "committed externally" }]),
-    body => { assert.match(body.input.at(-1).output, /unknown/u); return calls(["read", { path: "once", offset: 0, limit: 262144 }]); },
+    body => { assert.match(body.input.at(-1).output, lostCompletion ? /unknown/u : /once/u); return calls(["read", { path: "once", offset: 0, limit: 262144 }]); },
     body => { assert.match(body.input.at(-1).output, /committed externally/u); return answer("inspected uncertain write"); },
   ]);
-  const runtime = await workspace(t);
+  let completions = 0;
+  const runtime = await workspace(t, (url, request) => {
+    if (++completions === 1 && lostCompletion) throw new Error("completion connection lost before acknowledgement");
+    return fetch(url, request);
+  });
   let writes = 0;
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -68,5 +72,5 @@ test("Local Environment: losing an HTTP response after a write produces unknown 
   await session.send("write once");
   assert.equal(writes, 1);
   const events = await collect(session.events());
-  assert.ok(events.some(event => event.type === "tool_call_ended" && JSON.stringify(event.data).includes("unknown")));
+  assert.equal(events.find(event => event.type === "tool_call_ended").data.outcome.status, lostCompletion ? "unknown" : "ok");
 });

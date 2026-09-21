@@ -19,9 +19,16 @@ const tools = await mcpTools({
 // await client.close();
 ```
 
-The client SDK owns transport and protocol negotiation. `connectMcp` disables automatic interactive fulfilment; specify the protocol revision your server supports. A connected client can also be supplied directly. The bridge uses a fixed discovered Tool definition on every call, so an SDK cache refresh cannot change the session's schemas or trigger the header-mismatch resend path. Discovery uses the SDK's bounded pagination. Later list changes do not add or replace placed Tools; authorize a new session for changed definitions.
+The client SDK owns transport and protocol negotiation. `connectMcp` disables automatic interactive fulfilment; specify the protocol revision your server supports. For Tool requests it also disables the MCP SDK's independent timer: Brain's original deadline and cancellation signal own invocation lifetime, including unlimited deadlines. Discovery still uses the SDK's normal timeout. A connected client can be supplied directly for finite deadlines of at most 2,147,483,647 ms; use `connectMcp` for longer or unlimited calls. Unsupported timer ranges fail before dispatch instead of shortening the deadline.
+
+The bridge uses a fixed discovered Tool definition on every call, so an SDK cache refresh cannot change the session's schemas or trigger the header-mismatch resend path. Discovery uses the SDK's bounded pagination. Later list changes do not add or replace placed Tools; authorize a new session for changed definitions.
 
 ## Results and failures
+
+The bridge uses Brain SDK 0.28 and explicitly finishes each invocation after committing its
+evidence and normalized result. Return alone does not complete a Brain Tool. A missing deadline
+means no invocation timer; keep the application's host connection and MCP client alive until
+completion or cancellation.
 
 MCP images and embedded image/PDF resources require a caller-supplied
 `publishMedia({ bytes, mediaType, index }, context)` callback on `mcpTools`. Return an HTTPS URL

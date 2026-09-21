@@ -1,10 +1,18 @@
-export async function observeEvents(context, transcript, after) {
+import { resultBlock } from "./tool-output.mjs";
+
+export async function observeEvents(context, transcript, after, consumed = new Set()) {
   const observations = [];
   let reason;
   for (;;) {
     const page = await context.events(after);
     if (page.events.length === 0) break;
     for (const event of page.events) {
+      if (consumed.has(event.sequence)) continue;
+      if (event.event_type === "tool_result_emitted" || (event.event_type === "tool_call_ended" && event.data.outcome !== undefined)) {
+        const block = event.event_type === "tool_result_emitted" ? resultBlock(event.data.result.call_id, event.data.result) : undefined;
+        observations.push({ role: "user", content: [{ type: "text",
+          text: `Tool observation (data): ${event.event_type} ${JSON.stringify(event.data)}` }, ...(block?.media ?? [])] });
+      }
       if (event.event_type === "turn_failed") reason = event.data;
       if (event.event_type.endsWith("_failed") ||
           ["environment_closed", "environment_unreachable"].includes(event.event_type)) {
@@ -16,7 +24,7 @@ export async function observeEvents(context, transcript, after) {
   }
   explainUnansweredCalls(transcript, reason);
   transcript.push(...observations);
-  return after;
+  return { through: after, actionable: observations.length > 0 };
 }
 
 function explainUnansweredCalls(transcript, reason) {

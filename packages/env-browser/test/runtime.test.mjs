@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createBrowserEnvironment } from "../dist/server.mjs";
-import { commands, eventually } from "../../../shared/environment-test-fixture.mjs";
+import { finishCallback, commands, eventually } from "../../../shared/environment-test-fixture.mjs";
 import { browserFixture } from "./fixture.mjs";
 
 const invocation = (name, input = {}, deadline_ms = 10_000) => ({ implementation: { type: "aex_browser_tool", version: 1, name: `browser_${name}` }, input, deadline_ms });
 
 test("real browser state is retained, isolated, serialized and rendered as image media", { timeout: 45_000 }, async t => {
-  const { env, url, launched, published } = await browserFixture(t);
+  const { env, url, launched, published } = await browserFixture(t, { fetch: finishCallback });
   const first = commands();
   const other = commands();
   for (const command of [first, other]) assert.equal((await env.handle(command("setup", { configuration: { profile: "test" } }))).receipt.type, "accepted");
@@ -40,7 +40,7 @@ test("real browser state is retained, isolated, serialized and rendered as image
 });
 
 test("cancellation closes the active browser and a restarted controller reports resource loss", { timeout: 30_000 }, async t => {
-  const { env, url, launched } = await browserFixture(t);
+  const { env, url, launched } = await browserFixture(t, { fetch: finishCallback });
   const command = commands();
   await env.handle(command("setup", { configuration: { profile: "test" } }));
   const navigation = (await env.handle(command("execute", invocation("navigate", { url })))).receipt;
@@ -60,7 +60,7 @@ test("cancellation closes the active browser and a restarted controller reports 
 });
 
 test("a Playwright navigation timeout closes uncertain browser state before the caller deadline", { timeout: 30_000 }, async t => {
-  const { env, url, launched } = await browserFixture(t);
+  const { env, url, launched } = await browserFixture(t, { fetch: finishCallback });
   const command = commands();
   await env.handle(command("setup", { configuration: { profile: "test" } }));
   assert.equal((await env.handle(command("execute", invocation("navigate", { url })))).receipt.type, "result");
@@ -75,7 +75,7 @@ test("a Playwright navigation timeout closes uncertain browser state before the 
 });
 
 test("browser driver deadline retains its cause when cleanup fails", { timeout: 30_000 }, async t => {
-  const { env, url, launched } = await browserFixture(t);
+  const { env, url, launched } = await browserFixture(t, { fetch: finishCallback });
   const command = commands();
   await env.handle(command("setup", { configuration: { profile: "test" } }));
   await env.handle(command("execute", invocation("navigate", { url })));

@@ -2,13 +2,13 @@ import { publish } from "../../../shared/media.mjs";
 import { z } from "zod";
 import { definitions } from "./definitions.mjs";
 import { toolOutput } from "../../../shared/tool-output.mjs";
-import { environmentHandler, bindingKey, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const configuration = z.strictObject({ profile: z.string().min(1) });
 const descriptor = z.strictObject({ type: z.literal("aex_browser_tool"), version: z.literal(1), name: z.enum(Object.keys(definitions)) });
 
-export function createBrowserEnvironment({ profiles, publishMedia }) {
+export function createBrowserEnvironment({ profiles, publishMedia, fetch = globalThis.fetch }) {
   const launchers = new Map(Object.entries(profiles));
   for (const launch of launchers.values()) if (typeof launch !== "function") throw new TypeError("each browser profile must supply a launcher");
   const bindings = new Map();
@@ -37,7 +37,7 @@ export function createBrowserEnvironment({ profiles, publishMedia }) {
     const controller = new AbortController();
     const call = { controller, started: false, closing: undefined };
     state.active.set(op.sequence, call);
-    const timer = setTimeout(() => controller.abort(new EnvironmentError("timeout", "browser execution deadline expired")), op.request.deadline_ms);
+    const cancelTimer = deadlineTimer(op.request.deadline_ms, () => controller.abort(new EnvironmentError("timeout", "browser execution deadline expired")));
     const abort = () => {
       if (call.started) {
         state.lost = true;
@@ -52,17 +52,17 @@ export function createBrowserEnvironment({ profiles, publishMedia }) {
       call.started = true;
       const page = await pageFor(state);
       if (controller.signal.aborted) { abort(); controller.signal.throwIfAborted(); }
-      page.setDefaultTimeout(op.request.deadline_ms);
+      page.setDefaultTimeout(0);
       if (name === "browser_navigate") await page.goto(input.url, { waitUntil: "domcontentloaded" });
       if (name === "browser_click") await page.locator(input.selector).click();
       if (name === "browser_fill") await page.locator(input.selector).fill(input.value);
       if (name === "browser_screenshot") {
-        const png = await page.screenshot({ type: "png", timeout: op.request.deadline_ms });
+        const png = await page.screenshot({ type: "png", timeout: 0 });
         return result(toolOutput({ url: page.url(), title: await page.title() }, [await publish(publishMedia, png, "image/png", 0, { sessionId: op.session_id, sequence: op.sequence, signal: controller.signal })]));
       }
       const output = { url: page.url(), title: await page.title() };
       if (name === "browser_inspect") {
-        const snapshot = await page.locator("body").ariaSnapshot({ timeout: op.request.deadline_ms });
+        const snapshot = await page.locator("body").ariaSnapshot({ timeout: 0 });
         output.snapshot = snapshot.slice(0, 64 * 1024);
         output.truncated = snapshot.length > 64 * 1024;
       }
@@ -81,7 +81,7 @@ export function createBrowserEnvironment({ profiles, publishMedia }) {
       else if (call.started && state.lost) receipt = unknown(error.message);
       else throw error;
     } finally {
-      clearTimeout(timer);
+      cancelTimer();
       controller.signal.removeEventListener("abort", abort);
       try { await call.closing; }
       catch (error) {
@@ -109,7 +109,7 @@ export function createBrowserEnvironment({ profiles, publishMedia }) {
     }
     if (request.type === "teardown" && state.deleted) return accepted();
     if (state.deleted) fail("unavailable", "browser binding was deleted");
-    if (request.type === "execute") return execute(op, state);
+    if (request.type === "execute") return finishExecution(op, await execute(op, state), fetch);
     if (request.type === "cancel") {
       const call = state.active.get(request.target_sequence);
       if (call) { call.controller.abort(new EnvironmentError("cancelled", "browser execution cancelled")); await call.closing; }

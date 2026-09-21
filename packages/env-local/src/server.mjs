@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { z } from "zod";
-import { environmentHandler, bindingKey, accepted, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const exec = promisify(execFile);
@@ -16,7 +16,7 @@ const descriptor = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("python_project"), name: z.string().regex(/^[A-Za-z0-9_-]+$/u) }),
 ]);
 
-export async function createLocalEnvironment({ directory, profiles, docker = "docker" }) {
+export async function createLocalEnvironment({ directory, profiles, docker = "docker", fetch = globalThis.fetch }) {
   const root = resolve(z.string().min(1).parse(directory));
   const configured = z.record(z.string(), profileSchema).parse(profiles);
   await mkdir(root, { recursive: true });
@@ -61,7 +61,7 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
     const identity = `${key}/${op.sequence}`;
     if (running.has(identity)) fail("busy", "this invocation is already active");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new EnvironmentError("timeout", "execution deadline expired")), op.request.deadline_ms);
+    const cancelTimer = deadlineTimer(op.request.deadline_ms, () => controller.abort(new EnvironmentError("timeout", "execution deadline expired")));
     const call = { controller, container: containerName(state, op.sequence), removal: undefined, created: false };
     running.set(identity, call);
     const remove = () => call.removal ??= cli("rm", "--force", call.container);
@@ -107,7 +107,7 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
       else if (call.created) receipt = unknown(error.message);
       else throw error;
     } finally {
-      clearTimeout(timer);
+      cancelTimer();
       controller.signal.removeEventListener("abort", abort);
       try { if (call.created) await remove(); }
       catch (error) {
@@ -136,7 +136,7 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
       if (request.type === "teardown") return accepted();
       fail("unavailable", "workspace binding was deleted");
     }
-    if (request.type === "execute") return execute(op, key, state);
+    if (request.type === "execute") return finishExecution(op, await execute(op, key, state), fetch);
     if (request.type === "cancel") {
       const call = running.get(`${key}/${request.target_sequence}`);
       if (call) { call.controller.abort(new EnvironmentError("cancelled", "execution cancelled")); if (call.removal) await call.removal; }
