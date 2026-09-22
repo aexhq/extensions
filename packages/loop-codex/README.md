@@ -13,6 +13,11 @@ Agentloop host imports:
 - **automatic compaction at 90% of the context window** uses a summarization model call, then
   retains recent plain user messages and a bridge message carrying the summary.
 
+Compaction uses reported inclusive input plus output when available, including cached
+input. Older receipts retain their raw-input behavior; missing usage uses the loop's
+existing inexpensive context estimate. This is a context-management policy, not a
+commercial spending limit.
+
 Codex's remote/server-side compaction, TokenBudget feature, MCP hooks, steering queue, and sandbox
 machinery are host concerns and are not ported.
 

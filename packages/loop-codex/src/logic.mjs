@@ -66,7 +66,7 @@ export async function runCodex(input, context) {
       await context.kv.put("usage", usage);
     }
     const response = await context.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
-    usage.lastTokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
+    usage.lastTokens = (response.usage.total_input_tokens ?? response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
     await context.setTranscript(transcript);
     await context.kv.put("usage", usage);
