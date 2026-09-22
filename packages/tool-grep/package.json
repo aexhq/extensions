@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-grep",
-  "version": "7.0.0",
+  "version": "7.0.1",
   "description": "Search text files in the Environment workspace with ripgrep.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -35,7 +35,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.28.0",
+    "@aexhq/brain": "0.29.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

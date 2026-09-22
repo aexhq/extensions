@@ -79,7 +79,7 @@ test("compacts at the 90% token threshold using reported usage, keeping user mes
   const fake = host(
     [
       // The provider reports 950 tokens used: past 90% of 1000.
-      assistant([{ type: "tool_use", id: "c1", name: "bash", input: {} }], { input_tokens: 900, output_tokens: 50 }),
+      assistant([{ type: "tool_use", id: "c1", name: "bash", input: {} }], { input_tokens: 100, total_input_tokens: 900, cache_read_input_tokens: 800, output_tokens: 50 }),
       assistant([{ type: "text", text: "progress so far" }], {}, "end_turn"),
       assistant([{ type: "text", text: "continuing" }], {}, "end_turn"),
     ],
