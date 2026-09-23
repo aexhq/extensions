@@ -2,6 +2,8 @@ FROM node:22.23.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends bash ripgrep python3 python3-venv && rm -rf /var/lib/apt/lists/*
 COPY packages/tool-*/dist/runtime/*.mjs /opt/aex/tools/
 COPY packages/env-local/image/runner.mjs /opt/aex/runner.mjs
+COPY .runtime-packages/*.tgz /tmp/brain-packages/
+RUN npm install --prefix /opt/aex/node --omit=dev --ignore-scripts --no-audit --no-fund /tmp/brain-packages/*.tgz && rm -rf /tmp/brain-packages
 RUN printf '{}' > /opt/aex/python-projects.json
 WORKDIR /workspace
 ENTRYPOINT ["node", "/opt/aex/runner.mjs"]

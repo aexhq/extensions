@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/package-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "files": ["dist", "runtime.mjs"],
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }, "./runtime": "./runtime.mjs" },
+  "brain": { "tools": { ".": { "runtime": "./runtime", "exports": ["report"] } } },
+  "dependencies": { "@aexhq/brain": "0.30.0", "zod": "4.4.3" }
+}

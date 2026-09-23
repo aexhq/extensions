@@ -7,12 +7,39 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createLocalEnvironment } from "../dist/server.mjs";
+import { environment, inspectTool } from "@aexhq/brain";
+import { report } from "../../../test/fixtures/package-tool/dist/index.js";
 import { commands, eventually } from "../../../shared/environment-test-fixture.mjs";
 
 const exec = promisify(execFile);
 const docker = async (...args) => (await exec("docker", args)).stdout.trim();
 const image = process.env.BRAIN_WORKSPACE_IMAGE ?? "aex-workspace:test";
 const invocation = (name, input, deadline_ms = 15_000) => ({ implementation: { type: "aex_official_tool", version: 1, name }, input, deadline_ms });
+
+test("an installed third-party package uses invocation services in the isolated Docker runtime", { timeout: 60_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "aex-package-test-"));
+  const calls = [];
+  const env = await createLocalEnvironment({ directory, profiles: { test: { image, workspace: "write" } }, fetch: async (url, request) => {
+    assert.equal(url, "https://brain.example/execution");
+    assert.equal(request.headers.authorization, "Bearer fixture");
+    const call = JSON.parse(request.body);
+    calls.push(call);
+    return Response.json(call.method === "model" ? { message: { role: "assistant", content: [{ type: "text", text: "Summary" }] }, stop_reason: "end_turn", usage: {} } : calls.length);
+  } });
+  const command = commands();
+  t.after(async () => { assert.equal((await env.handle(command("teardown"))).receipt.type, "accepted"); await rm(directory, { recursive: true }); });
+  assert.equal((await env.handle(command("setup", { configuration: { profile: "test" } }))).receipt.type, "accepted");
+  assert.equal((await env.handle(command("execute", invocation("write", { path: "document", content: "A document." })))).receipt.type, "result");
+  calls.length = 0;
+  const implementation = inspectTool(report({ env: environment({ url: () => "https://workspace.example" })({ name: "workspace" }) })).implementation;
+  const result = await env.handle(command("execute", { implementation, input: { path: "document" }, deadline_ms: 30_000,
+    callback: { url: "https://brain.example/execution", token: "fixture", methods: ["model", "result", "returned", "finish"] } }));
+  assert.deepEqual(result.receipt, { type: "returned" });
+  assert.deepEqual(calls.map(call => call.method), ["result", "model", "model", "finish"]);
+  assert.equal(calls.at(-1).input.value.document, "A document.");
+  assert.equal(calls.at(-1).input.value.summaries.length, 2);
+  assert.equal(calls.at(-1).input.content, "Summarized the file.");
+});
 
 test("Docker workspace retains files, enforces profiles, cancels descendants and reports lost resources", { timeout: 120_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "aex-local-test-"));

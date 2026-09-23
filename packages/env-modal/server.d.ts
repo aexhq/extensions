@@ -2,6 +2,7 @@ import type { ModalClient } from "modal";
 export declare function createModalClient(options?: { tokenId?: string; tokenSecret?: string; environment?: string }): ModalClient;
 export interface ModalProfile {
   image: string; commands: Record<string, string[]>; cpu: number; memoryMiB: number;
+  toolRuntime?: string[];
   maxLifetimeMs: number; region: string; workdir?: string; outboundDomains?: string[]; maxOutputBytes?: number; terminateAfterTurn?: boolean;
 }
 export interface ModalConfiguration { profile: string; lifetimeMs: number; authorization?: string }

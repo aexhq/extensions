@@ -1,10 +1,10 @@
 # @aexhq/env-local
 
-A Docker workspace Environment using Brain SDK 0.28. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver consumes the `@aexhq/tool-*` implementation descriptors and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.30. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver loads ordinary published Node Tool packages and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
 
-This release requires Brain SDK/runtime 0.28. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.30. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -14,6 +14,7 @@ cancellation still apply. Finite deadlines retain their full duration without a 
 ```sh
 npm ci
 npm run build
+npm exec -- node tools/prepare-runtime-packages.mjs
 docker build -t my-workspace -f packages/env-local/image/Dockerfile .
 ```
 
@@ -58,6 +59,15 @@ Setup records the binding; the first execution allocates and initializes the vol
 The caller's deadline and `cancel` remove the invocation's container, including descendants. The execution returns a failure receipt with code `timeout` or `cancelled`, retaining that cause if cleanup also fails; `details.cleanup_error` describes the cleanup failure. Neither code promises rollback. Missing terminal runner results and lost responses after dispatch remain `unknown`. A known result followed by failed cleanup reports `cleanup_failed` and retains the output in details. Container identities include the binding and journal sequence, so cancellation after a controller restart can find the original container. Detach retains the volume and removes abandoned invocation containers; teardown removes those containers and the volume. Active operations return `busy` from lifecycle cleanup. Teardown can be repeated.
 
 Keep the state directory on retained disk and run one controller per directory. State survives controller process restart; this package does not promise host-loss recovery, backups, cross-controller ownership, persistent shell processes or background callbacks. An interrupted allocation may require operator cleanup. Docker/API errors remain visible and no effect is replayed automatically.
+
+## Node packages
+
+Publish normal `tool({ ..., run })` exports with Brain's `brain-tools` helper. Install the exact
+package versions and `@aexhq/brain` in `/opt/aex/node` when preparing the image. Consumers import
+the generated factory and pass `{ env: workspace }`; no per-Tool controller registration is needed.
+The isolated runner supports events, intermediate results, explicit finish and independent model
+calls through the invocation's services. Callback credentials stay in the controller. Returning
+early keeps that invocation's container until finish or its original deadline.
 
 ## Python projects
 

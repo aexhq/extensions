@@ -67,7 +67,7 @@ siblings. For hosted applications, publish bytes with Aex's attachment API and r
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Version 7.0 targets Brain SDK 0.28 and `brain:agentloop@0.2.0`. The Tool return/completion
+Version 7.0 targets Brain SDK 0.30 and `brain:agentloop@0.2.0`. The Tool return/completion
 contract is breaking. Existing sessions retain their immutable loop implementation; the
 server upgrade preflight refuses unclosed sessions from the previous contract. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.

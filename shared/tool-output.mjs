@@ -5,7 +5,7 @@ export function toolOutput(content, media = []) {
 
 export function resultBlock(callId, result) {
   const block = { type: "tool_result", tool_use_id: callId,
-    content: result === undefined ? "Tool produced no result." : result.output,
+    content: result === undefined ? "Tool produced no result." : result.content ?? result.output,
     is_error: result === undefined ? true : result.is_error };
   const output = result?.output;
   if (!block.is_error && output?.type === "aex_tool_output" && output.version === 1) {
@@ -13,7 +13,7 @@ export function resultBlock(callId, result) {
       throw new TypeError("aex_tool_output media must be an array");
     }
     output.media.forEach(validateMedia);
-    block.content = output.content;
+    block.content = result.content ?? output.content;
     if (output.media.length) block.media = output.media;
   }
   return block;
@@ -26,8 +26,10 @@ export function toolResult(callId, returned) {
     .map(event => event.data.result);
   const terminal = returned.events.find(event => event.event_type === "tool_call_ended")?.data.outcome;
   if (terminal !== undefined && terminal.status !== "ok") {
-    results.push({ call_id: callId, is_error: true, output: terminal.status === "error"
-      ? terminal.error : { code: terminal.status, message: terminal.message ?? `Tool ${terminal.status}` } });
+    const failure = { call_id: callId, is_error: true, output: terminal.status === "error"
+      ? terminal.error : { code: terminal.status, message: terminal.message ?? `Tool ${terminal.status}` } };
+    const previous = results.at(-1);
+    if (!(previous?.is_error && previous.content !== undefined && JSON.stringify(previous.output) === JSON.stringify(failure.output))) results.push(failure);
   }
   const blocks = results.map(result => resultBlock(callId, result));
   if (returned.finished && blocks.length === 1) return blocks[0];

@@ -25,7 +25,7 @@ The bridge uses a fixed discovered Tool definition on every call, so an SDK cach
 
 ## Results and failures
 
-The bridge uses Brain SDK 0.28 and explicitly finishes each invocation after committing its
+The bridge uses Brain SDK 0.30 and explicitly finishes each invocation after committing its
 evidence and normalized result. Return alone does not complete a Brain Tool. A missing deadline
 means no invocation timer; keep the application's host connection and MCP client alive until
 completion or cancellation.
