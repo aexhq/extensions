@@ -184,13 +184,16 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
         return output;
       };
       if (packaged) {
-        const [result, stderr, exitCode] = await Promise.all([
-          toolProcess(op, { stdout: child.stdout, write: text => child.stdin.writeText(text) },
-            { fetch, signal: AbortSignal.timeout(remaining), maxOutputBytes: state.profile.maxOutputBytes }),
-          read(child.stderr), child.wait(),
-        ]);
-        if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
-        else receipt = exitCode === 0 ? result : unknown(`Tool process exited ${exitCode}: ${stderr.slice(0, 2048)}`);
+        const writer = child.stdin.getWriter();
+        try {
+          const [result, stderr, exitCode] = await Promise.all([
+            toolProcess(op, { stdout: child.stdout, write: text => writer.write(text) },
+              { fetch, signal: AbortSignal.timeout(remaining), maxOutputBytes: state.profile.maxOutputBytes }),
+            read(child.stderr), child.wait(),
+          ]);
+          if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
+          else receipt = exitCode === 0 ? result : unknown(`Tool process exited ${exitCode}: ${stderr.slice(0, 2048)}`);
+        } finally { writer.releaseLock(); }
       } else {
         const write = async () => {
           await child.stdin.writeText(JSON.stringify({ input: op.request.input, configuration: parsed.data.configuration ?? null,
