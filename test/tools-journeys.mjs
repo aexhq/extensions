@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { environment } from "@aexhq/brain";
 import { bash } from "../packages/tool-bash/dist/index.js";
@@ -16,7 +18,7 @@ import { todo } from "../packages/tool-todo/dist/index.js";
 import { write } from "../packages/tool-write/dist/index.js";
 import { codex } from "../packages/loop-codex/dist/index.mjs";
 import { answer, calls, collect, fixture } from "../shared/journey-fixture.mjs";
-import { finishExecution } from "../shared/environment-server.mjs";
+import { toolProcess } from "../shared/tool-process.mjs";
 
 const tools = { bash, edit, glob, grep, ls, read, todo, write };
 
@@ -32,12 +34,15 @@ async function workspace(t) {
     try {
       assert.equal(command.contract, "environment/v1");
       if (operation.type === "execute") {
-        const { name } = operation.implementation;
-        assert.deepEqual(operation.implementation, { type: "aex_official_tool", version: 1, name });
-        assert.ok(Object.hasOwn(tools, name));
+        const { export: name } = operation.implementation;
+        assert.equal(operation.implementation.type, "node_package");
         executed.push(name);
-        const runtime = (await import(`../packages/tool-${name}/dist/runtime/${name}.mjs`)).default;
-        receipt = await finishExecution(command.operation, { type: "result", output: await runtime.execute(operation.input, { workspace: directory, signal: AbortSignal.timeout(10_000) }) });
+        const binary = fileURLToPath(new URL("./bin/brain-tool-runtime.mjs", import.meta.resolve("@aexhq/brain/package.json")));
+        const child = spawn(process.execPath, [binary, fileURLToPath(new URL("../", import.meta.url))], { cwd: directory, stdio: ["pipe", "pipe", "inherit"] });
+        const exited = once(child, "exit");
+        receipt = await toolProcess(command.operation, { stdout: child.stdout,
+          write: text => new Promise((resolve, reject) => child.stdin.write(text, error => error ? reject(error) : resolve())) });
+        assert.equal((await exited)[0], 0);
       } else {
         assert.ok(["setup", "detach", "teardown"].includes(operation.type));
         receipt = { type: "result", output: {} };

@@ -15,3 +15,13 @@ test("official media presentation preserves ordinary JSON and failure status", (
   assert.throws(() => toolResult("call", undefined), /dispatch omitted/u);
   assert.throws(() => resultBlock("call", { output: toolOutput({}, [{ type: "audio" }]), is_error: false }), /image or PDF URL blocks/u);
 });
+
+test("Tool result text preserves failure status and avoids repeating the same terminal error", () => {
+  const error = { code: "tool_error", message: "details" };
+  const returned = { finished: true, events: [
+    { event_type: "tool_result_emitted", data: { result: { output: error, is_error: true, content: "Explanation" } } },
+    { event_type: "tool_call_ended", data: { outcome: { status: "error", error } } },
+  ] };
+  assert.deepEqual(toolResult("call", returned), { type: "tool_result", tool_use_id: "call", content: "Explanation", is_error: true });
+  assert.equal(resultBlock("call", { output: { large: "document" }, is_error: false, content: "Summary" }).content, "Summary");
+});

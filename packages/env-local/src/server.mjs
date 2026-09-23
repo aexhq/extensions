@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { z } from "zod";
+import { nodePackage } from "@aexhq/brain/runtime";
+import { toolProcess } from "../../../shared/tool-process.mjs";
 import { finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
@@ -12,6 +14,7 @@ const configuration = z.strictObject({ profile: z.string().min(1) });
 const profileSchema = z.strictObject({ image: z.string().min(1), workspace: z.enum(["read", "write"]),
   memoryMb: z.number().int().positive().default(256), pids: z.number().int().positive().default(64) });
 const descriptor = z.discriminatedUnion("type", [
+  nodePackage,
   z.strictObject({ type: z.literal("aex_official_tool"), version: z.literal(1), name: z.enum(["bash", "read", "write", "edit", "ls", "glob", "grep", "todo"]) }),
   z.strictObject({ type: z.literal("python_project"), name: z.string().regex(/^[A-Za-z0-9_-]+$/u) }),
 ]);
@@ -62,7 +65,8 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
     if (running.has(identity)) fail("busy", "this invocation is already active");
     const controller = new AbortController();
     const cancelTimer = deadlineTimer(op.request.deadline_ms, () => controller.abort(new EnvironmentError("timeout", "execution deadline expired")));
-    const call = { controller, container: containerName(state, op.sequence), removal: undefined, created: false };
+    const done = Promise.withResolvers();
+    const call = { controller, container: containerName(state, op.sequence), removal: undefined, created: false, done: done.promise };
     running.set(identity, call);
     const remove = () => call.removal ??= cli("rm", "--force", call.container);
     const abort = () => { if (call.created) remove().catch(() => {}); };
@@ -77,31 +81,50 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=1000:1000",
         `--memory=${profile.memoryMb}m`, `--pids-limit=${profile.pids}`, "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m",
         "--mount", `type=volume,src=${state.volume},dst=/workspace,volume-nocopy${profile.workspace === "read" ? ",readonly" : ""}`,
-        profile.image);
+        ...(implementation.data.type === "node_package" ? ["--entrypoint", "/opt/aex/node/node_modules/.bin/brain-tool-runtime"] : []),
+        profile.image, ...(implementation.data.type === "node_package" ? ["/opt/aex/node"] : []));
       call.created = true;
       controller.signal.throwIfAborted();
       const child = spawn(docker, ["start", "--attach", "--interactive", call.container], { stdio: ["pipe", "pipe", "pipe"] });
-      const completed = new Promise((resolveCall, reject) => {
-        let stdout = "";
-        let stderr = "";
-        let bytes = 0;
-        const collect = (which, chunk) => {
-          bytes += Buffer.byteLength(chunk);
-          if (bytes > 20 * 1024 * 1024) controller.abort(new EnvironmentError("output_limit", "execution output exceeded 20 MiB"));
-          else if (which === "out") stdout += chunk;
-          else stderr += chunk;
-        };
-        child.stdout.on("data", chunk => collect("out", chunk));
-        child.stderr.on("data", chunk => collect("err", chunk));
-        child.on("error", reject);
-        child.stdin.on("error", reject);
-        child.on("close", code => code === 0 ? resolveCall(stdout) : reject(new Error(`container exited ${code}: ${stderr}`)));
-      });
-      child.stdin.end(JSON.stringify({ implementation: implementation.data, input: op.request.input }));
-      const output = await completed;
-      controller.signal.throwIfAborted();
-      receipt = JSON.parse(output);
-      if (!["result", "failure"].includes(receipt.type)) receipt = unknown("workspace runner returned no terminal result");
+      if (implementation.data.type === "node_package") {
+        const exit = new Promise((resolve, reject) => {
+          let bytes = 0;
+          child.stderr.on("data", chunk => {
+            bytes += chunk.length;
+            if (bytes > 20 * 1024 * 1024) controller.abort(new EnvironmentError("output_limit", "execution diagnostics exceeded 20 MiB"));
+          });
+          child.on("error", reject);
+          child.stdin.on("error", reject);
+          child.on("close", resolve);
+        });
+        const [result, code] = await Promise.all([toolProcess(op, {
+          stdout: child.stdout,
+          write: text => new Promise((resolve, reject) => child.stdin.write(text, error => error ? reject(error) : resolve())),
+        }, { fetch, signal: controller.signal }), exit]);
+        receipt = code === 0 ? result : unknown(`Tool process exited ${code}`);
+      } else {
+        const completed = new Promise((resolveCall, reject) => {
+          let stdout = "";
+          let stderr = "";
+          let bytes = 0;
+          const collect = (which, chunk) => {
+            bytes += Buffer.byteLength(chunk);
+            if (bytes > 20 * 1024 * 1024) controller.abort(new EnvironmentError("output_limit", "execution output exceeded 20 MiB"));
+            else if (which === "out") stdout += chunk;
+            else stderr += chunk;
+          };
+          child.stdout.on("data", chunk => collect("out", chunk));
+          child.stderr.on("data", chunk => collect("err", chunk));
+          child.on("error", reject);
+          child.stdin.on("error", reject);
+          child.on("close", code => code === 0 ? resolveCall(stdout) : reject(new Error(`container exited ${code}: ${stderr}`)));
+        });
+        child.stdin.end(JSON.stringify({ implementation: implementation.data, input: op.request.input }));
+        const output = await completed;
+        controller.signal.throwIfAborted();
+        receipt = JSON.parse(output);
+        if (!["result", "failure"].includes(receipt.type)) receipt = unknown("workspace runner returned no terminal result");
+      }
     } catch (error) {
       if (controller.signal.aborted) receipt = failure(controller.signal.reason.code, controller.signal.reason.message);
       else if (call.created) receipt = unknown(error.message);
@@ -115,7 +138,7 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
         else if (receipt.type === "unknown") receipt = unknown(`${receipt.message}; workspace cleanup failed: ${error.message}`);
         else receipt = failure("cleanup_failed", `workspace cleanup failed: ${error.message}`, { output: receipt.output });
       }
-      finally { running.delete(identity); }
+      finally { running.delete(identity); done.resolve(); }
     }
     return receipt;
   }
@@ -148,7 +171,10 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
       return accepted();
     }
     if (["detach", "teardown"].includes(request.type)) {
-      if ([...running.keys()].some(id => id.startsWith(`${key}/`))) fail("busy", "workspace has active invocations");
+      // A committed finish can release the session before its child process exits.
+      const active = [...running].filter(([id]) => id.startsWith(`${key}/`)).map(([, call]) => call);
+      for (const call of active) call.controller.abort(new EnvironmentError("cancelled", "workspace detached"));
+      await Promise.all(active.map(call => call.done));
       const abandoned = await cli("ps", "--all", "--filter", `label=aex.binding=${state.volume}`, "--format", "{{.ID}}");
       if (abandoned) await cli("rm", "--force", ...abandoned.split("\n"));
       if (request.type === "teardown") {

@@ -1,4 +1,5 @@
 import { tool } from "@aexhq/brain";
+import { run } from "../runtime/run.js";
 
 import { inputSchema, outputSchema } from "./schema.js";
 
@@ -7,5 +8,5 @@ export const glob = tool({
   description: "List Environment workspace paths matching a glob pattern.",
   input: inputSchema,
   output: outputSchema,
-  implementation: Object.freeze({ type: "aex_official_tool", version: 1, name: "glob" }),
+  run: async (input, context) => context.finish(await run(input, { workspace: process.cwd(), signal: context.signal })),
 });

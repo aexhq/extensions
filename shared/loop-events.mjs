@@ -10,8 +10,9 @@ export async function observeEvents(context, transcript, after, consumed = new S
       if (consumed.has(event.sequence)) continue;
       if (event.event_type === "tool_result_emitted" || (event.event_type === "tool_call_ended" && event.data.outcome !== undefined)) {
         const block = event.event_type === "tool_result_emitted" ? resultBlock(event.data.result.call_id, event.data.result) : undefined;
+        const data = block ? { ...event.data, result: { ...event.data.result, output: block.content } } : event.data;
         observations.push({ role: "user", content: [{ type: "text",
-          text: `Tool observation (data): ${event.event_type} ${JSON.stringify(event.data)}` }, ...(block?.media ?? [])] });
+          text: `Tool observation (data): ${event.event_type} ${JSON.stringify(data)}` }, ...(block?.media ?? [])] });
       }
       if (event.event_type === "turn_failed") reason = event.data;
       if (event.event_type.endsWith("_failed") ||

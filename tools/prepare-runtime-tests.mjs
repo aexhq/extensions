@@ -6,6 +6,7 @@ import { packageWorkspaces } from "./workspaces.mjs";
 const require = createRequire(import.meta.url);
 const tools = (await packageWorkspaces()).filter(name => name.startsWith("tool-"));
 execFileSync(process.execPath, [process.env.npm_execpath, "run", "build", ...tools.flatMap(name => ["--workspace", `packages/${name}`])], { stdio: "inherit" });
+await import("./prepare-runtime-packages.mjs");
 execFileSync("docker", ["build", "--tag", "aex-workspace:test", "--file", "packages/env-local/image/Dockerfile", "."], { stdio: "inherit" });
 execFileSync("docker", ["build", "--tag", "aex-workspace-python:test", "--file", "packages/env-local/image/Dockerfile.python", "."], { stdio: "inherit" });
 execFileSync(process.execPath, [join(dirname(require.resolve("playwright/package.json")), "cli.js"), "install", "chromium"], { stdio: "inherit" });

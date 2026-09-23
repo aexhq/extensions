@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-write",
-  "version": "7.0.1",
+  "version": "8.0.0",
   "description": "Write UTF-8 text to a file in the Environment workspace, creating parent directories.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -23,23 +23,37 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./runtime": {
+      "types": "./dist/packages/tool-write/src/index.d.ts",
+      "import": "./dist/packages/tool-write/src/index.js"
+    }
   },
   "files": [
     "dist",
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../tools/clean-dist.mjs && tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node ../../tools/build-tool-runtime.mjs",
+    "build": "node ../../tools/clean-dist.mjs && tsc -p tsconfig.json && node ../../tools/build-tool-runtime.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.29.0",
+    "@aexhq/brain": "0.30.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"
+  },
+  "brain": {
+    "tools": {
+      ".": {
+        "runtime": "./runtime",
+        "exports": [
+          "write"
+        ]
+      }
+    }
   }
 }

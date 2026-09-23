@@ -24,9 +24,10 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
 
-Every placed Agentloop and Tool names its Environment explicitly. The loop packages ship
-precompiled WebAssembly Components and run in Brain's built-in Wasmtime Environment; workspace
-Tools require an Environment that executes their implementation descriptors, such as `env-local`.
+Agentloops name their Environment explicitly. Tools default to the registering application;
+pass `{ env }` to place them elsewhere. The loop packages ship precompiled WebAssembly
+Components. Workspace Tools ship browser-safe bindings and native Node executables, and run
+in a prepared Node host, Docker workspace or Modal profile with the package runtime.
 Both official loops support hosted JSON Schema output correction in the same turn, including
 turns started with `session.submit()`. Configure `output: { schema, maxCorrections: 2 }` on the loop;
 correction requests have no tools and only a valid final answer emits `assistant_message`.
@@ -66,7 +67,7 @@ and call `await brain.close()` when finished. Use `session.interrupt()` to stop 
 to finish a conversation, and `delete()` to remove its stored history.
 
 ```ts
-import { hostEnv, tool } from "@aexhq/brain";
+import { tool } from "@aexhq/brain";
 import { z } from "zod";
 
 const notify = tool({
@@ -79,7 +80,7 @@ const notify = tool({
   },
 });
 
-const tools = [notify({ env: hostEnv({ name: "app" }) })];
+const tools = [notify()];
 ```
 
 ## Brain runtime boundary
@@ -87,9 +88,12 @@ const tools = [notify({ env: hostEnv({ name: "app" }) })];
 These packages consume Brain's public SDK and contracts. Brain is independently usable without
 this repository or Aex. The loops run in fresh Wasm stores, save transcript and kv inline through
 Brain's durable state services, and read interruption/environment Events before asking the model to continue.
-Brain SDK 0.28 separates Tool return from completion. Return releases the synchronous caller;
+Brain separates Tool return from completion. Return releases the synchronous caller;
 `ctx.emitResult(value)` can supply observations before or after return, and `ctx.finish(value)`
-commits the final optional result and completion. Use `return ctx.finish(value)` for ordinary
+commits the final optional result and completion. Both methods accept `{ content: summary }`
+to present text alongside the structured result. `ctx.model({ messages })` makes an independent
+request under the Tool's lifetime and the session's model authority; it does not edit the transcript.
+Use `return ctx.finish(value)` for ordinary
 Tools. A Tool that forgets to finish remains open until its original deadline, cancellation or
 Environment loss; without a deadline it can remain open indefinitely.
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModalClient } from "modal";
@@ -43,18 +43,32 @@ async function integration(t) {
   let image;
   try {
     const app = await builder.apps.fromName(appName, { createIfMissing: true });
-    image = await builder.images.fromRegistry("python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea")
-      .dockerfileCommands(["RUN mkdir -p /workspace && chown 1000:1000 /workspace", "WORKDIR /workspace", "USER 1000:1000"]).build(app);
+    const fixture = new URL("../../../test/fixtures/package-tool/", import.meta.url);
+    const files = await Promise.all(["package.json", "runtime.mjs"].map(async name =>
+      `RUN printf '%s' '${(await readFile(new URL(name, fixture))).toString("base64")}' | base64 -d > /opt/runtime/node_modules/@fixture/package-tool/${name}`));
+    image = await builder.images.fromRegistry("node:22.23.2-bookworm-slim")
+      .dockerfileCommands(["RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*",
+        "RUN npm install --prefix /opt/runtime --ignore-scripts @aexhq/brain@0.30.0 zod@4.4.3 && mkdir -p /opt/runtime/node_modules/@fixture/package-tool",
+        ...files, "RUN mkdir -p /workspace && chown 1000:1000 /workspace", "WORKDIR /workspace", "USER 1000:1000"]).build(app);
   } finally { await builder.close(); }
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-integration-"));
-  const profiles = { cpu: { image: image.imageId, commands: { fixture: ["python", "-c", python] },
+  const profiles = { cpu: { image: image.imageId, commands: { fixture: ["python3", "-c", python] },
+    toolRuntime: ["node", "/opt/runtime/node_modules/@aexhq/brain/bin/brain-tool-runtime.mjs", "/opt/runtime"],
     cpu: 1, memoryMiB: 1024, maxLifetimeMs: 90_000, region: "us", maxOutputBytes: 8192, terminateAfterTurn: true } };
   const reports = [];
+  const services = [];
   let env;
   let server;
   const token = randomUUID();
   const open = async () => {
-    env = await createModalEnvironment({ directory, appName, profiles, client, fetch: finishCallback, report: async usage => reports.push(usage) });
+    env = await createModalEnvironment({ directory, appName, profiles, client, fetch: async (url, request) => {
+      const call = JSON.parse(request.body); services.push(call);
+      assert.equal(request.headers.authorization, "Bearer fixture");
+      if (call.method === "finish") return finishCallback(url, request);
+      if (call.method === "model") return Response.json({ message: { role: "assistant", content: [{ type: "text", text: "Summary" }] }, stop_reason: "end_turn", usage: {} });
+      assert.equal(call.method, "result");
+      return Response.json(100);
+    }, report: async usage => reports.push(usage) });
     server = await serveEnvironment(env.handle, { token });
   };
   await open();
@@ -85,6 +99,13 @@ async function integration(t) {
   assert.equal(reports.length, 0);
   const write = await execute(sessions[0], { op: "write", value: "retained" });
   assert.equal(write.type, "result", JSON.stringify(write));
+  services.length = 0;
+  const packaged = await call(sessions[0], "execute", { implementation: { type: "node_package", package: "@fixture/package-tool", version: "1.0.0", entry: "./runtime", export: "report" },
+    input: { path: "value" }, deadline_ms: 30_000, callback: { ...completionGrant, methods: ["model", "result", "returned", "finish"] } });
+  assert.equal(packaged.type, "returned", JSON.stringify(packaged));
+  assert.deepEqual(services.map(value => value.method), ["result", "model", "model", "finish"]);
+  assert.equal(services.at(-1).input.value.document, "retained");
+  assert.equal(services.at(-1).input.content, "Summarized the file.");
   assert.deepEqual((await execute(sessions[0], { op: "probe" })).output,
     { uid: 1000, network_denied: [true, true], privileged_credentials: false, configuration: { scope: "one-run" },
       invocation: { sessionId: sessions[0], environment: "cpu", sequence: sequences.get(sessions[0]) } });

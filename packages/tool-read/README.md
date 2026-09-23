@@ -11,8 +11,7 @@ const tools = [read({ env: workspace })];
 ```
 
 Requires a readable workspace. The chosen Environment prepares and executes the
-packaged Node 22 runtime in `dist/runtime/read.mjs`; `dist/runtime/registry.json`
-contains its manifest and contract digest. The Environment owns isolation and resource grants.
-The factory requires an explicit `env` and accepts no other options.
+exact published package through its `./runtime` export. The Environment owns isolation and resource grants.
+Omit `env` to run in the registering Node application; pass `{ env: workspace }` for an isolated prepared Environment. The factory accepts no configuration options.
 
 Run `npm test --workspace @aexhq/tool-read` from the repository root.

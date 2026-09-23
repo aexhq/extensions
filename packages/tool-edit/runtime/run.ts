@@ -12,5 +12,5 @@ export async function run(input: z.output<typeof inputSchema>, context: RuntimeC
     throw new Error("old_text occurs more than once; provide a more specific match");
   }
   await writeFile(target, `${content.slice(0, first)}${input.new_text}${content.slice(first + input.old_text.length)}`);
-  return { path: input.path, replacements: 1 };
+  return { path: input.path, replacements: 1 as const };
 }

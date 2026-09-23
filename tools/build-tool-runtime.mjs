@@ -5,6 +5,9 @@ import { pathToFileURL } from "node:url";
 
 import { environment, inspectTool } from "@aexhq/brain";
 import { build } from "esbuild";
+import { packageTools } from "@aexhq/brain/package";
+
+await packageTools();
 
 const output = path.resolve("dist/runtime");
 await mkdir(output, { recursive: true });
@@ -18,7 +21,7 @@ const manifest = {
   description: source.definition.description,
   input_schema: source.definition.inputSchema,
   output_schema: source.definition.outputSchema,
-  implementation: source.implementation,
+  implementation: { type: "aex_official_tool", version: 1, name },
 };
 const contractDigest = createHash("sha256").update(canonicalJson(manifest)).digest("hex");
 const filename = `${name}.mjs`;

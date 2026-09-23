@@ -11,6 +11,7 @@ import { bash } from "../../tool-bash/dist/index.js";
 import { edit } from "../../tool-edit/dist/index.js";
 import { read } from "../../tool-read/dist/index.js";
 import { write } from "../../tool-write/dist/index.js";
+import { report } from "../../../test/fixtures/package-tool/dist/index.js";
 import { codex } from "../../loop-codex/dist/index.mjs";
 import { fixture, calls, answer, collect } from "../../../shared/journey-fixture.mjs";
 
@@ -61,7 +62,7 @@ for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP r
     for await (const chunk of request) chunks.push(chunk);
     const command = JSON.parse(Buffer.concat(chunks).toString());
     const outcome = await runtime.handle(command);
-    if (command.operation.request.implementation?.name === "write") { writes++; request.socket.destroy(); }
+    if (command.operation.request.implementation?.export === "write") { writes++; request.socket.destroy(); }
     else response.end(JSON.stringify(outcome));
   });
   server.listen(0, "127.0.0.1");
@@ -73,4 +74,23 @@ for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP r
   assert.equal(writes, 1);
   const events = await collect(session.events());
   assert.equal(events.find(event => event.type === "tool_call_ended").data.outcome.status, lostCompletion ? "unknown" : "ok");
+});
+
+test("a third-party package calls the session model through its isolated invocation", { timeout: 60_000 }, async t => {
+  const f = await fixture(t, [
+    () => calls(["write", { path: "document", content: "private document" }]),
+    () => calls(["third_party_report", { path: "document" }]),
+    body => { assert.equal(body.tools, undefined); return answer("one"); },
+    body => { assert.equal(body.tools, undefined); return answer("two"); },
+    body => { assert.match(body.input.at(-1).output, /Summarized the file/u); assert.doesNotMatch(body.input.at(-1).output, /private document/u); return answer("finished"); },
+  ]);
+  const runtime = await workspace(t);
+  const server = await serveEnvironment(runtime.handle, { token: "fixture" });
+  t.after(server.close);
+  const env = local({ name: "workspace", url: server.url, token: "fixture", profile: "coding" });
+  const session = await f.session(codex, { tools: [write({ env }), report({ env })] });
+  await session.send("summarize the document");
+  const events = await collect(session.events());
+  assert.equal(events.filter(event => event.type === "model_call_started" && event.origin?.kind === "tool").length, 2);
+  assert.equal(events.filter(event => event.type === "tool_call_ended").length, 2);
 });

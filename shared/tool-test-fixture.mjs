@@ -12,14 +12,14 @@ export async function workspace(t) {
 }
 
 export function toolTests(name, factory, runtime, invalidInput) {
-  test(`${name}: the factory binds an explicit Environment and opaque implementation`, () => {
+  test(`${name}: the factory defaults to the caller and accepts explicit placement`, () => {
     const env = environment({ url: () => "https://test.example" })({ name: "test" });
-    assert.throws(() => factory(), /requires \{ env \}/u);
+    assert.equal(inspectTool(factory()).environment !== undefined, true);
     const source = inspectTool(factory({ env }));
     assert.equal(source.definition.name, name);
     assert.equal(source.environment, env);
     assert.equal("needs" in source, false);
-    assert.deepEqual(source.implementation, { type: "aex_official_tool", version: 1, name });
+    assert.deepEqual(source.implementation, { type: "node_package", package: `@aexhq/tool-${name}`, version: "8.0.0", entry: "./runtime", export: name, configuration: {} });
     assert.throws(() => factory({ env, typo: true }), /does not accept options/u);
   });
 

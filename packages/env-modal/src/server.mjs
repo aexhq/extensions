@@ -4,6 +4,8 @@ import { resolve, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ModalClient, InvalidError } from "modal";
 import { z } from "zod";
+import { nodePackage } from "@aexhq/brain/runtime";
+import { toolProcess } from "../../../shared/tool-process.mjs";
 import { finishExecution, environmentHandler, bindingKey, identifier, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
@@ -14,10 +16,12 @@ const profileSchema = z.strictObject({ image: z.string().regex(/^im-[A-Za-z0-9]+
   cpu: z.number().positive(), memoryMiB: z.number().int().positive(),
   maxLifetimeMs: z.number().int().positive().max(86_400_000),
   terminateAfterTurn: z.boolean().default(false),
+  toolRuntime: z.array(z.string().min(1)).min(1).optional(),
   workdir: z.string().startsWith("/").default("/workspace"), region: z.string().min(1),
   outboundDomains: z.array(z.string().regex(/^(\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$/u)).default([]),
   maxOutputBytes: z.number().int().positive().max(16 * 1024 * 1024).default(4 * 1024 * 1024) });
-const descriptor = z.strictObject({ type: z.literal("modal_command"), name: identifier, configuration: z.unknown().optional() });
+const descriptor = z.discriminatedUnion("type", [nodePackage,
+  z.strictObject({ type: z.literal("modal_command"), name: identifier, configuration: z.unknown().optional() })]);
 const unprivileged = ["/usr/bin/setpriv", "--reuid=1000", "--regid=1000", "--clear-groups", "--no-new-privs",
   "--inh-caps=-all", "--bounding-set=-all", "--ambient-caps=-all", "--"];
 
@@ -138,7 +142,10 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
   }
   async function execute(op, state) {
     const parsed = descriptor.safeParse(op.request.implementation);
-    if (!parsed.success || !Object.hasOwn(state.profile.commands, parsed.data.name)) fail("unsupported", "unknown Modal command");
+    if (!parsed.success) fail("unsupported", "unsupported Modal implementation");
+    const packaged = parsed.data.type === "node_package";
+    const command = packaged ? state.profile.toolRuntime : state.profile.commands[parsed.data.name];
+    if (!command) fail("unsupported", packaged ? "profile has no package runtime" : "unknown Modal command");
     if (db.prepare("SELECT 1 FROM invocations WHERE binding=? AND sequence=?").get(state.key, op.sequence)) {
       return unknown("invocation sequence was already accepted; consult the Brain journal, it will not be replayed");
     }
@@ -162,7 +169,7 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
       await publish(state);
       timer = setTimeout(() => { timeoutStop = stop(state, "timeout"); timeoutStop.catch(() => {}); }, remaining);
       dispatched = true;
-      const child = await sandbox.exec([...unprivileged, ...state.profile.commands[parsed.data.name]], { mode: "text", timeoutMs: remaining, workdir: state.profile.workdir });
+      const child = await sandbox.exec([...unprivileged, ...command], { mode: "text", timeoutMs: remaining, workdir: state.profile.workdir });
       let bytes = 0;
       const read = async stream => {
         let output = "";
@@ -176,15 +183,25 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
         }
         return output;
       };
-      const write = async () => {
-        await child.stdin.writeText(JSON.stringify({ input: op.request.input, configuration: parsed.data.configuration ?? null,
-          invocation: { sessionId: state.sessionId, environment: state.environment, sequence: op.sequence } }));
-        await child.stdin.close();
-      };
-      const [, stdout, stderr, exitCode] = await Promise.all([write(), read(child.stdout), read(child.stderr), child.wait()]);
-      if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
-      else if (exitCode !== 0) receipt = failure("command_failed", `Modal command exited ${exitCode}: ${stderr.slice(0, 2048)}`);
-      else receipt = result(JSON.parse(stdout));
+      if (packaged) {
+        const [result, stderr, exitCode] = await Promise.all([
+          toolProcess(op, { stdout: child.stdout, write: text => child.stdin.writeText(text) },
+            { fetch, signal: AbortSignal.timeout(remaining), maxOutputBytes: state.profile.maxOutputBytes }),
+          read(child.stderr), child.wait(),
+        ]);
+        if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
+        else receipt = exitCode === 0 ? result : unknown(`Tool process exited ${exitCode}: ${stderr.slice(0, 2048)}`);
+      } else {
+        const write = async () => {
+          await child.stdin.writeText(JSON.stringify({ input: op.request.input, configuration: parsed.data.configuration ?? null,
+            invocation: { sessionId: state.sessionId, environment: state.environment, sequence: op.sequence } }));
+          await child.stdin.close();
+        };
+        const [, stdout, stderr, exitCode] = await Promise.all([write(), read(child.stdout), read(child.stderr), child.wait()]);
+        if (state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
+        else if (exitCode !== 0) receipt = failure("command_failed", `Modal command exited ${exitCode}: ${stderr.slice(0, 2048)}`);
+        else receipt = result(JSON.parse(stdout));
+      }
     } catch (error) {
       if (state.phase === "stopped" && state.stopReason) receipt = failure(state.stopReason, "Modal Sandbox was terminated with its active invocations");
       else if (dispatched || state.phase === "allocating" || state.phase === "stopping") receipt = unknown(error.message);

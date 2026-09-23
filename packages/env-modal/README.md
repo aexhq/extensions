@@ -4,10 +4,10 @@ A finite Modal Sandbox Environment using Brain's public `environment/v1` protoco
 It works with the caller's own Modal account and API credentials. Aex hosting, accounts,
 credits and managed credentials are optional product integrations, not dependencies.
 The controller holds provider credentials; commands run as UID/GID 1000 with no inherited
-capabilities or privilege escalation. Commands receive one JSON packet on stdin and return
-one JSON value on stdout. Brain's offered invocation callback is not passed to commands.
+capabilities or privilege escalation. Fixed commands receive one JSON packet on stdin and return one JSON value on stdout.
+Packaged Tools use the invocation service bridge. Callback credentials stay in the controller.
 
-This release requires Brain SDK/runtime 0.28. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.30. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -74,6 +74,21 @@ Profiles fix both requested and maximum CPU/memory. Network access is blocked by
 an explicit `outboundDomains` list can grant selected destinations. No tunnels, private
 cross-sandbox networking, cloud mounts or identity tokens are enabled. Region selection can
 increase provider charges; see [Modal's region pricing](https://modal.com/docs/guide/region-selection).
+
+## Packaged Node Tools
+
+Prepare ordinary npm packages and `@aexhq/brain` in the immutable image. Add a fixed runner
+command to the profile, for example:
+
+```js
+toolRuntime: ["node", "/opt/tools/node_modules/@aexhq/brain/bin/brain-tool-runtime.mjs", "/opt/tools"],
+```
+
+Consumers import a library's generated Tool factory and place it with `{ env: workspace }`.
+The loader checks the exact installed version and exported entry. New Tool names need no
+controller change. Native input/options parsing runs inside the sandbox, and events, results,
+finish and model calls use that invocation's granted services. A missing package/runtime fails
+explicitly. The fixed `commands` adapter remains available for other language runtimes.
 
 ## Lifecycle and accounting
 

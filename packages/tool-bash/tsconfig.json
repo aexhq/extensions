@@ -2,9 +2,10 @@
   "extends": "../../shared/tsconfig.tool.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "../.."
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "runtime/**/*.ts"
   ]
 }
