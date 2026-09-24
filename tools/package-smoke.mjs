@@ -85,7 +85,7 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.0.0", entry: "./runtime", export: "read", configuration: {} });
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.0.1", entry: "./runtime", export: "read", configuration: {} });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {

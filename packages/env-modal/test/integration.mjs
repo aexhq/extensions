@@ -48,7 +48,7 @@ async function integration(t) {
       `RUN printf '%s' '${(await readFile(new URL(name, fixture))).toString("base64")}' | base64 -d > /opt/runtime/node_modules/@fixture/package-tool/${name}`));
     image = await builder.images.fromRegistry("node:22.23.2-bookworm-slim")
       .dockerfileCommands(["RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*",
-        "RUN npm install --prefix /opt/runtime --ignore-scripts @aexhq/brain@0.30.0 zod@4.4.3 && mkdir -p /opt/runtime/node_modules/@fixture/package-tool",
+        "RUN npm install --prefix /opt/runtime --ignore-scripts @aexhq/brain@0.31.0 zod@4.4.3 && mkdir -p /opt/runtime/node_modules/@fixture/package-tool",
         ...files, "RUN mkdir -p /workspace && chown 1000:1000 /workspace", "WORKDIR /workspace", "USER 1000:1000"]).build(app);
   } finally { await builder.close(); }
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-integration-"));
