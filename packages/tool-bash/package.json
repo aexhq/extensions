@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-bash",
-  "version": "8.0.0",
+  "version": "8.0.1",
   "description": "Run a Bash command in the session Environment workspace.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.30.0",
+    "@aexhq/brain": "0.31.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

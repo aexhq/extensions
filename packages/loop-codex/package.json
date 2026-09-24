@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop-codex",
-  "version": "7.1.0",
+  "version": "7.1.1",
   "description": "Codex-style sequential-Tool Brain extension",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.30.0",
+    "@aexhq/brain": "0.31.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "zod": "4.4.3"

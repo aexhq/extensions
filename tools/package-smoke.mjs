@@ -41,6 +41,9 @@ import {
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
+import { http, httpTool } from "@aexhq/env-http";
+import { createToolHandler } from "@aexhq/env-http/handler";
+import { createHttpEnvironment } from "@aexhq/env-http/server";
 import { local } from "@aexhq/env-local";
 import { createLocalEnvironment } from "@aexhq/env-local/server";
 import { modal } from "@aexhq/env-modal";
@@ -51,6 +54,11 @@ import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
 import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
+assert.equal(typeof createToolHandler, "function");
+assert.equal(typeof createHttpEnvironment, "function");
+const httpEnv = http({ name: "app", url: "https://bridge.example", binding: "app-v1" });
+const httpRead = tool({ name: "http_read", description: "Read", input: z.object({}), run: () => ({ status: "cancelled" }) });
+assert.equal(inspectTool(httpTool(httpRead(), { env: httpEnv })).implementation.type, "http_tool");
 assert.equal(typeof createLocalEnvironment, "function");
 assert.equal(typeof createModalEnvironment, "function");
 const modalEnv = modal({ name: "modal", url: "https://modal.example", token: "fixture", profile: "cpu", lifetimeMs: 300000 });
@@ -77,7 +85,7 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.0.0", entry: "./runtime", export: "read", configuration: {} });
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.0.1", entry: "./runtime", export: "read", configuration: {} });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
@@ -111,6 +119,9 @@ console.log("packed extension packages compose through the public Brain contract
   await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment, hostEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
+import { http, httpTool } from "@aexhq/env-http";
+import { createToolHandler } from "@aexhq/env-http/handler";
+import { createHttpEnvironment } from "@aexhq/env-http/server";
 import { local } from "@aexhq/env-local";
 import { createLocalEnvironment } from "@aexhq/env-local/server";
 import { browser, browserTools } from "@aexhq/env-browser";
@@ -118,6 +129,10 @@ import { createBrowserEnvironment } from "@aexhq/env-browser/server";
 import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
 import { chromium } from "playwright";
 
+void createToolHandler({ tools: [], authorize: async () => {} });
+void createHttpEnvironment({ authorize: async () => ({ url: "https://app.example/tools", token: "secret", timeoutMs: 1000, tools: [] }) });
+void httpTool;
+void http({ name: "app", url: "https://bridge.example", binding: "app-v1" });
 void createLocalEnvironment({ directory: "/tmp/local", profiles: { coding: { image: "fixture", workspace: "write" } } });
 void createBrowserEnvironment({ profiles: { web: () => chromium.launch({ chromiumSandbox: true }) },
   publishMedia: async ({ bytes, mediaType, index }, { sessionId, sequence, signal }) => {
