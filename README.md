@@ -19,6 +19,7 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | [`@aexhq/tool-read`](packages/tool-read/README.md) | Read UTF-8 text |
 | [`@aexhq/tool-todo`](packages/tool-todo/README.md) | Read or replace the workspace to-do list |
 | [`@aexhq/tool-write`](packages/tool-write/README.md) | Write UTF-8 files |
+| [`@aexhq/env-http`](packages/env-http/README.md) | Bounded application tools in existing HTTP or serverless APIs |
 | [`@aexhq/env-local`](packages/env-local/README.md) | Docker workspace Environment with retained files and prepared Python projects |
 | [`@aexhq/env-modal`](packages/env-modal/README.md) | Finite isolated Modal Sandbox with fixed command profiles and cumulative resource usage |
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
