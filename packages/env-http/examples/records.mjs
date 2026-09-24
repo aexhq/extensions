@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { tool } from "@aexhq/brain";
 import { z } from "zod";
-import { createToolHandler } from "../src/handler.mjs";
+import { createToolHandler } from "@aexhq/env-http/handler";
 
 export function recordsApplication(filename, token) {
   const db = new DatabaseSync(filename);
