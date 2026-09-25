@@ -38,6 +38,7 @@ import { readFile } from "node:fs/promises";
 import {
   Brain, brainEnv, environment, inspectAgentloop, inspectTool, hostEnv, tool,
 } from "@aexhq/brain";
+import { env } from "@aexhq/env";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
@@ -54,6 +55,7 @@ import { connectMcp, mcpTools } from "@aexhq/tools-mcp";
 import { z } from "zod";
 
 assert.equal(typeof new Brain({ baseUrl: "http://127.0.0.1:8080" }).sessions.create, "function");
+assert.equal(inspectTool(env()).definition.name, "env");
 assert.equal(typeof createToolHandler, "function");
 assert.equal(typeof createHttpEnvironment, "function");
 const httpEnv = http({ name: "app", url: "https://bridge.example", binding: "app-v1" });
@@ -85,7 +87,7 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.0.1", entry: "./runtime", export: "read", configuration: {} });
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.0", entry: "./runtime", export: "read", configuration: {} });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
@@ -153,6 +155,7 @@ const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 void brain.sessions.create({
+  environmentLifecycle: { default: "automatic" },
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
   agentloop: pi({ env: loopRuntime }),
   tools: [${toolNames.map(name => `${name}({ env: workspace })`).join(", ")}],

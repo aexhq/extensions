@@ -16,9 +16,9 @@ export async function observeEvents(context, transcript, after, consumed = new S
       }
       if (event.event_type === "turn_failed") reason = event.data;
       if (event.event_type.endsWith("_failed") ||
-          ["environment_closed", "environment_unreachable"].includes(event.event_type)) {
+          ["environment_closed", "environment_unreachable", "environment_observation"].includes(event.event_type)) {
         observations.push({ role: "user", content: [{ type: "text",
-          text: `Runtime observation (data): ${event.event_type} ${JSON.stringify(event.data)}` }] });
+          text: `Runtime observation (data): ${event.event_type} ${JSON.stringify({ ...event.data, ...(event.origin === undefined ? {} : { origin: event.origin }) })}` }] });
       }
     }
     after = page.next_cursor;

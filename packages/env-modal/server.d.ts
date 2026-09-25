@@ -13,7 +13,7 @@ export interface ResourceUsage {
 export interface ModalEnvironment {
   handle(command: unknown): Promise<{ contract: string; sequence: number; receipt: unknown }>;
   reconcile(): Promise<Array<{ binding: string; phase: string; error?: string }>>;
-  recover(resource: { sessionId: string; environment: string; sandboxId: string }): Promise<void>;
+  recover(resource: { sessionId: string; environment: string; sandboxId: string; sequence?: number }): Promise<void>;
   close(): void;
 }
 export declare function createModalEnvironment(options: {

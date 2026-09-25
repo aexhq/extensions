@@ -6,7 +6,7 @@ import { ModalClient, InvalidError } from "modal";
 import { z } from "zod";
 import { nodePackage } from "@aexhq/brain/runtime";
 import { toolProcess } from "../../../shared/tool-process.mjs";
-import { finishExecution, environmentHandler, bindingKey, identifier, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { reportEnvironment, finishExecution, environmentHandler, bindingKey, identifier, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const configuration = z.strictObject({ profile: identifier, lifetimeMs: z.number().int().positive().max(86_400_000),
@@ -63,10 +63,12 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
     if (terminal) { state.reported = true; save(state); }
   }
   async function ended(state) {
+    const changed = state.phase !== "stopped";
     state.phase = "stopped";
     state.stoppedAt ??= Date.now();
     save(state);
     await publish(state);
+    if (changed) await reportEnvironment(state.reporter, { scope: "environment", availability: "unavailable", message: "The original Modal Sandbox has stopped. Inspect it or create a new Environment explicitly." }, fetch);
   }
   async function resource(state) {
     if (!state.sandboxId) {
@@ -233,16 +235,28 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
       const now = Date.now();
       const expiresAt = authorize ? await authorize({ sessionId: op.session_id, environment: op.environment, configuration: config }) : now + config.lifetimeMs;
       if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + config.lifetimeMs) fail("budget", "invalid or expired lifetime authorization");
-      const state = { key, sessionId: op.session_id, environment: op.environment, configuration: config,
+      const state = { key, sessionId: op.session_id, environment: op.environment, configuration: config, reporter: op.reporter,
         profile, name: `aex-${randomUUID()}`, phase: "new", expiresAt, startedAt: null, stoppedAt: null, sandboxId: null };
       db.prepare("INSERT INTO bindings VALUES(?,?)").run(key, JSON.stringify(state));
       states.set(key, state);
       return { type: "accepted", ...(profile.terminateAfterTurn ? { on_turn_end: "terminate" } : {}) };
     }
     const state = binding(key);
+    if (request.type === "call" && request.name === "inspect") {
+      z.strictObject({}).parse(request.input);
+      if (["ready", "allocating"].includes(state.phase) && await (await resource(state)).poll() !== null) await ended(state);
+      return result({ profile: state.configuration.profile, phase: state.phase, sandboxId: state.sandboxId,
+        expiresAt: state.expiresAt, startedAt: state.startedAt, stoppedAt: state.stoppedAt,
+        activeInvocations: [...running.keys()].filter(id => id.startsWith(`${key}/`)).map(id => Number(id.slice(key.length + 1))) });
+    }
     if (request.type === "execute") return finishExecution(op, await execute(op, state), fetch);
     const terminate = request.type === "call" && request.name === "terminate";
     if (terminate || ["cancel", "detach", "teardown"].includes(request.type)) {
+      if (terminate) z.strictObject({ sequence: z.number().int().positive().optional() }).parse(request.input);
+      // Successful turn-end cleanup has its own receipt and must not wake the model as a failure.
+      if (["detach", "teardown"].includes(request.type) || (terminate && state.profile.terminateAfterTurn && request.input.sequence !== undefined)) {
+        state.reporter = undefined; save(state);
+      }
       if (request.type === "cancel" && !db.prepare("SELECT 1 FROM invocations WHERE binding=? AND sequence=?").get(key, request.target_sequence)) return accepted();
       try { await stop(state); return terminate ? result(null) : accepted(); }
       catch (error) { return unknown(`sandbox termination could not be confirmed: ${error.message}`); }
@@ -266,8 +280,8 @@ export async function createModalEnvironment({ directory, appName, profiles, cli
       }
       return observations;
     },
-    async recover({ sessionId, environment, sandboxId }) {
-      const state = binding(`${sessionId}/${environment}`);
+    async recover({ sessionId, environment, sandboxId, sequence = 1 }) {
+      const state = binding(bindingKey({ session_id: sessionId, environment, binding: { sequence } }));
       if (state.sandboxId && state.sandboxId !== sandboxId) fail("conflict", "binding already names another resource");
       const sandbox = await modal.sandboxes.fromId(sandboxId);
       if ((await sandbox.getTags())["aex.binding"] !== state.name) fail("ownership", "Modal resource ownership does not match");

@@ -6,7 +6,7 @@ import { resolve, join } from "node:path";
 import { z } from "zod";
 import { nodePackage } from "@aexhq/brain/runtime";
 import { toolProcess } from "../../../shared/tool-process.mjs";
-import { finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { reportEnvironment, finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const exec = promisify(execFile);
@@ -155,6 +155,15 @@ export async function createLocalEnvironment({ directory, profiles, docker = "do
       return accepted();
     }
     const state = await load(key);
+    if (request.type === "call" && request.name === "inspect") {
+      z.strictObject({}).parse(request.input);
+      let workspace = false;
+      if (["ready", "allocating"].includes(state.phase)) workspace = (await cli("volume", "ls", "--filter", `name=^${state.volume}$`, "--format", "{{.Name}}")) !== "";
+      const available = state.phase === "new" || (state.phase === "ready" && workspace);
+      await reportEnvironment(op.reporter, { scope: "environment", availability: available ? "available" : "unavailable", message: available ? "Docker workspace is available" : `Docker workspace is ${state.phase} with no usable volume` }, fetch);
+      return result({ profile: state.profileName, phase: state.phase, workspace,
+        activeInvocations: [...running.keys()].filter(id => id.startsWith(`${key}/`)).map(id => Number(id.slice(key.length + 1))) });
+    }
     if (state.phase === "deleted") {
       if (request.type === "teardown") return accepted();
       fail("unavailable", "workspace binding was deleted");

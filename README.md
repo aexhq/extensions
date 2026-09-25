@@ -9,6 +9,7 @@ are optional composition outside the extension. See the [standalone Modal exampl
 
 | package | role |
 | --- | --- |
+| [`@aexhq/env`](packages/env/README.md) | Scoped Environment control through an ordinary Tool |
 | `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
 | `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
 | [`@aexhq/tool-bash`](packages/tool-bash/README.md) | Run Bash commands |
@@ -43,6 +44,7 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => process.env.ENVIRONMENT_URL! })({ name: "workspace" });
 
 const session = await brain.sessions.create({
+  environmentLifecycle: { default: "automatic" },
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
   model,
   tools: [read({ env: workspace }), bash({ env: workspace })],
@@ -104,7 +106,12 @@ has no user input. Both loops ask the model to consider new background results a
 an activation containing only already-consumed events is acknowledged without a model call.
 Brain coalesces wakeups for five milliseconds from the first pending event without delaying
 commits. Interrupt cancels unfinished Tools even between turns.
-Callers control Environment lifetime through setup, detach, and teardown. Providers implement
+Applications explicitly select automatic or manual Environment lifecycle at session creation.
+Automatic lifecycle runs setup and cleanup without involving the model. Include the ordinary
+`env` Tool separately when the model should inspect or manage authorized Environments.
+Agentloops, Tools and Environment operations share `ctx.environments`; each receives its own
+fixed grants. Long-lived Environment reporters can publish idle observations without retaining
+an execution context. Both loops preserve those observations and their Environment origin. Providers implement
 those operations and enforce their physical resource ceilings. A Tool can be declared in several
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
@@ -119,6 +126,11 @@ factories have no `needs`. The chosen Environment prepares ordinary package depe
 imports and execution, and enforces its explicitly configured grants. There is no installer
 inside Brain and no automatic placement fallback. See
 [ADR-046](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-09-01-minimal-extension-contract.md).
+
+For dynamic instances, grant the Agentloop `read` access to the template and select
+`environmentSelection: "model"` or an explicit `placements` policy. Both loops refresh
+authorized placements and pin each dispatch to the current Environment reference. Pi dispatches
+parallel batches: put setup or resource changes before dependent calls in separate batches.
 
 ## Tests
 

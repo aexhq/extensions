@@ -7,7 +7,7 @@ The controller holds provider credentials; commands run as UID/GID 1000 with no 
 capabilities or privilege escalation. Fixed commands receive one JSON packet on stdin and return one JSON value on stdout.
 Packaged Tools use the invocation service bridge. Callback credentials stay in the controller.
 
-This release requires Brain SDK/runtime 0.30. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.32. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -28,7 +28,7 @@ const tools = [calculate({ env: workspace })];
 
 The operator publishes a Modal image and fixed command catalog before exposing a profile.
 Images must contain `/usr/bin/setpriv`, their runtime and data, and a working directory writable
-by UID/GID 1000. Use immutable `im-…` IDs. The controller never installs dependencies or accepts
+by UID/GID 1000. Use immutable `im-â€¦` IDs. The controller never installs dependencies or accepts
 customer image names, arguments, environment variables, secrets, volumes or network rules.
 
 The stdin packet is `{input, configuration, invocation: {sessionId, environment, sequence}}`.
@@ -146,3 +146,12 @@ because Modal 0.10.1 leaves its gRPC channels open when `close()` is called.
 
 The protected `modal-integration.yml` workflow must pass at the exact release commit before
 publishing. Environment credentials belong in ignored files or deployment secrets.
+
+## Environment control
+
+The provider methods `inspect` and `terminate` are available through explicit method grants.
+Inspection reads the original Sandbox and lifetime; it never allocates a replacement. Reconciliation
+and inspection report observed Sandbox loss through the retained binding reporter, allowing an
+idle Agentloop to consider it. The reporter survives controller restart in the private state store.
+Dynamic instances use separate provider identities. Applications must authorize their templates
+and resource budgets; Aex managed leases continue to cover one declared binding.

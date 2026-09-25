@@ -40,3 +40,10 @@ remain unknown; it does not repeat a business operation. Cancellation aborts HTT
 and does not undo a committed mutation. App-owned operation keys and save receipts resolve
 business uncertainty. A submitted report job completes independently: call `get_report` in
 the same or a later turn. Ending a turn does not schedule another status check.
+
+## Environment control
+
+The provider-defined `inspect` method returns authorized Tool names and the binding timeout;
+it does not contact the application or expose its credential. Grant it explicitly through
+`environments: [{ environment: "app", permissions: ["read", "call"], methods: ["inspect"] }]`.
+Select automatic or manual lifecycle independently when creating the Brain session.

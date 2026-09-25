@@ -6,7 +6,7 @@ export function loopStateTests(run) {
   const input = (configuration = {}) => ({ input: { message: "continue", media: [{ type: "image", url: "https://example.com/view.png" }] }, transcript: [], kv: {}, configuration, tools: [] });
   const host = () => {
     const saved = { transcript: [], kv: {} };
-    return { saved, acknowledge: through => { saved.kv["brain.last_activation"] = through; }, events: (after) => ({ events: [], next_cursor: after }),
+    return { environments: { list: async () => [] }, saved, acknowledge: through => { saved.kv["brain.last_activation"] = through; }, events: (after) => ({ events: [], next_cursor: after }),
       setTranscript: (messages) => { saved.transcript = structuredClone(messages); },
       kv: {
         read: (key) => structuredClone(saved.kv[key]),

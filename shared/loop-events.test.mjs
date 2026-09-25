@@ -10,6 +10,7 @@ for (const run of [runPi, runCodex]) {
     const history = [];
     const requests = [];
     const context = {
+      environments: { list: async () => [] },
       kv: { read: key => saved.kv[key], put: (key, value) => { saved.kv[key] = value; } },
       events: after => ({ events: history.filter(event => event.sequence > after), next_cursor: history.at(-1)?.sequence ?? after }),
       acknowledge: through => { saved.kv["brain.last_activation"] = through; },

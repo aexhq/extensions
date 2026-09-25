@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-modal",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Finite Modal Sandbox Environment for Brain",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.31.0",
+    "@aexhq/brain": "0.32.0",
     "modal": "0.10.1",
     "zod": "4.4.3"
   }

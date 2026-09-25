@@ -14,11 +14,11 @@
     "test:prepare": "node tools/prepare-runtime-tests.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
-    "test:journeys": "node --test --test-concurrency=1 packages/loop-pi/test/journeys.mjs packages/loop-codex/test/journeys.mjs test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs",
+    "test:journeys": "node --test --test-concurrency=1 packages/loop-pi/test/journeys.mjs packages/loop-codex/test/journeys.mjs test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.31.0",
+    "@aexhq/brain": "0.32.0",
     "@babel/core": "8.0.5",
     "@babel/plugin-transform-unicode-property-regex": "8.0.1",
     "@bytecodealliance/componentize-js": "0.19.3",

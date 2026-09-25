@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-ls",
-  "version": "8.0.1",
+  "version": "8.1.0",
   "description": "List entries in an Environment workspace directory.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.31.0",
+    "@aexhq/brain": "0.32.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

@@ -1,10 +1,10 @@
 # @aexhq/env-local
 
-A Docker workspace Environment using Brain SDK 0.30. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver loads ordinary published Node Tool packages and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.32. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver loads ordinary published Node Tool packages and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
 
-This release requires Brain SDK/runtime 0.30. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.32. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -85,3 +85,10 @@ Images are the preparation boundary: reuse follows image/installation lifetime a
 ## Verification
 
 From the repository root, install Bash, ripgrep, Docker and Node 22+, then run `npm run test:prepare`. Run `npm test --workspace @aexhq/env-local`; the tests require real Docker images and never skip missing dependencies. Public-SDK journeys additionally require the pinned Brain fixture described in the root README. Hosted Aex currently rejects customer HTTP Environments.
+
+## Inspection
+
+The Environment-defined `inspect` method reads Docker workspace presence and active invocations.
+Grant `read` and `call` with `methods: ["inspect"]` to an extension, then call
+`ctx.environments.call(reference, "inspect", {})`. It never allocates or replaces a missing volume.
+Dynamic instances use separate retained volumes and controller records for each incarnation.

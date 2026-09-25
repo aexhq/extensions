@@ -122,7 +122,9 @@ test("a failed terminal report is retried until acknowledged after restart", asy
 test("turn completion terminates the configured sandbox and never allocates an unused one", async t => {
   const f = await fixture(t, { hooks: { profiles: { cpu: { ...profile, terminateAfterTurn: true } } } });
   const registered = { type: "accepted", on_turn_end: "terminate" };
-  assert.deepEqual((await f.env.handle(setup())).receipt, registered);
+  const declaration = setup();
+  declaration.operation.reporter = { url: "https://brain.example/environment", token: "reporter", methods: ["result"] };
+  assert.deepEqual((await f.env.handle(declaration)).receipt, registered);
   f.env.close(); await f.open();
   assert.deepEqual((await f.env.handle(setup())).receipt, registered);
   assert.equal((await f.env.handle(execute())).receipt.type, "result");
@@ -136,6 +138,23 @@ test("turn completion terminates the configured sandbox and never allocates an u
   assert.equal(f.created.length, 1);
   assert.equal(f.reports.at(-1).unitsMs, 0);
   assert.equal(f.reports.at(-1).terminal, true);
+});
+
+test("idle provider loss reports through the retained reporter after controller restart", async t => {
+  const observations = [];
+  const f = await fixture(t, { hooks: { fetch: async (url, request) => {
+    if (url === completionGrant.url) return finishCallback(url, request);
+    assert.equal(request.headers.authorization, "Bearer reporter");
+    observations.push(JSON.parse(request.body).output.observation);
+    return Response.json({ sequence: 20 });
+  } } });
+  const declaration = setup();
+  declaration.operation.reporter = { url: "https://brain.example/environment", token: "reporter", methods: ["result"] };
+  await f.env.handle(declaration); await f.env.handle(execute());
+  f.env.close(); await f.open();
+  await f.resources.get("sb-1").terminate({ wait: true });
+  assert.ok((await f.env.reconcile()).every(item => !item.error));
+  assert.deepEqual(observations.map(value => value.availability), ["unavailable"]);
 });
 
 test("unknown allocation is never recreated after controller restart", async t => {

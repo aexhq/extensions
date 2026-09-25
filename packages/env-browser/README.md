@@ -4,7 +4,7 @@ A Playwright Environment and five Tools for Brain: `browser_navigate`, `browser_
 
 The operator supplies a launcher for each allowed profile. Every binding receives a dedicated browser instance, context and page. For a local development deployment:
 
-This release requires Brain SDK/runtime 0.30. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.32. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -38,15 +38,23 @@ const web = browser({ name: "web", url: "http://127.0.0.1:8091",
 const tools = browserTools({ env: web });
 ```
 
-Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280×720 viewport as PNG.
+Individual factories are also exported as `navigate`, `inspect`, `click`, `fill` and `screenshot`. They require `{ env }`. Click and fill use Playwright locator selectors; they require exactly one matching element. Navigation accepts HTTP(S). Inspection returns URL, title, an accessibility snapshot and an explicit truncation flag above 64 KiB. Screenshots capture the fixed 1280Ã—720 viewport as PNG.
 
 ## State and cancellation
 
-Allocation is lazy. Calls on one binding serialize in arrival order; calls on different bindings can run concurrently. Put dependent actions such as fill then submit in separate dispatch batches: concurrent HTTP arrival order is not model source order. Additional windows are closed, service workers are blocked and downloads are disabled in this single-page profile.
+Allocation is lazy. Calls on one binding serialize in arrival order; calls on different bindings can run concurrently. Put dependent actions such as fill then submit in separate dispatch batches: concurrent HTTP arrival order is not model source order. Unrequested popup windows are closed, service workers are blocked and downloads are disabled.
+The provider methods `inspect`, `open_page`, `select_page` and `close_page` manage named pages
+inside the same browser. `open_page({ name })` opens a blank page and selects it; normal browser
+Tools then act on that page. Closing the selected page requires selecting or opening another.
+The controller limits pages with `maxPages` (default 16). These are Environment-defined methods,
+called through `ctx.environments.call(reference, method, input)` with an explicit method grant.
 
 The context and page persist across turns and detach. Teardown closes the browser and can be repeated. A deadline or Playwright timeout returns a failure receipt with code `timeout`; explicit cancellation returns `cancelled`. Both close an active browser and retain their cause if cleanup fails, with `details.cleanup_error` describing the cleanup failure. These codes do not promise rollback of clicks or other effects. Browser loss during an action without a reliable result remains `unknown`. Subsequent calls report resource loss and never create a replacement browser. Cancelling a call that is still queued does not cancel a preceding call.
 
-Browser crash/closure is reported on the next operation. The execution token is never retained for background notifications. Call `runtime.close()` during operator shutdown. A restarted controller cannot recover a prior browser identity; operations, including teardown, report `resource_lost`. Its deployment supervisor must reclaim any surviving process. Durable remote-browser reattachment is outside this reference profile.
+Browser disconnection emits an Environment availability observation immediately, including
+while the session is idle. Page close/crash emits a resource observation. The separate binding
+reporter carries these observations; no Tool execution token is retained. Inspection reports
+any unacknowledged observation. Deleted and recreated bindings have separate resource identities. Call `runtime.close()` during operator shutdown. A restarted controller cannot recover a prior browser identity; operations, including teardown, report `resource_lost`. Its deployment supervisor must reclaim any surviving process. Durable remote-browser reattachment is outside this reference profile.
 
 ## Image presentation
 
@@ -66,4 +74,4 @@ same mapping. URLs must stay available for later turns that need the image.
 
 ## Verification
 
-Run `npm test --workspace @aexhq/env-browser` after installing Chromium and its dependencies. Tests launch real sandboxed Chromium against a local fixture and cover state, session separation, arrival serialization, cancellation, loss, screenshots and cleanup. Public-SDK journeys exercise images through both compiled official loops. Hosted Aex currently rejects customer HTTP Environments.
+Run `npm test --workspace @aexhq/env-browser` after installing Chromium and its dependencies. Tests launch real sandboxed Chromium against a local fixture and cover state, session separation, arrival serialization, cancellation, loss, screenshots and cleanup. Public-SDK journeys exercise images through both compiled official loops. Hosted Aex admits its managed catalog; use standalone Brain for this caller-operated browser controller.

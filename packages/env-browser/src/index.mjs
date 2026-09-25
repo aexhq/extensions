@@ -1,8 +1,10 @@
 import { environment, tool } from "@aexhq/brain";
 import { z } from "zod";
 import { definitions } from "./definitions.mjs";
+import { definitions as methods } from "./methods.mjs";
 
 export const browser = environment({
+  methods,
   options: z.strictObject({ url: z.url(), token: z.string().min(1), profile: z.string().min(1) }),
   url: ({ url }) => url, credential: ({ token }) => token, configure: ({ profile }) => ({ profile }),
 });

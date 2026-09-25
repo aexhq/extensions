@@ -1,4 +1,5 @@
 import * as host from "brain:agentloop/host@0.2.0";
+import { EnvironmentServices } from "@aexhq/brain/environments";
 
 import { runCodex } from "./logic.mjs";
 
@@ -35,6 +36,7 @@ export async function turn(input) {
         delete: (key) => hosted(() => host.kvDelete(key)),
       },
       acknowledge: (through) => hosted(() => host.acknowledge(BigInt(through))),
+      environments: new EnvironmentServices(request => Promise.resolve(JSON.parse(hosted(() => host.environments(JSON.stringify(request)))))),
       events: (after) => JSON.parse(hosted(() => host.events(BigInt(after)))),
       model: (request) => JSON.parse(hosted(() => host.model(JSON.stringify(request)))),
       dispatch: (calls) => JSON.parse(hosted(() => host.dispatch(JSON.stringify(calls)))),

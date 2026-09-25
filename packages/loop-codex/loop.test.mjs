@@ -10,6 +10,7 @@ const host = (responses, { results = {} } = {}) => {
   const record = { requests: [], dispatches: [], emitted: [], transcript: [], kv: {}, writes: [] };
   return {
     record,
+    environments: { list: async () => [] },
     setTranscript(messages) { record.transcript = structuredClone(messages); record.writes.push("transcript"); },
     kv: {
       read(key) { return structuredClone(record.kv[key]); },
