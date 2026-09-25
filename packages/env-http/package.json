@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-http",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Bounded application HTTP tools for Brain",
   "license": "MIT",
   "type": "module",
@@ -15,5 +15,5 @@
   },
   "files": ["dist", "*.d.ts", "examples", "README.md"],
   "scripts": { "build": "node ../../tools/build-environment.mjs", "test": "npm run build && node --test test/*.test.mjs", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.33.0", "zod": "4.4.3" }
+  "dependencies": { "@aexhq/brain": "0.34.0", "zod": "4.4.3" }
 }

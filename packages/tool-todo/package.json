@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-todo",
-  "version": "8.1.1",
+  "version": "8.1.2",
   "description": "Read or replace the session's to-do list.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.33.0",
+    "@aexhq/brain": "0.34.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
