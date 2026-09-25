@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-edit",
-  "version": "8.1.0",
+  "version": "8.1.1",
   "description": "Replace one exact occurrence of text in an Environment workspace file.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.32.1",
+    "@aexhq/brain": "0.33.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

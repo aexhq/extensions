@@ -27,7 +27,6 @@ import { codex } from "@aexhq/agentloop-codex";
 
 const loopRuntime = brainEnv({ name: "brain" });
 const session = await brain.sessions.create({
-  environmentLifecycle: { default: "automatic" },
   agentloop: codex({ env: loopRuntime, contextWindow: 200_000 }),
   model,
   tools: [bash({ env: workspace })],

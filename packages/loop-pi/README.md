@@ -24,7 +24,6 @@ import { pi } from "@aexhq/agentloop-pi";
 
 const loopRuntime = brainEnv({ name: "brain" });
 const session = await brain.sessions.create({
-  environmentLifecycle: { default: "automatic" },
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
   model,
   tools: [read({ env: workspace })],
