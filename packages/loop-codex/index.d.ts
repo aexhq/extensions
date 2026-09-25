@@ -1,7 +1,8 @@
-import type { PlacedAgentloop, Environment } from "@aexhq/brain";
+import type { PlacedAgentloop, Environment, EnvironmentGrant } from "@aexhq/brain";
 
 export interface CodexOptions {
   readonly env: Environment;
+  readonly environments?: readonly EnvironmentGrant[];
   readonly environmentSelection?: "hidden" | "model";
   readonly placements?: Readonly<Record<string, string>>;
   /** Model context window in tokens; compaction triggers at 90% of it. Default 200000. */

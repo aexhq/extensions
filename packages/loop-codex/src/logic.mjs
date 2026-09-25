@@ -1,4 +1,4 @@
-import { toolPlacement } from "../../../shared/tool-placement.mjs";
+import { toolPlacement, refreshTools } from "../../../shared/tool-placement.mjs";
 import { observeEvents } from "../../../shared/loop-events.mjs";
 import { toolResult } from "../../../shared/tool-output.mjs";
 import { structuredOutput } from "../../../shared/structured-output.mjs";
@@ -25,7 +25,6 @@ const isPlainUserMessage = (message) =>
 
 export async function runCodex(input, context) {
   const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
-  const placement = toolPlacement(input.tools, options);
   const output = structuredOutput(options.output);
   const transcript = cloneJson(input.transcript);
   let observed = await observeEvents(context, transcript, input.kv?.["brain.last_activation"] ?? 0);
@@ -60,6 +59,7 @@ export async function runCodex(input, context) {
   await context.acknowledge(observed.through);
   if (input.input == null && !observed.actionable) return {};
   for (;;) {
+    let placement = toolPlacement(await refreshTools(input.tools, context), options);
     if (shouldCompact()) {
       await compact();
       await context.setTranscript(transcript);
@@ -87,6 +87,7 @@ export async function runCodex(input, context) {
     const results = [];
     const consumed = new Set();
     for (const call of calls) {
+      placement = toolPlacement(await refreshTools(input.tools, context), options);
       const [result] = await context.dispatch([placement.invocation(call)]);
       results.push(toolResult(call.call_id, result));
       for (const event of result.events) consumed.add(event.sequence);

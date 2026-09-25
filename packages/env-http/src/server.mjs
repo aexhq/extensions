@@ -11,6 +11,11 @@ export function createHttpEnvironment({ authorize, request = publicJson, fetch =
   const handle = environmentHandler(async op => {
     const key = bindingKey(op);
     const input = { sessionId: op.session_id, environment: op.environment };
+    if (op.request.type === "call" && op.request.name === "inspect") {
+      z.strictObject({}).parse(op.request.input);
+      const binding = await authorize(input);
+      return result({ tools: binding.tools.map(tool => tool.name), timeoutMs: binding.timeoutMs });
+    }
     if (op.request.type === "setup") {
       const configuration = z.strictObject({ binding: z.string().min(1), authorization: z.string().min(1).optional() }).parse(op.request.configuration);
       await authorize({ ...input, configuration });

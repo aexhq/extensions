@@ -9,7 +9,7 @@ export const calls = (...values) => ({ output: values.map(([name, input], index)
   type: "function_call", call_id: `call-${index}`, name, arguments: JSON.stringify(input),
 })) });
 
-export async function fixture(t, script) {
+export async function fixture(t, script, { timeoutMs = 30_000 } = {}) {
   const requests = [];
   const errors = [];
   const sessions = [];
@@ -51,11 +51,12 @@ export async function fixture(t, script) {
       await new Promise((resolve) => server.close(resolve));
     }
   });
-  const brain = new Brain({ baseUrl: process.env.BRAIN_BASE_URL ?? "http://127.0.0.1:18092", token: "extension-fixture-token", timeoutMs: 30_000 });
+  const brain = new Brain({ baseUrl: process.env.BRAIN_BASE_URL ?? "http://127.0.0.1:18092", token: "extension-fixture-token", timeoutMs });
   return {
     brain, requests,
     async session(loop, { configuration = {}, ...options } = {}) {
       const session = await brain.sessions.create({
+        environmentLifecycle: { default: "automatic" },
         agentloop: loop({ env: brainEnv({ name: "brain" }), compaction: false, ...configuration }),
         model: { provider: "vercel-ai-gateway", name: "test/extension", apiKey: "test" },
         ...options,

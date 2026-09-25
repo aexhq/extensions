@@ -6,6 +6,38 @@ import { browserFixture } from "./fixture.mjs";
 
 const invocation = (name, input = {}, deadline_ms = 10_000) => ({ implementation: { type: "aex_browser_tool", version: 1, name: `browser_${name}` }, input, deadline_ms });
 
+test("provider page controls and idle loss use the retained reporter across distinct binding incarnations", { timeout: 30_000 }, async t => {
+  const observations = [];
+  const { env, launched } = await browserFixture(t, { fetch: async (url, request) => {
+    assert.equal(url, "https://brain.example/environment");
+    assert.equal(request.headers.authorization, "Bearer reporter");
+    observations.push(JSON.parse(request.body).output.observation);
+    return Response.json({ sequence: observations.length });
+  } });
+  const command = commands();
+  const operation = (type, fields = {}, sequence = 1) => {
+    const value = command(type, fields);
+    value.operation.binding = { name: "test", sequence };
+    value.operation.reporter = { url: "https://brain.example/environment", token: "reporter", methods: ["result"] };
+    return value;
+  };
+  await env.handle(operation("setup", { configuration: { profile: "test" } }));
+  const call = (name, input = {}) => env.handle(operation("call", { name, input }));
+  assert.equal((await call("inspect")).receipt.output.started, false);
+  assert.deepEqual((await call("open_page", { name: "report" })).receipt.output, { selected: "report", pages: ["main", "report"] });
+  assert.equal((await call("select_page", { name: "main" })).receipt.output.selected, "main");
+  await call("close_page", { name: "report" });
+  await eventually(() => observations.some(value => value.scope === "resource" && value.resource === "report"));
+  await launched[0].close();
+  await eventually(() => observations.some(value => value.scope === "environment" && value.availability === "unavailable"));
+  assert.equal((await call("inspect")).receipt.output.lost, true);
+  await env.handle(operation("teardown"));
+  assert.equal((await env.handle(operation("setup", { configuration: { profile: "test" } }, 50))).receipt.type, "accepted");
+  const replacement = await env.handle(operation("call", { name: "inspect", input: {} }, 50));
+  assert.equal(replacement.receipt.output.lost, false);
+  assert.equal((await call("inspect")).receipt.code, "unavailable");
+});
+
 test("real browser state is retained, isolated, serialized and rendered as image media", { timeout: 45_000 }, async t => {
   const { env, url, launched, published } = await browserFixture(t, { fetch: finishCallback });
   const first = commands();

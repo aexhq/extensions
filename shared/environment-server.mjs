@@ -4,11 +4,14 @@ import { z } from "zod";
 
 export const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
 const sequence = z.number().int().positive().safe();
-const callback = z.strictObject({ url: z.url(), token: z.string().min(1), methods: z.array(z.string()) })
-  .refine(grant => grant.methods.includes("finish"), "Tool completion service must be granted");
+const serviceCallback = z.strictObject({ url: z.url(), token: z.string().min(1), methods: z.array(z.string()) });
+const callback = serviceCallback.refine(grant => grant.methods.includes("finish"), "Tool completion service must be granted");
 const command = z.strictObject({
   contract: z.literal("environment/v1"),
   operation: z.strictObject({ session_id: identifier, environment: identifier, sequence,
+    template: identifier.optional(), configuration: z.unknown().optional(),
+    binding: z.strictObject({ name: identifier, sequence }).optional(),
+    context: serviceCallback.optional(), reporter: serviceCallback.optional(),
     request: z.discriminatedUnion("type", [
       z.strictObject({ type: z.literal("setup"), configuration: z.unknown() }),
       z.strictObject({ type: z.literal("execute"), implementation: z.unknown(), input: z.unknown(),
@@ -29,7 +32,16 @@ export const result = output => ({ type: "result", output });
 export const failure = (code, message, details) => ({ type: "failure", code,
   message: String(message).slice(0, 4096), retryable: false, ...(details === undefined ? {} : { details }) });
 export const unknown = message => ({ type: "unknown", message: String(message).slice(0, 4096) });
-export const bindingKey = op => `${op.session_id}/${op.environment}`;
+export const bindingKey = op => `${op.session_id}/${op.environment}${(op.binding?.sequence ?? 1) === 1 ? "" : `/${op.binding.sequence}`}`;
+
+export async function reportEnvironment(reporter, observation, fetch = globalThis.fetch) {
+  if (reporter === undefined) return;
+  const response = await fetch(reporter.url, { method: "POST",
+    headers: { authorization: `Bearer ${reporter.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ type: "result", output: { observation } }) });
+  if (!response.ok) throw new Error(`Environment observation was not acknowledged: ${response.status}`);
+  return sequence.parse((await response.json()).sequence);
+}
 
 export async function finishExecution(op, receipt, fetch = globalThis.fetch) {
   if (receipt.type !== "result") return receipt;

@@ -1,7 +1,8 @@
-import type { PlacedAgentloop, Environment } from "@aexhq/brain";
+import type { PlacedAgentloop, Environment, EnvironmentGrant } from "@aexhq/brain";
 
 export interface PiOptions {
   readonly env: Environment;
+  readonly environments?: readonly EnvironmentGrant[];
   readonly environmentSelection?: "hidden" | "model";
   readonly placements?: Readonly<Record<string, string>>;
   /** Model context window in tokens the compaction budget is measured against. Default 200000. */

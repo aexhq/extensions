@@ -13,7 +13,7 @@ function host(responses) {
   const calls = [];
   const emitted = [];
   const invocations = [];
-  const context = { calls, emitted, invocations, acknowledge() {}, kv: { read() {}, put() {} }, events: after => ({ events: [], next_cursor: after }),
+  const context = { environments: { list: async () => [] }, calls, emitted, invocations, acknowledge() {}, kv: { read() {}, put() {} }, events: after => ({ events: [], next_cursor: after }),
     setTranscript(transcript) { context.transcript = structuredClone(transcript); },
     model(request) { calls.push(structuredClone(request)); const response = responses.shift(); if (response instanceof Error) throw response; assert.ok(response, "unexpected model call"); return response; },
     emit(type, data) { emitted.push({ type, data }); },

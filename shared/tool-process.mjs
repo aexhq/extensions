@@ -2,7 +2,7 @@ import { z } from "zod";
 import { unknown } from "./environment-server.mjs";
 
 const serviceFrame = z.strictObject({ type: z.literal("service"), id: z.number().int().positive().safe(),
-  method: z.enum(["emit", "result", "returned", "finish", "model"]), input: z.unknown() });
+  method: z.enum(["emit", "result", "returned", "finish", "model", "environments"]), input: z.unknown() });
 
 /** The untrusted child sees only JSON services for this invocation, never callback credentials. */
 export async function toolProcess(op, child, { fetch = globalThis.fetch, signal, maxOutputBytes = 20 * 1024 * 1024 } = {}) {

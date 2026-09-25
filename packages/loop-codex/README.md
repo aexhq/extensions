@@ -2,8 +2,8 @@
 
 A Codex-style agent loop for Brain: a semantic port of the Codex agent loop,
 pinned against [openai/codex](https://github.com/openai/codex) tag
-`rust-v0.151.0` (= npm `@openai/codex@0.151.0`). The published packages cannot be imported here —
-`@openai/codex` ships a precompiled Rust binary and `@openai/codex-sdk` spawns it as a subprocess —
+`rust-v0.151.0` (= npm `@openai/codex@0.151.0`). The published packages cannot be imported here â€”
+`@openai/codex` ships a precompiled Rust binary and `@openai/codex-sdk` spawns it as a subprocess â€”
 so this package ships a WebAssembly Component that reproduces the loop contract through Brain's
 Agentloop host imports:
 
@@ -27,6 +27,7 @@ import { codex } from "@aexhq/agentloop-codex";
 
 const loopRuntime = brainEnv({ name: "brain" });
 const session = await brain.sessions.create({
+  environmentLifecycle: { default: "automatic" },
   agentloop: codex({ env: loopRuntime, contextWindow: 200_000 }),
   model,
   tools: [bash({ env: workspace })],
@@ -69,7 +70,7 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Version 7.0 targets Brain SDK 0.30 and `brain:agentloop@0.2.0`. The Tool return/completion
+Version 7.0 targets Brain SDK 0.32 and `brain:agentloop@0.2.0`. The Tool return/completion
 contract is breaking. Existing sessions retain their immutable loop implementation; the
 server upgrade preflight refuses unclosed sessions from the previous contract. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.

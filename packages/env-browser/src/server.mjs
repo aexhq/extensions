@@ -1,32 +1,59 @@
 import { publish } from "../../../shared/media.mjs";
 import { z } from "zod";
 import { definitions } from "./definitions.mjs";
+import { methods } from "./methods.mjs";
 import { toolOutput } from "../../../shared/tool-output.mjs";
-import { finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
+import { reportEnvironment, finishExecution, deadlineTimer, environmentHandler, bindingKey, accepted, result, unknown, failure, fail, EnvironmentError } from "../../../shared/environment-server.mjs";
 export { serveEnvironment } from "../../../shared/environment-server.mjs";
 
 const configuration = z.strictObject({ profile: z.string().min(1) });
 const descriptor = z.strictObject({ type: z.literal("aex_browser_tool"), version: z.literal(1), name: z.enum(Object.keys(definitions)) });
 
-export function createBrowserEnvironment({ profiles, publishMedia, fetch = globalThis.fetch }) {
+export function createBrowserEnvironment({ profiles, publishMedia, maxPages = 16, fetch = globalThis.fetch }) {
+  z.number().int().positive().parse(maxPages);
   const launchers = new Map(Object.entries(profiles));
   for (const launch of launchers.values()) if (typeof launch !== "function") throw new TypeError("each browser profile must supply a launcher");
   const bindings = new Map();
+  function observe(state, observation) {
+    state.reporting = reportEnvironment(state.reporter, observation, fetch).catch(error => {
+      state.reportingError = error.message;
+      console.error("Browser Environment observation was not acknowledged");
+    });
+  }
+  async function openPage(state, name) {
+    if (state.pages.has(name)) fail("already_exists", "a page with this name already exists");
+    if (state.pages.size >= maxPages) fail("capacity", "browser page limit reached");
+    state.creatingPage = true;
+    let page;
+    try { page = await state.context.newPage(); }
+    finally { state.creatingPage = false; }
+    state.pages.set(name, page);
+    state.selected = name;
+    for (const event of ["close", "crash"]) page.on(event, () => {
+      state.pages.delete(name);
+      if (state.selected === name) state.selected = undefined;
+      if (!state.lost && !state.deleted) observe(state, { scope: "resource", resource: name, code: `page_${event}`, message: `Browser page ${name} ${event}` });
+    });
+    return page;
+  }
   async function pageFor(state) {
     if (state.lost) fail("resource_lost", "the browser was closed or interrupted; create a new binding explicitly");
     if (!state.browser) {
       state.browser = await launchers.get(state.profile)();
-      state.browser.on("disconnected", () => { state.lost = true; });
+      state.browser.on("disconnected", () => {
+        state.lost = true;
+        if (!state.deleted) observe(state, { scope: "environment", availability: "unavailable", message: "The browser disconnected; inspect it and create a new Environment explicitly if needed." });
+      });
       try {
         state.context = await state.browser.newContext({ viewport: { width: 1280, height: 720 }, serviceWorkers: "block", acceptDownloads: false });
-        state.page = await state.context.newPage();
-        state.page.on("close", () => { state.lost = true; });
-        state.page.on("crash", () => { state.lost = true; });
-        state.context.on("page", page => { if (page !== state.page) void page.close().catch(() => {}); });
+        state.context.on("page", page => { if (!state.creatingPage) void page.close().catch(() => {}); });
+        await openPage(state, "main");
       } catch (error) { state.lost = true; await state.browser.close(); throw error; }
     }
     if (state.lost || !state.browser.isConnected()) fail("resource_lost", "the browser is unavailable");
-    return state.page;
+    const page = state.pages.get(state.selected);
+    if (!page) fail("page_unavailable", "open or select a page before using browser Tools");
+    return page;
   }
   async function execute(op, state) {
     const parsed = descriptor.safeParse(op.request.implementation);
@@ -100,7 +127,7 @@ export function createBrowserEnvironment({ profiles, publishMedia, fetch = globa
       const { profile } = configuration.parse(request.configuration);
       if (!launchers.has(profile)) fail("unsupported", "unknown browser profile");
       if (bindings.has(key)) fail("already_attached", "browser binding already exists");
-      bindings.set(key, { profile, lost: false, deleted: false, tail: Promise.resolve(), active: new Map() });
+      bindings.set(key, { profile, reporter: op.reporter, pages: new Map(), lost: false, deleted: false, tail: Promise.resolve(), active: new Map() });
       return accepted();
     }
     const state = bindings.get(key);
@@ -109,6 +136,29 @@ export function createBrowserEnvironment({ profiles, publishMedia, fetch = globa
     }
     if (request.type === "teardown" && state.deleted) return accepted();
     if (state.deleted) fail("unavailable", "browser binding was deleted");
+    if (request.type === "call") {
+      const method = Object.hasOwn(methods, request.name) && methods[request.name];
+      if (!method) fail("unsupported", "unknown browser method");
+      const input = method.input.parse(request.input);
+      if (request.name === "inspect") return result({ profile: state.profile, lost: state.lost,
+        started: state.browser !== undefined, selected: state.selected ?? null,
+        pages: [...state.pages].map(([name, page]) => ({ name, url: page.url(), closed: page.isClosed() })),
+        activeInvocations: [...state.active.keys()], reportingError: state.reportingError ?? null });
+      const work = state.tail.then(async () => {
+        if (!state.browser) await pageFor(state);
+        if (state.lost) fail("resource_lost", "the browser is unavailable");
+        if (request.name === "open_page") await openPage(state, input.name);
+        else {
+          const page = state.pages.get(input.name);
+          if (!page) fail("not_found", "unknown browser page");
+          if (request.name === "select_page") state.selected = input.name;
+          if (request.name === "close_page") await page.close();
+        }
+        return result({ selected: state.selected ?? null, pages: [...state.pages.keys()] });
+      });
+      state.tail = work.catch(() => {});
+      return work;
+    }
     if (request.type === "execute") return finishExecution(op, await execute(op, state), fetch);
     if (request.type === "cancel") {
       const call = state.active.get(request.target_sequence);
@@ -118,7 +168,9 @@ export function createBrowserEnvironment({ profiles, publishMedia, fetch = globa
     if (["detach", "teardown"].includes(request.type)) {
       if (state.active.size) fail("busy", "browser has active invocations");
       if (request.type === "teardown") {
+        state.reporter = undefined;
         await state.browser?.close();
+        await state.reporting;
         state.deleted = true;
       }
       return accepted();
