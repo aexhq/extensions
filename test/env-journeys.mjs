@@ -40,7 +40,7 @@ for (const [name, loop] of [["pi", pi], ["codex", codex]]) {
       template: { max_instances: 2, configuration_schema: { type: "object", properties: { profile: { const: "test" } }, required: ["profile"], additionalProperties: false } } });
     const grant = { environment: "browser", permissions: ["read", "create", "setup", "delete", "call"], methods: ["inspect", "open_page"] };
     session = await f.session(loop, {
-      environmentLifecycle: { default: "automatic", bindings: { browser: "manual" } },
+      environment: { lifecycle: { bindings: { browser: "manual" } } },
       configuration: { environmentSelection: "model", environments: [{ environment: "browser", permissions: ["read"], methods: [] }] },
       tools: [...browserTools({ env: workspace }), env({ env: hostEnv({ name: "app" }), environments: [grant] })],
     });

@@ -56,7 +56,6 @@ export async function fixture(t, script, { timeoutMs = 30_000 } = {}) {
     brain, requests,
     async session(loop, { configuration = {}, ...options } = {}) {
       const session = await brain.sessions.create({
-        environmentLifecycle: { default: "automatic" },
         agentloop: loop({ env: brainEnv({ name: "brain" }), compaction: false, ...configuration }),
         model: { provider: "vercel-ai-gateway", name: "test/extension", apiKey: "test" },
         ...options,

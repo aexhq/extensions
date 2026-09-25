@@ -44,7 +44,6 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => process.env.ENVIRONMENT_URL! })({ name: "workspace" });
 
 const session = await brain.sessions.create({
-  environmentLifecycle: { default: "automatic" },
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
   model,
   tools: [read({ env: workspace }), bash({ env: workspace })],
@@ -106,7 +105,7 @@ has no user input. Both loops ask the model to consider new background results a
 an activation containing only already-consumed events is acknowledged without a model call.
 Brain coalesces wakeups for five milliseconds from the first pending event without delaying
 commits. Interrupt cancels unfinished Tools even between turns.
-Applications explicitly select automatic or manual Environment lifecycle at session creation.
+Environments use automatic lifecycle by default; applications can override it with `environment.lifecycle`.
 Automatic lifecycle runs setup and cleanup without involving the model. Include the ordinary
 `env` Tool separately when the model should inspect or manage authorized Environments.
 Agentloops, Tools and Environment operations share `ctx.environments`; each receives its own

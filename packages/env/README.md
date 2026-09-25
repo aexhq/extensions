@@ -9,7 +9,7 @@ import { env } from "@aexhq/env";
 const debug = env({
   environments: [{ environment: "workspace", permissions: ["read", "call"], methods: ["inspect"] }],
 });
-// Include debug in your session's tools, separately from environmentLifecycle.
+// Include debug in your session's tools; lifecycle defaults to automatic.
 ```
 
 It defaults to your application's host. Place it in a prepared Node Environment to run it
@@ -20,6 +20,6 @@ Use the current `{ name, sequence }` reference returned by `list` or `get`. `get
 recorded state; `call` invokes a method declared by the Env. There is no universal inspect
 or restart method. Resources such as tabs and jobs use the Env's own methods and schemas.
 
-Creation requires an application-authorized template and a `create` grant. Setup policy is
-explicit session configuration; adding this Tool never changes it. See Brain's
+Creation requires an application-authorized template and a `create` grant. Setup defaults to
+automatic; override it with `environment.lifecycle`. Adding this Tool never changes it. See Brain's
 [environment control guide](https://aex.dev/brain/docs/guides/environment-control).
