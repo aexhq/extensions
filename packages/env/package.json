@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.32.0",
+    "@aexhq/brain": "0.32.1",
     "zod": "4.4.3"
   },
   "brain": {

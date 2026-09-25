@@ -15,5 +15,5 @@
   },
   "files": ["dist", "*.d.ts", "examples", "README.md"],
   "scripts": { "build": "node ../../tools/build-environment.mjs", "test": "npm run build && node --test test/*.test.mjs", "prepack": "npm run build" },
-  "dependencies": { "@aexhq/brain": "0.32.0", "zod": "4.4.3" }
+  "dependencies": { "@aexhq/brain": "0.32.1", "zod": "4.4.3" }
 }

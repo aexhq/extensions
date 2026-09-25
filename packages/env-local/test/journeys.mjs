@@ -48,7 +48,11 @@ test("Local Environment: edit and test a real program, then read it in a later t
 for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP reply with ${lostCompletion ? "missing" : "committed"} completion preserves the known outcome without replay`, { timeout: 60_000 }, async t => {
   const f = await fixture(t, [
     () => calls(["write", { path: "once", content: "committed externally" }]),
-    body => { assert.match(body.input.at(-1).output, lostCompletion ? /unknown/u : /once/u); return calls(["read", { path: "once", offset: 0, limit: 262144 }]); },
+    body => {
+      assert.match(body.input.findLast(item => item.type === "function_call_output").output, lostCompletion ? /unknown/u : /once/u);
+      if (lostCompletion) assert.match(JSON.stringify(body.input), /environment_unreachable/u);
+      return calls(["read", { path: "once", offset: 0, limit: 262144 }]);
+    },
     body => { assert.match(body.input.at(-1).output, /committed externally/u); return answer("inspected uncertain write"); },
   ]);
   let completions = 0;
@@ -61,8 +65,10 @@ for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP r
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const command = JSON.parse(Buffer.concat(chunks).toString());
+    const isWrite = command.operation.request.implementation?.export === "write";
+    if (isWrite) writes++;
     const outcome = await runtime.handle(command);
-    if (command.operation.request.implementation?.export === "write") { writes++; request.socket.destroy(); }
+    if (isWrite) request.socket.destroy();
     else response.end(JSON.stringify(outcome));
   });
   server.listen(0, "127.0.0.1");
