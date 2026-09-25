@@ -33,6 +33,8 @@ in a prepared Node host, Docker workspace or Modal profile with the package runt
 Both official loops support hosted JSON Schema output correction in the same turn, including
 turns started with `session.submit()`. Configure `output: { schema, maxCorrections: 2 }` on the loop;
 correction requests have no tools and only a valid final answer emits `assistant_message`.
+Prompt-based per-send Zod validation and corrective turns are owned by the
+[Aex SDK](https://aex.dev/docs#structured-output).
 
 ```ts
 import { brainEnv, environment } from "@aexhq/brain";
@@ -115,7 +117,9 @@ those operations and enforce their physical resource ceilings. A Tool can be dec
 named Environments; the loop either selects a configured placement or presents authorized choices
 to the model. See the loop packages' `placements` and `environmentSelection` options.
 
-Packages pin their Brain SDK dependency in their manifests. Images and PDFs use HTTPS URLs in user input and Tool results.
+Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
+in applications so extension bindings share its TypeScript brands. The current packages use
+Brain SDK 0.34.0. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.
