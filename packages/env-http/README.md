@@ -8,7 +8,7 @@ You need Node.js 22.13 or newer, an existing application API and an HTTP Environ
 that stays running independently of each request. Install the compatible package set:
 
 ```sh
-npm install @aexhq/env-http@0.2.3 @aexhq/brain@0.34.1 zod@4.4.3
+npm install @aexhq/env-http@0.3.0 @aexhq/brain@0.35.0 zod@4.4.3
 ```
 
 ## Add an application handler
@@ -32,7 +32,7 @@ export function createOrderApi(options: {
     description: "Look up an order by id.",
     input: z.object({ id: z.string() }),
     output: z.object({ id: z.string(), status: z.string() }),
-    run: ({ id }, ctx) => options.readOrder(ctx.sessionId, id),
+    run: async ({ id }, ctx) => ctx.finish(await options.readOrder(ctx.sessionId, id)),
   });
   const tools = [lookupOrder()];
   const handler = createToolHandler({
@@ -44,35 +44,37 @@ export function createOrderApi(options: {
 ```
 
 Mount the returned `handler` at a POST route. It accepts a standard `Request` and returns a
-`Response`; Hono can pass `c.req.raw`. Return plain JSON from an HTTP tool. When moving a tool
-from the Brain quickstart, replace `ctx.finish(value)` with `value`: the bridge records completion.
-`ctx.finish`, `ctx.emit`, `ctx.emitResult`, `ctx.model` and background callbacks are unavailable here.
+`Response`; Hono can pass `c.req.raw`. Application Tools use `await ctx.finish(value)`
+with Brain's durable acknowledgment. Configured options, output schemas, model-facing
+content and `ctx.emitResult(...)` use the ordinary Tool lifecycle. Model calls, arbitrary
+events and Environment control are not granted inside this bounded handler.
 
 ## Place the tools in a session
 
-After calling `createOrderApi` with your application functions, use its returned `orderApi.tools`
-when creating the session. The URL below is the running bridge, not your application's POST route.
-Its operator maps `orders-v1` to your HTTPS route, credential, tool catalogue and request timeout.
+With Aex, use `aex.environments.application({ name, endpoint, credential, timeoutMs })`
+and place the same ordinary Tool declarations through `{ env }` in `aex.sessions.create()`.
+Aex admits the declared endpoint and Tool contracts during creation, without operator
+registration. See the [Application guide](https://github.com/aexhq/aex/blob/main/docs/http-tools.md).
+
+For self-hosted Brain, the host authorizes the application endpoint and supplies its bridge URL:
 
 ```ts
-import { http, httpTool } from "@aexhq/env-http";
-
-const app = http({
+import { application, applicationTool } from "@aexhq/env-http";
+const app = application({
   name: "app",
   url: "https://bridge.example.com",
-  binding: "orders-v1",
-  token: bridgeToken,
+  endpoint: "https://your-app.example/api/agent-tools",
+  credential: applicationCredential,
+  timeoutMs: 30_000,
 });
-const tools = orderApi.tools.map(tool => httpTool(tool, { env: app }));
+const tools = orderApi.tools.map(tool => applicationTool(tool, { env: app }));
 ```
 
-Use the bridge token supplied by its operator. With Aex, select its catalog driver URL and an
-account-approved binding instead. Pass `tools` with your model and loop to
-[`brain.sessions.create()`](https://aex.dev/brain/docs/quickstart). A turn submitted with
-`session.submit()` can continue after that client closes because tool requests reach the
-independently running bridge and your API.
+Use the same configured tool options in the handler and the session. Pass the resulting tools
+with your model and loop to `brain.sessions.create()`. A submitted turn can continue after
+the caller exits because the bridge and application API remain reachable.
 
-The complete [records example](examples/records.mjs) implements authorization, reads, proposals, reviewed
+The v1 [records example](examples/records.mjs) implements authorization, reads, proposals, reviewed
 saves and report jobs. Its [test](test/records.test.mjs) opens a fresh handler for each request,
 rechecks membership, rejects another tenant's records, and proves atomic save receipts.
 SQLite is its standalone example store; a serverless deployment uses the application's
@@ -81,19 +83,20 @@ before submitting a turn. Model arguments never supply that identity.
 
 Tools receive `sessionId`, `sequence`, `deadline` and `signal`. Keep the binding timeout below
 the application's HTTP request budget.
-Only the bridge holds Brain callback credentials. A handler's `{status: "cancelled"}` is
+Only the bridge holds Brain callback credentials; the application receives an invocation-scoped completion capability. A handler's `{status: "cancelled"}` is
 successful business data, not a cancelled Brain invocation.
 
 The registry supplies the model schema and runtime validation from the same Tool declarations.
 Input and output validation await Zod. A changed advertised contract fails before business
-code; retain compatible handlers or create a new binding and session for breaking changes.
+code; retain compatible handlers or create a new session for breaking changes.
 
 ## Deploy the bridge
 
 For self-hosted Brain, import `createHttpEnvironment` and `serveEnvironment` from
 `@aexhq/env-http/server`, then run `createHttpEnvironment({ authorize })` with `serveEnvironment()`.
 The injected authorizer resolves an approved endpoint, credential, tool catalogue and
-`timeoutMs` for the authenticated session/environment, on setup and every invocation.
+`timeoutMs` and public `callbackUrl` for each authenticated session/environment. Pass the
+returned `callback` to `serveEnvironment` to enable the invocation relay.
 The default transport only connects to public HTTPS addresses on port 443, checks the
 actual socket's DNS answers, rejects private/transition addresses and never follows redirects.
 Deploy it with the host's egress restrictions and keep its Environment token private.
@@ -104,7 +107,12 @@ and does not undo a committed mutation. App-owned operation keys and save receip
 business uncertainty. A submitted report job completes independently: call `get_report` in
 the same or a later turn. Ending a turn does not schedule another status check.
 
-## Environment control
+## Compatibility and Environment control
+
+Existing `http()` / `httpTool()` placements retain the v1 return-JSON protocol. The handler
+accepts both v1 and Application v2 calls. Keep v1 Tools returning JSON; use `ctx.finish`
+for Application Tools. The records example exercises the retained v1 contract.
+
 
 The provider-defined `inspect` method returns authorized Tool names and the binding timeout;
 it does not contact the application or expose its credential. Grant it explicitly through
