@@ -1,10 +1,10 @@
 # @aexhq/env-local
 
-A Docker workspace Environment using Brain SDK 0.32. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver loads ordinary published Node Tool packages and operator-prepared Python projects.
+A Docker workspace Environment using Brain SDK 0.34. Each named session binding owns one volume. Tools run in fresh containers; files remain across calls and detach. The driver loads ordinary published Node Tool packages and operator-prepared Python projects.
 
 Build a workspace image from the extensions repository:
 
-This release requires Brain SDK/runtime 0.32. The controller commits successful Tool
+This release requires Brain SDK/runtime 0.34. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
