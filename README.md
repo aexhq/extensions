@@ -123,7 +123,7 @@ to the model. See the loop packages' `placements` and `environmentSelection` opt
 
 Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
 in applications so extension bindings share its TypeScript brands. The current packages use
-Brain SDK 0.35.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+Brain SDK 0.35.1. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.

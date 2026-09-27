@@ -8,7 +8,7 @@ You need Node.js 22.13 or newer, an existing application API and an HTTP Environ
 that stays running independently of each request. Install the compatible package set:
 
 ```sh
-npm install @aexhq/env-http@0.3.0 @aexhq/brain@0.35.0 zod@4.4.3
+npm install @aexhq/env-http@0.3.0 @aexhq/brain@0.35.1 zod@4.4.3
 ```
 
 ## Add an application handler
