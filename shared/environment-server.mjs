@@ -70,10 +70,10 @@ export function deadlineTimer(milliseconds, expire) {
 }
 
 export function environmentHandler(handle) {
-  return async raw => {
+  return async (raw, context) => {
     const { operation } = command.parse(raw);
     let receipt;
-    try { receipt = await handle(operation); }
+    try { receipt = await handle(operation, context); }
     catch (error) {
       receipt = failure(error instanceof EnvironmentError ? error.code : "environment_failed", error.message ?? error);
     }
@@ -81,12 +81,19 @@ export function environmentHandler(handle) {
   };
 }
 
-export async function serveEnvironment(handle, { token, host = "127.0.0.1", port = 0, maxBodyBytes = 16 * 1024 * 1024 } = {}) {
-  z.string().min(1).parse(token);
+export async function serveEnvironment(handle, { token, authenticate, callback, host = "127.0.0.1", port = 0, maxBodyBytes = 16 * 1024 * 1024 } = {}) {
+  if (authenticate === undefined) z.string().min(1).parse(token);
   z.number().int().positive().safe().parse(maxBodyBytes);
   const server = createServer(async (request, response) => {
-    if (request.headers.authorization !== `Bearer ${token}`) { request.resume(); response.writeHead(401).end(); return; }
-    if (request.method !== "POST" || request.url !== "/v1/operations") { request.resume(); response.writeHead(404).end(); return; }
+    const isCallback = request.url === "/v1/callback" && callback !== undefined;
+    let context;
+    if (!isCallback) {
+      try {
+        if (authenticate !== undefined) context = await authenticate(request.headers);
+        else if (request.headers.authorization !== `Bearer ${token}`) throw new Error("denied");
+      } catch { request.resume(); response.writeHead(401).end(); return; }
+    }
+    if (request.method !== "POST" || (!isCallback && request.url !== "/v1/operations")) { request.resume(); response.writeHead(404).end(); return; }
     try {
       let bytes = 0;
       const chunks = [];
@@ -95,10 +102,11 @@ export async function serveEnvironment(handle, { token, host = "127.0.0.1", port
         if (bytes > maxBodyBytes) { response.writeHead(413).end(); return; }
         chunks.push(chunk);
       }
-      const body = await handle(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const body = isCallback ? await callback(request.headers, input) : await handle(input, context);
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
     } catch (error) {
-      response.writeHead(error instanceof SyntaxError || error instanceof z.ZodError ? 400 : 500,
+      response.writeHead(error instanceof EnvironmentError && error.code === "denied" ? 403 : error instanceof SyntaxError || error instanceof z.ZodError ? 400 : 500,
         { "content-type": "application/json" }).end(JSON.stringify({ error: String(error.message ?? error).slice(0, 4096) }));
     }
   });

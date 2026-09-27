@@ -1,9 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import { inspectTool } from "@aexhq/brain";
+import { runToolHandler } from "@aexhq/brain/runtime";
 import { z } from "zod";
 import { invocation, response } from "./protocol.mjs";
+import { publicJson } from "./outbound.mjs";
 
-export function createToolHandler({ tools, authorize, maxBodyBytes = 1_048_576 }) {
+export function createToolHandler({ tools, authorize, maxBodyBytes = 1_048_576, callbackRequest = publicJson }) {
   if (typeof authorize !== "function") throw new TypeError("authorize is required");
   const registry = new Map();
   for (const placed of tools) {
@@ -34,6 +36,24 @@ export function createToolHandler({ tools, authorize, maxBodyBytes = 1_048_576 }
     catch { return reply("denied", "invocation is not authorized"); }
     const tool = registry.get(call.tool.name);
     if (!tool || !isDeepStrictEqual(tool.definition, call.tool)) return reply("incompatible_tool", "registered contract differs from the session contract");
+    if (call.contract === "http-tool/v2") {
+      if (!isDeepStrictEqual(tool.configuration, call.options)) return reply("incompatible_tool", "registered options differ from the session options");
+      const unsupported = () => { throw new Error("Application Tools do not grant this invocation service"); };
+      try {
+        await runToolHandler(tool, {
+          sessionId: call.sessionId, environment: call.environment, sequence: call.sequence,
+          arguments: call.input, deadline_at_ms: call.deadlineAtMs,
+          emit: unsupported, model: unsupported, environments: unsupported,
+          update: async value => {
+            if (!call.callback.methods.includes(value.type)) throw new Error("Completion method is not granted");
+            return z.number().int().positive().safe().parse(await callbackRequest(call.callback.url, {
+              token: call.callback.token, body: { method: value.type, input: value.outcome ?? null }, signal,
+            }));
+          },
+        }, signal);
+        return Response.json({ type: "completed" });
+      } catch { return reply("tool_error", "application completion was not acknowledged"); }
+    }
     let input;
     try { input = await bounded(() => tool.contract.input.parseAsync(call.input)); }
     catch { return reply("invalid_input", "input failed validation or expired"); }
