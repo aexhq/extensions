@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-modal",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Finite Modal Sandbox Environment for Brain",
   "license": "MIT",
   "type": "module",

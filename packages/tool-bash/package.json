@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-bash",
-  "version": "8.1.3",
+  "version": "8.1.4",
   "description": "Run a Bash command in the session Environment workspace.",
   "license": "MIT",
   "homepage": "https://aex.dev",

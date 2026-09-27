@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env-local",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Docker workspace Environment for Brain",
   "license": "MIT",
   "type": "module",

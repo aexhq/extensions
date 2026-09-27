@@ -36,19 +36,21 @@ correction requests have no tools and only a valid final answer emits `assistant
 Prompt-based per-send Zod validation and corrective turns are owned by the
 [Aex SDK](https://aex.dev/docs#structured-output).
 
+Continue the [Brain quickstart](https://aex.dev/brain/docs/quickstart) with its `brain` client
+and `model` configuration. Install the tool packages and add them to the session:
+
 ```ts
-import { brainEnv, environment } from "@aexhq/brain";
+import { brainEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash } from "@aexhq/tool-bash";
 import { read } from "@aexhq/tool-read";
 
 const loopRuntime = brainEnv({ name: "brain" });
-const workspace = environment({ url: () => process.env.ENVIRONMENT_URL! })({ name: "workspace" });
 
 const session = await brain.sessions.create({
   agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
   model,
-  tools: [read({ env: workspace }), bash({ env: workspace })],
+  tools: [read(), bash()],
 });
 ```
 
@@ -56,8 +58,10 @@ Brain accepts components and opaque driver implementations; it does not compile 
 or install language packages. Each extension publisher owns its build, while the chosen
 Environment owns execution and resource enforcement.
 
-The workspace example requires a running Environment server. `env-local` supplies a Docker
-implementation; its operator configures trusted images and workspace grants. `env-browser`
+These tools run in the registering Node process, using its working directory. Bash must be
+installed, and the process must stay connected while tools are needed. For an isolated workspace,
+follow [env-local setup](packages/env-local/README.md), then pass `{ env: workspace }` to each tool.
+`env-local` requires an operator-configured image and workspace grants. `env-browser`
 requires an operator-supplied browser launcher and deployment isolation. Hosted Aex admits
 its published managed Environment catalog, Brain's Wasm Environment and application `hostEnv`
 Tools. Use standalone Brain for your own HTTP Environment endpoints.
@@ -124,7 +128,7 @@ Configure a publication callback for Browser screenshots and MCP binary media. P
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.
 
-Loops use `ctx.kv.read/put/delete`; acknowledged mutations survive later failures. Extension
+Loops save state through Brain's public host services; committed mutations survive later failures. Extension
 factories have no `needs`. The chosen Environment prepares ordinary package dependencies before
 imports and execution, and enforces its explicitly configured grants. There is no installer
 inside Brain and no automatic placement fallback. See
@@ -134,6 +138,18 @@ For dynamic instances, grant the Agentloop `read` access to the template and sel
 `environmentSelection: "model"` or an explicit `placements` policy. Both loops refresh
 authorized placements and pin each dispatch to the current Environment reference. Pi dispatches
 parallel batches: put setup or resource changes before dependent calls in separate batches.
+
+## Resource lifetimes
+
+Saving a Brain session does not preserve every resource its tools use. Choose a provider with
+the lifetime your application needs:
+
+| Provider | What persists and what ends it |
+| --- | --- |
+| [Local Docker workspace](packages/env-local/README.md#lifecycle-and-failures) | Files survive tool calls and detach; teardown removes the volume. Host or volume loss can still lose files. |
+| [Browser](packages/env-browser/README.md#state-and-cancellation) | Browser state survives turns and detach. Teardown, an active-call cancellation/timeout or browser loss closes it; a controller restart cannot reattach it. |
+| [Modal](packages/env-modal/README.md#lifecycle-and-accounting) | The sandbox has a finite expiry. Cancel, detach and teardown stop the whole sandbox; an optional turn-end policy can stop it earlier. |
+| [HTTP tools](packages/env-http/README.md) | A tool finishes within one application request. Persist business state and background jobs in your application's own storage. |
 
 ## Tests
 

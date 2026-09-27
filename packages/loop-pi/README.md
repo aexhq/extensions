@@ -67,7 +67,7 @@ siblings. For hosted applications, publish bytes with Aex's attachment API and r
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-Version 7.0 targets Brain SDK 0.32 and `brain:agentloop@0.2.0`. The Tool return/completion
+This release targets Brain SDK 0.34 and `brain:agentloop@0.2.0`. The Tool return/completion
 contract is breaking. Existing sessions retain their immutable loop implementation; the
 server upgrade preflight refuses unclosed sessions from the previous contract. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
@@ -75,7 +75,8 @@ server/artifacts for recovery. An upgrade does not migrate or delete session dat
 Image and PDF blocks remain native media in compaction requests. The JSON-length estimate used
 for new context does not measure image/PDF tokens; provider context-limit failures remain explicit.
 
-Use `session.send(prompt, { output: { type: AnswerSchema } })` for validated application output.
+For validated JSON within the turn, use [loop-level structured output](#hosted-structured-output).
+Per-send Zod validation and corrective turns belong to the [Aex SDK](https://aex.dev/docs#structured-output), not Brain's `session.send()`.
 Pi finishes when the assistant returns no Tool calls; no special terminal Tool is required.
 Ordinary `send()` returns session state, so `idle` alone does not establish turn success.
 

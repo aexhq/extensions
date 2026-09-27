@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/agentloop-pi",
-  "version": "7.2.3",
+  "version": "7.2.4",
   "description": "Pi-style parallel-Tool Brain extension",
   "license": "MIT",
   "repository": {
