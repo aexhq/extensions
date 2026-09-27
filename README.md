@@ -62,9 +62,10 @@ These tools run in the registering Node process, using its working directory. Ba
 installed, and the process must stay connected while tools are needed. For an isolated workspace,
 follow [env-local setup](packages/env-local/README.md), then pass `{ env: workspace }` to each tool.
 `env-local` requires an operator-configured image and workspace grants. `env-browser`
-requires an operator-supplied browser launcher and deployment isolation. Hosted Aex admits
-its published managed Environment catalog, Brain's Wasm Environment and application `hostEnv`
-Tools. Use standalone Brain for your own HTTP Environment endpoints.
+requires an operator-supplied browser launcher and deployment isolation. Hosted Aex supports
+managed Environments, Brain's Wasm Environment, connected `hostEnv` / `clientBrowser` Tools,
+and [Application tools](https://aex.dev/docs/application) served by your authenticated HTTPS
+endpoint. Use standalone Brain to deploy other Environment services.
 
 Application-resident Tools use the same public factory with `run`. Their code executes in the
 application process, and `ctx.emit` records application-defined events in the session journal.
