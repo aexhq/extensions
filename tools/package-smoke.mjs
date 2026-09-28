@@ -87,7 +87,7 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.4", entry: "./runtime", export: "read", configuration: {} });
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.5", entry: "./runtime", export: "read", configuration: {} });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
@@ -144,6 +144,13 @@ void createBrowserEnvironment({ profiles: { web: () => chromium.launch({ chromiu
 void local({ name: "local", url: "https://local.example", token: "fixture", profile: "coding" });
 void browserTools({ env: browser({ name: "browser", url: "https://browser.example", token: "fixture", profile: "web" }) });
 void connectMcp;
+const defaultPi = pi();
+const configuredPi = pi({ contextWindow: 64_000 });
+// @ts-expect-error Unknown options remain invalid.
+pi({ invalid: true });
+// @ts-expect-error Environments retain their public type.
+pi({ env: "brain" });
+void [defaultPi, configuredPi];
 declare const client: Parameters<typeof mcpTools>[0]["client"];
 void mcpTools({ client, env: hostEnv({ name: "app" }), names: ["read_report"],
   publishMedia: async ({ bytes, mediaType, index }, { sessionId, sequence, signal }) => {

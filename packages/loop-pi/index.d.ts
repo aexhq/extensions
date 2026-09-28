@@ -1,7 +1,7 @@
 import type { PlacedAgentloop, Environment, EnvironmentGrant } from "@aexhq/brain";
 
 export interface PiOptions {
-  readonly env: Environment;
+  readonly env?: Environment;
   readonly environments?: readonly EnvironmentGrant[];
   readonly environmentSelection?: "hidden" | "model";
   readonly placements?: Readonly<Record<string, string>>;
@@ -17,4 +17,4 @@ export interface PiOptions {
   readonly output?: { readonly schema: boolean | Readonly<Record<string, unknown>>; readonly maxCorrections?: number };
 }
 
-export declare const pi: (options: PiOptions) => PlacedAgentloop;
+export declare const pi: (options?: PiOptions) => PlacedAgentloop;

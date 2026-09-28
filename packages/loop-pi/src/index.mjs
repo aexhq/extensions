@@ -1,4 +1,4 @@
-import { agentloop, component } from "@aexhq/brain";
+import { agentloop, brainEnv, component } from "@aexhq/brain";
 import { z } from "zod";
 const options = z.object({
   environmentSelection: z.enum(["hidden", "model"]).default("hidden"),
@@ -13,7 +13,12 @@ const options = z.object({
     maxCorrections: z.number().int().min(0).max(10).default(2) }).optional(),
 }).strict();
 
-export const pi = agentloop({
+const factory = agentloop({
   options,
   implementation: component(new URL("./loop.component.wasm", import.meta.url)),
 });
+
+export function pi(options = {}) {
+  if (options === null || typeof options !== "object" || Array.isArray(options)) throw new TypeError("pi options must be an object");
+  return factory({ ...options, env: options.env === undefined ? brainEnv({ name: "brain" }) : options.env });
+}

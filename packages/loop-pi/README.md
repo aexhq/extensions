@@ -19,16 +19,17 @@ or a Tool that owns the whole operation. Pi has no per-tool scheduling flag or b
 Its steering and follow-up queues are host application concerns and are not ported.
 
 ```ts
-import { brainEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 
-const loopRuntime = brainEnv({ name: "brain" });
 const session = await brain.sessions.create({
-  agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
+  agentloop: pi(),
   model,
   tools: [read({ env: workspace })],
 });
 ```
+
+Pi defaults to `brainEnv({ name: "brain" })`. Pass `pi({ env, ...options })` to
+override placement, or `pi({ contextWindow: 64_000 })` to configure the default.
 
 The component is built by this package's publisher. Brain consumes the resulting Component and
 does not compile its JavaScript source.
@@ -67,7 +68,7 @@ siblings. For hosted applications, publish bytes with Aex's attachment API and r
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-This release targets Brain SDK 0.35.1 and `brain:agentloop@0.2.0`. Existing sessions retain
+This release targets Brain SDK 0.36.0 and `brain:agentloop@0.2.0`. Existing sessions retain
 their immutable loop implementation. When upgrading from the older implicit-completion
 contract, the server preflight refuses unclosed sessions. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.

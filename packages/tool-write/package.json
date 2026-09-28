@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/tool-write",
-  "version": "8.1.4",
+  "version": "8.1.5",
   "description": "Write UTF-8 text to a file in the Environment workspace, creating parent directories.",
   "license": "MIT",
   "homepage": "https://aex.dev",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.35.1",
+    "@aexhq/brain": "0.36.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
