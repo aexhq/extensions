@@ -26,7 +26,8 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
 
-Agentloops name their Environment explicitly. Tools default to the registering application;
+Pi defaults to Brain with `pi()`; pass `{ env }` to choose another Environment.
+Other Agentloops require explicit placement. Tools default to the registering application;
 pass `{ env }` to place them elsewhere. The loop packages ship precompiled WebAssembly
 Components. Workspace Tools ship browser-safe bindings and native Node executables, and run
 in a prepared Node host, Docker workspace or Modal profile with the package runtime.
@@ -40,15 +41,12 @@ Continue the [Brain quickstart](https://aex.dev/brain/docs/quickstart) with its 
 and `model` configuration. Install the tool packages and add them to the session:
 
 ```ts
-import { brainEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 import { bash } from "@aexhq/tool-bash";
 import { read } from "@aexhq/tool-read";
 
-const loopRuntime = brainEnv({ name: "brain" });
-
 const session = await brain.sessions.create({
-  agentloop: pi({ env: loopRuntime, contextWindow: 200_000 }),
+  agentloop: pi({ contextWindow: 200_000 }),
   model,
   tools: [read(), bash()],
 });
@@ -71,8 +69,10 @@ Application-resident Tools use the same public factory with `run`. Their code ex
 application process, and `ctx.emit` records application-defined events in the session journal.
 Tool schemas describe accepted inputs; defaulted arguments are optional and the runtime applies
 Zod defaults and transforms before invoking the handler. Ordinary objects strip extra fields;
-strict objects reject them. Put client use, including session creation, inside `try/finally`
-and call `await brain.close()` when finished. Use `session.interrupt()` to stop a turn, `end()`
+strict objects reject them. The shared client tool connection suspends after five idle seconds
+and reconnects before the same live client starts more work. Set `connectionIdleTimeoutMs: 0`
+when other callers or future autonomous events must reach its tools. Call `await brain.close()`
+when the application is finished with that client. Use `session.interrupt()` to stop a turn, `end()`
 to finish a conversation, and `delete()` to remove its stored history.
 
 ```ts
@@ -124,7 +124,7 @@ to the model. See the loop packages' `placements` and `environmentSelection` opt
 
 Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
 in applications so extension bindings share its TypeScript brands. The current packages use
-Brain SDK 0.35.1. Images and PDFs use HTTPS URLs in user input and Tool results.
+Brain SDK 0.36.0. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.

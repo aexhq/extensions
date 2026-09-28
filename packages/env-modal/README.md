@@ -7,7 +7,7 @@ The controller holds provider credentials; commands run as UID/GID 1000 with no 
 capabilities or privilege escalation. Fixed commands receive one JSON packet on stdin and return one JSON value on stdout.
 Packaged Tools use the invocation service bridge. Callback credentials stay in the controller.
 
-This release uses Brain SDK/runtime 0.35.1. The controller commits successful Tool
+This release uses Brain SDK/runtime 0.36.0. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.

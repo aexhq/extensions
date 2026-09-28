@@ -69,7 +69,7 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-This release targets Brain SDK 0.35.1 and `brain:agentloop@0.2.0`. Existing sessions retain
+This release targets Brain SDK 0.36.0 and `brain:agentloop@0.2.0`. Existing sessions retain
 their immutable loop implementation. When upgrading from the older implicit-completion
 contract, the server preflight refuses unclosed sessions. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
