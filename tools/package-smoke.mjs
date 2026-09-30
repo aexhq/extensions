@@ -87,9 +87,15 @@ const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.5", entry: "./runtime", export: "read", configuration: {} });
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.6", entry: "./runtime", export: "read", configuration: {} });
 assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
 assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
+const runtimes = await Promise.all(["pi", "codex"].map(async name => {
+  const factory = new URL(import.meta.resolve("@aexhq/agentloop-" + name));
+  return readFile(new URL("./runtime.component.wasm", factory));
+}));
+assert.deepEqual(runtimes[0], runtimes[1], "official loops must share one runtime artifact");
+
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
   const toolPackage = new URL(import.meta.resolve("@aexhq/tool-" + name + "/package.json"));
   const document = JSON.parse(await readFile(toolPackage, "utf8"));

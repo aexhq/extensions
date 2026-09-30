@@ -29,7 +29,7 @@ are optional composition outside the extension. See the [standalone Modal exampl
 Pi defaults to Brain with `pi()`; pass `{ env }` to choose another Environment.
 Other Agentloops require explicit placement. Tools default to the registering application;
 pass `{ env }` to place them elsewhere. The loop packages ship precompiled WebAssembly
-Components. Workspace Tools ship browser-safe bindings and native Node executables, and run
+runtimes with separate program bundles. Workspace Tools ship browser-safe bindings and native Node executables, and run
 in a prepared Node host, Docker workspace or Modal profile with the package runtime.
 Both official loops support hosted JSON Schema output correction in the same turn, including
 turns started with `session.submit()`. Configure `output: { schema, maxCorrections: 2 }` on the loop;
@@ -52,7 +52,7 @@ const session = await brain.sessions.create({
 });
 ```
 
-Brain accepts components and opaque driver implementations; it does not compile extension source
+Brain accepts Components, runtime/program descriptors and opaque driver implementations; it does not bundle extension source
 or install language packages. Each extension publisher owns its build, while the chosen
 Environment owns execution and resource enforcement.
 
@@ -124,7 +124,7 @@ to the model. See the loop packages' `placements` and `environmentSelection` opt
 
 Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
 in applications so extension bindings share its TypeScript brands. The current packages use
-Brain SDK 0.36.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+Brain SDK 0.37.0. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.
