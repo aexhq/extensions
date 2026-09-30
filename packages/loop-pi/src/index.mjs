@@ -1,4 +1,4 @@
-import { agentloop, brainEnv, component } from "@aexhq/brain";
+import { agentloop, brainEnv, component, program } from "@aexhq/brain";
 import { z } from "zod";
 const options = z.object({
   environmentSelection: z.enum(["hidden", "model"]).default("hidden"),
@@ -15,7 +15,10 @@ const options = z.object({
 
 const factory = agentloop({
   options,
-  implementation: component(new URL("./loop.component.wasm", import.meta.url)),
+  implementation: program({
+    runtime: component(new URL("./runtime.component.wasm", import.meta.url)),
+    source: new URL("./loop.program.js", import.meta.url),
+  }),
 });
 
 export function pi(options = {}) {

@@ -4,8 +4,8 @@ A Codex-style agent loop for Brain: a semantic port of the Codex agent loop,
 pinned against [openai/codex](https://github.com/openai/codex) tag
 `rust-v0.151.0` (= npm `@openai/codex@0.151.0`). The published packages cannot be imported here â€”
 `@openai/codex` ships a precompiled Rust binary and `@openai/codex-sdk` spawns it as a subprocess â€”
-so this package ships a WebAssembly Component that reproduces the loop contract through Brain's
-Agentloop host imports:
+so this package ships a program bundle and a shared WebAssembly JavaScript runtime that
+reproduce the loop contract through Brain's Agentloop host imports:
 
 - each sampling step re-sends the full history; tool calls execute **one at a time** and all
   outputs are appended in the original call order before the next sampling step;
@@ -33,8 +33,8 @@ const session = await brain.sessions.create({
 });
 ```
 
-The component is built by this package's publisher. Brain consumes the resulting Component and
-does not compile its JavaScript source.
+The publisher builds the shared runtime once and bundles each loop's source separately.
+Brain loads both artifacts through its Environment loader.
 
 The loop reads paginated session Events on user and background activations. After saving
 selected observations in the transcript, it acknowledges Brain's durable processed-through
@@ -69,7 +69,7 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-This release targets Brain SDK 0.36.0 and `brain:agentloop@0.2.0`. Existing sessions retain
+This release targets Brain SDK 0.37.0 and `brain:agentloop@0.2.0`. Existing sessions retain
 their immutable loop implementation. When upgrading from the older implicit-completion
 contract, the server preflight refuses unclosed sessions. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
@@ -87,3 +87,14 @@ answer emits `assistant_message`; its parsed value is the turn result. Refusal, 
 provider failure and cancellation do not trigger formatting retries. Corrections default to
 two, with a supported range of zero through ten. Application business rules still belong in
 its tools or persistence boundary.
+
+## Prepare once for several sessions
+
+Version 8 requires Brain SDK/server 0.37 or newer. The package contains a program bundle and
+a JavaScript runtime shared with the other official loop. Imports remain passive.
+Use `const loop = await brain.prepare(codex({ env }))` before serving requests, then pass
+`loop` to each session. Aex exposes the same method and prepares hosted session code during setup.
+
+Replace `brain.admit(loop)` with `brain.prepare(loop)` and reuse the returned placement directly.
+Its implementation contains both the program and runtime content addresses. Session end or
+deletion does not release shared preparation.

@@ -2,8 +2,8 @@
 
 A pi-style agent loop for Brain: a semantic port of the pi coding agent's loop,
 pinned against [earendil-works/pi](https://github.com/earendil-works/pi) tag
-`v0.84.4` (`@earendil-works/pi-agent-core@0.84.4`). The package ships a precompiled
-WebAssembly Component that drives each turn through Brain's Agentloop host imports and reproduces
+`v0.84.4` (`@earendil-works/pi-agent-core@0.84.4`). The package ships a program bundle and a shared WebAssembly JavaScript runtime
+that drive each turn through Brain's Agentloop host imports and reproduce
 pi's per-turn contract:
 
 - tool calls are issued as one **parallel batch**, and results return in assistant source order;
@@ -31,8 +31,8 @@ const session = await brain.sessions.create({
 Pi defaults to `brainEnv({ name: "brain" })`. Pass `pi({ env, ...options })` to
 override placement, or `pi({ contextWindow: 64_000 })` to configure the default.
 
-The component is built by this package's publisher. Brain consumes the resulting Component and
-does not compile its JavaScript source.
+The publisher builds the shared runtime once and bundles each loop's source separately.
+Brain loads both artifacts through its Environment loader.
 
 The loop reads paginated session Events on user and background activations. After saving
 selected observations in the transcript, it acknowledges Brain's durable processed-through
@@ -68,7 +68,7 @@ siblings. For hosted applications, publish bytes with Aex's attachment API and r
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-This release targets Brain SDK 0.36.0 and `brain:agentloop@0.2.0`. Existing sessions retain
+This release targets Brain SDK 0.37.0 and `brain:agentloop@0.2.0`. Existing sessions retain
 their immutable loop implementation. When upgrading from the older implicit-completion
 contract, the server preflight refuses unclosed sessions. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
@@ -85,9 +85,9 @@ Ordinary `send()` returns session state, so `idle` alone does not establish turn
 
 From a checkout of this repository, run `npm run test:logic -w packages/loop-pi` or
 `npm run test:logic:watch -w packages/loop-pi`. These execute the existing JavaScript logic tests
-without rebuilding Wasm. Run `npm test -w packages/loop-pi` for the Component build and package
+without rebuilding Wasm. Run `npm test -w packages/loop-pi` for the runtime build and package
 tests, then the compiled journeys described in the repository README. All release gates remain
-required. A rebuilt Component needs a new admission and session. Package source is not a public
+required. Changed code needs preparation and a new session. Package source is not a public
 logic-library entry point, and existing sessions keep their admitted implementation.
 
 ## Hosted structured output
@@ -103,3 +103,15 @@ answer emits `assistant_message`; its parsed value is the turn result. Refusal, 
 provider failure and cancellation do not trigger formatting retries. Corrections default to
 two, with a supported range of zero through ten. Application business rules still belong in
 its tools or persistence boundary.
+
+## Prepare once for several sessions
+
+Version 8 requires Brain SDK/server 0.37 or newer. The package contains a small program bundle
+and a JavaScript runtime shared with the other official loop. Imports remain passive.
+Use `const loop = await brain.prepare(pi({ env }))` before serving requests,
+then pass `loop` to each session. Aex exposes the same method and prepares hosted session code
+automatically during session setup.
+
+If you previously used `brain.admit(loop)`, replace it with `brain.prepare(loop)` and reuse the
+returned placement directly. Its implementation contains both the program and runtime content
+addresses. Session end or deletion does not release this shared preparation.
