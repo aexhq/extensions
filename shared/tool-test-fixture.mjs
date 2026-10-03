@@ -19,7 +19,7 @@ export function toolTests(name, factory, runtime, invalidInput) {
     assert.equal(source.definition.name, name);
     assert.equal(source.environment, env);
     assert.equal("needs" in source, false);
-    assert.deepEqual(source.implementation, { type: "node_package", package: `@aexhq/tool-${name}`, version: "8.1.6", entry: "./runtime", export: name, configuration: {} });
+    assert.deepEqual(source.implementation, { type: "node_package", package: `@aexhq/tool-${name}`, version: "8.1.7", entry: "./runtime", export: name, configuration: {} });
     assert.throws(() => factory({ env, typo: true }), /does not accept options/u);
   });
 

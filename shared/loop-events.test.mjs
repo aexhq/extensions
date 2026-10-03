@@ -5,18 +5,18 @@ import { runCodex } from "../packages/loop-codex/src/logic.mjs";
 import { toolOutput, toolResult } from "./tool-output.mjs";
 
 for (const run of [runPi, runCodex]) {
-  test(`${run.name} acknowledges async results and finish without duplicating a provider reply`, async () => {
+  test(`${run.name} remembers async results and finish without duplicating a provider reply`, async () => {
     const saved = { transcript: [], kv: {} };
     const history = [];
     const requests = [];
     const context = {
       environments: { list: async () => [] },
-      kv: { read: key => saved.kv[key], put: (key, value) => { saved.kv[key] = value; } },
-      events: after => ({ events: history.filter(event => event.sequence > after), next_cursor: history.at(-1)?.sequence ?? after }),
-      acknowledge: through => { saved.kv["brain.last_activation"] = through; },
+      kv: { get: key => saved.kv[key], set: (key, value) => { saved.kv[key] = value; } },
+      readEvents: after => ({ events: history.filter(event => event.sequence > after), next_cursor: history.at(-1)?.sequence ?? after }),
+
       setTranscript: messages => { saved.transcript = structuredClone(messages); },
       emit() {},
-      dispatch: calls => {
+      callTools: calls => {
         assert.equal(calls.length, 1);
         const returned = { sequence: 2, event_type: "tool_call_returned", data: { sequence: 1 } };
         history.push(returned);
@@ -30,26 +30,26 @@ for (const run of [runPi, runCodex]) {
       },
     };
     const base = { configuration: { compaction: false }, tools: [{ name: "work", environments: ["sandbox"], input_schema: {} }] };
-    await run({ ...base, input: { message: "start" }, transcript: [], kv: {} }, context);
+    await run({ ...base, input: { message: "start" }, transcript: [], kv: {}, ...context });
     assert.deepEqual(requests[1].messages.at(-1).content[0].content, { status: "running", results: [] });
-    assert.equal(saved.kv["brain.last_activation"], 2);
+    assert.equal(saved.kv["observed"], 2);
     const image = { type: "image", url: "https://example.com/result.png" };
     history.push(
       { sequence: 3, event_type: "tool_result_emitted", data: { sequence: 1, result: { call_id: "call", is_error: false, output: toolOutput("later", [image]) } } },
       { sequence: 4, event_type: "tool_call_ended", data: { sequence: 1, outcome: { status: "ok", value: null } } },
     );
-    await run({ ...base, ...structuredClone(saved) }, context);
+    await run({ ...base, ...structuredClone(saved), ...context });
     assert.equal(requests.length, 3);
-    assert.equal(saved.kv["brain.last_activation"], 4);
+    assert.equal(saved.kv["observed"], 4);
     assert.equal(saved.transcript.flatMap(message => message.content).filter(block => block.type === "tool_result").length, 1);
     assert.deepEqual(requests[2].messages.flatMap(message => message.content).filter(block => block.type === "image"), [image]);
     assert.match(JSON.stringify(requests[2].messages), /later/u);
 
     history.push({ sequence: 5, event_type: "progress", data: {} });
     const before = structuredClone(saved.transcript);
-    assert.deepEqual(await run({ ...base, ...structuredClone(saved) }, context), {});
+    assert.deepEqual(await run({ ...base, ...structuredClone(saved), ...context }), {});
     assert.equal(requests.length, 3, "a custom progress observation can be dismissed without a model call");
-    assert.equal(saved.kv["brain.last_activation"], 5);
+    assert.equal(saved.kv["observed"], 5);
     assert.deepEqual(saved.transcript, before);
   });
 }

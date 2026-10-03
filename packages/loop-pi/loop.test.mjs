@@ -13,19 +13,18 @@ const host = (responses, { results = {} } = {}) => {
     environments: { list: async () => [] },
     setTranscript(messages) { record.transcript = structuredClone(messages); record.writes.push("transcript"); },
     kv: {
-      read(key) { return structuredClone(record.kv[key]); },
-      put(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
+      get(key) { return structuredClone(record.kv[key]); },
+      set(key, value) { record.kv[key] = structuredClone(value); record.writes.push(key); },
       delete(key) { delete record.kv[key]; record.writes.push(key); },
     },
-    acknowledge(through) { record.kv["brain.last_activation"] = through; record.writes.push("brain.last_activation"); },
-    events: (after) => ({ events: [], next_cursor: after }),
+    readEvents: (after) => ({ events: [], next_cursor: after }),
     model(request) {
       record.requests.push(structuredClone(request));
       const response = responses.shift();
       assert.ok(response, "the loop called the model more often than the script allows");
       return response;
     },
-    dispatch(calls) {
+    callTools(calls) {
       assert(calls.every((call) => call.environment === "sandbox"));
       record.dispatches.push(calls.map((call) => call.call_id));
       return (results[record.dispatches.length - 1] ?? calls.map((call) => ({ call_id: call.call_id, output: "", is_error: false }))).map(result => finishedResult(result));
@@ -43,12 +42,12 @@ const turn = async (message, fake, { transcript = [], kv = {}, configuration = {
   await runPi({
     input: { message },
     transcript,
-    kv,
     events: [],
     configuration,
     system: "",
     tools: ["bash", "read", "ls", "write"].map((name) => ({ name, description: name, input_schema: { type: "object" }, environments: ["sandbox"] })),
-  }, fake);
+    ...fake,
+  });
   return { transcript: fake.record.transcript, kv: fake.record.kv };
 };
 
@@ -125,7 +124,7 @@ test("compacts older history into a structured checkpoint and keeps the recent t
 test("pages runtime failures into context and preserves the observation cursor across turns", async () => {
   const fake = host([assistant([{ type: "text", text: "acknowledged" }])]);
   const pages = [];
-  fake.events = (after) => {
+  fake.readEvents = (after) => {
     pages.push(after);
     if (after === 0) return { events: [{ sequence: 1, event_type: "turn_failed", data: { code: "interrupted" } }], next_cursor: 1 };
     if (after === 1) return { events: [{ sequence: 2, event_type: "environment_unreachable", data: { environment_id: "env_browser" } }], next_cursor: 2 };
@@ -136,9 +135,9 @@ test("pages runtime failures into context and preserves the observation cursor a
   assert.match(fake.record.requests[0].messages[0].content[0].text, /interrupted/u);
   assert.match(fake.record.requests[0].messages[1].content[0].text, /env_browser/u);
   assert.deepEqual(fake.record.dispatches, []);
-  assert.equal(first.kv["brain.last_activation"], 2);
+  assert.equal(first.kv["observed"], 2);
   const next = host([assistant([{ type: "text", text: "still here" }])]);
-  next.events = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
+  next.readEvents = (after) => { assert.equal(after, 2); return { events: [], next_cursor: after }; };
   const second = await turn("next", next, first);
   assert.equal(second.transcript.filter((message) => message.content.some((block) => block.text?.includes("Runtime observation"))).length, 2);
 });

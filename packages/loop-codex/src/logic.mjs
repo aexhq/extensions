@@ -23,17 +23,17 @@ const messageText = (message) => message.content.filter((block) => block.type ==
 const isPlainUserMessage = (message) =>
   message.role === "user" && message.content.every((block) => block.type === "text") && !messageText(message).startsWith(SUMMARY_PREFIX);
 
-export async function runCodex(input, context) {
-  const options = { contextWindow: 200_000, compaction: true, ...input.configuration };
+export async function runCodex(ctx) {
+  const options = { contextWindow: 200_000, compaction: true, ...ctx.configuration };
   const output = structuredOutput(options.output);
-  const transcript = cloneJson(input.transcript);
-  let observed = await observeEvents(context, transcript, input.kv?.["brain.last_activation"] ?? 0);
-  const saved = await context.kv.read("usage");
+  const transcript = cloneJson(ctx.transcript);
+  let observed = await observeEvents(ctx, transcript, await ctx.kv.get("observed") ?? 0);
+  const saved = await ctx.kv.get("usage");
   const usage = saved === undefined ? { lastTokens: 0 } : cloneJson(saved);
   const usedTokens = () => usage.lastTokens > 0 ? usage.lastTokens : estimateTokens(transcript);
   const shouldCompact = () => options.compaction && usedTokens() >= Math.floor(options.contextWindow * AUTO_COMPACT_RATIO);
   const compact = async () => {
-    const { message, stop_reason } = await context.model({
+    const { message, stop_reason } = await ctx.model({
       response_format: null,
       tools: [],
       messages: [...transcript, { role: "user", content: [{ type: "text", text: SUMMARIZATION_PROMPT }] }],
@@ -54,22 +54,22 @@ export async function runCodex(input, context) {
     usage.lastTokens = 0;
   };
 
-  if (input.input != null) transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
-  await context.setTranscript(transcript);
-  await context.acknowledge(observed.through);
-  if (input.input == null && !observed.actionable) return {};
+  if (ctx.input != null) transcript.push({ role: "user", content: [{ type: "text", text: ctx.input.message }, ...(ctx.input.media ?? [])] });
+  await ctx.setTranscript(transcript);
+  await ctx.kv.set("observed", observed.through);
+  if (ctx.input == null && !observed.actionable) return {};
   for (;;) {
-    let placement = toolPlacement(await refreshTools(input.tools, context), options);
+    let placement = toolPlacement(await refreshTools(ctx.tools, ctx), options);
     if (shouldCompact()) {
       await compact();
-      await context.setTranscript(transcript);
-      await context.kv.put("usage", usage);
+      await ctx.setTranscript(transcript);
+      await ctx.kv.set("usage", usage);
     }
-    const response = await context.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
+    const response = await ctx.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
     usage.lastTokens = (response.usage.total_input_tokens ?? response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     transcript.push(response.message);
-    await context.setTranscript(transcript);
-    await context.kv.put("usage", usage);
+    await ctx.setTranscript(transcript);
+    await ctx.kv.set("usage", usage);
     const calls = response.message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
@@ -77,25 +77,25 @@ export async function runCodex(input, context) {
       const final = output?.accept(messageText(response.message), response.stop_reason);
       if (final?.correction) {
         transcript.push(final.correction);
-        await context.setTranscript(transcript);
+        await ctx.setTranscript(transcript);
         continue;
       }
-      await context.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
+      await ctx.emit("output_emitted", { type: "assistant_message", message: messageText(response.message) });
       return final ? { result: final.value } : {};
     }
     if (output?.correcting) output.rejectTools();
     const results = [];
     const consumed = new Set();
     for (const call of calls) {
-      placement = toolPlacement(await refreshTools(input.tools, context), options);
-      const [result] = await context.dispatch([placement.invocation(call)]);
+      placement = toolPlacement(await refreshTools(ctx.tools, ctx), options);
+      const [result] = await ctx.callTools([placement.invocation(call)]);
       results.push(toolResult(call.call_id, result));
       for (const event of result.events) consumed.add(event.sequence);
     }
     transcript.push({ role: "user", content: results });
-    observed = await observeEvents(context, transcript, observed.through, consumed);
-    await context.setTranscript(transcript);
-    await context.acknowledge(observed.through);
+    observed = await observeEvents(ctx, transcript, observed.through, consumed);
+    await ctx.setTranscript(transcript);
+    await ctx.kv.set("observed", observed.through);
   }
 }
 

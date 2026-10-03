@@ -207,7 +207,7 @@ export function loopJourneys(name, loop) {
     assert.equal(f.requests.length, 3);
   });
 
-  test(`${name}: model failure preserves acknowledged input for explicit continuation`, { timeout: 30_000 }, async (t) => {
+  test(`${name}: model failure preserves saved input for explicit continuation`, { timeout: 30_000 }, async (t) => {
     const f = await fixture(t, [
       () => ({ error: "provider unavailable" }),
       (body) => {
