@@ -37,12 +37,12 @@ The publisher builds the shared runtime once and bundles each loop's source sepa
 Brain loads both artifacts through its Environment loader.
 
 The loop reads paginated session Events on user and background activations. After saving
-selected observations in the transcript, it acknowledges Brain's durable processed-through
-sequence (`brain.last_activation`). Return ends a Tool's synchronous part; explicit finish ends
+selected observations in the transcript, it saves its own observation position in KV.
+Brain completes delivered event batches when the activation returns successfully. Return ends a Tool's synchronous part; explicit finish ends
 its whole execution. A dispatch reply presents the observed results and whether the Tool is
 still running. Later results and finish are presented as observations and wake a model call,
 without inserting a user prompt. An activation with no new actionable observations only
-acknowledges its cursor. Results already consumed during dispatch are not presented again. For unanswered calls in the last saved
+saves its observation position. Results already consumed during dispatch are not presented again. For unanswered calls in the last saved
 assistant message, it inserts error Tool results explaining that the turn was interrupted and
 the operation may have run. Saved results, media and native provider state are preserved.
 Interrupted turns and environment failures also enter the transcript as runtime observations.
@@ -57,9 +57,9 @@ explicit `placements: { toolName: "environmentName" }` option. Set
 schema. The loop unwraps that choice before dispatch; Brain validates the selected pair and the
 canonical input. Both modes use the same session Tool placements.
 
-Transcript changes and `ctx.kv.read/put/delete` use Brain's state services. KV mutations are
+Transcript changes and `ctx.kv.get/set/delete` use Brain's state services. KV mutations are
 committed inline; missing keys remain distinct from stored JSON null. A later model or
-Tool failure preserves acknowledged writes; turn output contains only the result. Retained
+Tool failure preserves completed writes; turn output contains only the result. Retained
 native model blocks pass through unchanged, and user images enter model context as media.
 Successful Tool outputs shaped as
 `{ type: "aex_tool_output", version: 1, content, media: [{ type: "image", url }] }`
@@ -69,8 +69,8 @@ For hosted applications, publish bytes with Aex's attachment API and return its 
 Compaction explicitly resets the response format and installs a summary only after `end_turn`;
 a truncated, refused, or unknown summary leaves the original saved context intact.
 
-This release targets Brain SDK 0.37.0 and `brain:agentloop@0.2.0`. Existing sessions retain
-their immutable loop implementation. When upgrading from the older implicit-completion
+This release targets Brain SDK 0.38.0 and `brain:agentloop@0.2.0`. Existing sessions retain
+their immutable loop implementation. When upgrading from the explicit Agentloop acknowledgement
 contract, the server preflight refuses unclosed sessions. Keep matching
 server/artifacts for recovery. An upgrade does not migrate or delete session data.
 

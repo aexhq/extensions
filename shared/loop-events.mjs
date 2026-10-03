@@ -4,7 +4,7 @@ export async function observeEvents(context, transcript, after, consumed = new S
   const observations = [];
   let reason;
   for (;;) {
-    const page = await context.events(after);
+    const page = await context.readEvents(after);
     if (page.events.length === 0) break;
     for (const event of page.events) {
       if (consumed.has(event.sequence)) continue;

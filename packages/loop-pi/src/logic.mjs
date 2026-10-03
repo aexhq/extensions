@@ -56,18 +56,18 @@ const blockText = (block) => {
 const serializeConversation = (messages) =>
   messages.map((message) => `${message.role}:\n${message.content.map(blockText).join("\n")}`).join("\n\n");
 
-export async function runPi(input, context) {
+export async function runPi(ctx) {
   const options = {
     contextWindow: 200_000,
     reserveTokens: 16_384,
     keepRecentTokens: 20_000,
     compaction: true,
-    ...input.configuration,
+    ...ctx.configuration,
   };
   const output = structuredOutput(options.output);
-  const transcript = cloneJson(input.transcript);
-  let observed = await observeEvents(context, transcript, input.kv?.["brain.last_activation"] ?? 0);
-  const saved = await context.kv.read("checkpoint");
+  const transcript = cloneJson(ctx.transcript);
+  let observed = await observeEvents(ctx, transcript, await ctx.kv.get("observed") ?? 0);
+  const saved = await ctx.kv.get("checkpoint");
   const checkpoint = saved === undefined ? { summary: null } : cloneJson(saved);
   const body = () => checkpoint.summary === null ? transcript : transcript.slice(1);
   const shouldCompact = () =>
@@ -91,7 +91,7 @@ export async function runPi(input, context) {
     if (cut === 0) return;
     const previous = checkpoint.summary === null ? "" : `Previous summary:\n\n${checkpoint.summary}\n\n`;
     const prompt = checkpoint.summary === null ? SUMMARIZATION_PROMPT : `${UPDATE_RULES}${SUMMARIZATION_PROMPT}`;
-    const { message, stop_reason } = await context.model({
+    const { message, stop_reason } = await ctx.model({
       response_format: null,
       tools: [],
       messages: [{ role: "user", content: [{ type: "text", text: `${previous}${serializeConversation(messages.slice(0, cut))}\n\n${prompt}` }, ...messages.slice(0, cut).flatMap(message => message.content.flatMap(block => block.type === "image" || block.type === "file" ? [block] : block.type === "tool_result" ? block.media ?? [] : []))] }],
@@ -103,21 +103,21 @@ export async function runPi(input, context) {
       ...messages.slice(cut));
   };
 
-  if (input.input != null) transcript.push({ role: "user", content: [{ type: "text", text: input.input.message }, ...(input.input.media ?? [])] });
-  await context.setTranscript(transcript);
-  await context.acknowledge(observed.through);
-  if (input.input == null && !observed.actionable) return {};
+  if (ctx.input != null) transcript.push({ role: "user", content: [{ type: "text", text: ctx.input.message }, ...(ctx.input.media ?? [])] });
+  await ctx.setTranscript(transcript);
+  await ctx.kv.set("observed", observed.through);
+  if (ctx.input == null && !observed.actionable) return {};
   for (;;) {
-    const placement = toolPlacement(await refreshTools(input.tools, context), options);
+    const placement = toolPlacement(await refreshTools(ctx.tools, ctx), options);
     if (shouldCompact()) {
       await compact();
-      await context.setTranscript(transcript);
-      await context.kv.put("checkpoint", checkpoint);
+      await ctx.setTranscript(transcript);
+      await ctx.kv.set("checkpoint", checkpoint);
     }
-    const { message, stop_reason } = await context.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
+    const { message, stop_reason } = await ctx.model(output?.request(transcript, placement.definitions) ?? { messages: transcript, tools: placement.definitions });
     transcript.push(message);
-    await context.setTranscript(transcript);
-    await context.kv.put("checkpoint", checkpoint);
+    await ctx.setTranscript(transcript);
+    await ctx.kv.set("checkpoint", checkpoint);
     const calls = message.content
       .filter((block) => block.type === "tool_use")
       .map((block) => ({ call_id: block.id, name: block.name, input: block.input }));
@@ -125,10 +125,10 @@ export async function runPi(input, context) {
       const final = output?.accept(text(message), stop_reason);
       if (final?.correction) {
         transcript.push(final.correction);
-        await context.setTranscript(transcript);
+        await ctx.setTranscript(transcript);
         continue;
       }
-      await context.emit("output_emitted", { type: "assistant_message", message: text(message) });
+      await ctx.emit("output_emitted", { type: "assistant_message", message: text(message) });
       return final ? { result: final.value } : {};
     }
     if (output?.correcting) output.rejectTools();
@@ -137,18 +137,18 @@ export async function runPi(input, context) {
         role: "user",
         content: calls.map((call) => ({ type: "tool_result", tool_use_id: call.call_id, content: TRUNCATED_CALL_MESSAGE, is_error: true })),
       });
-      await context.setTranscript(transcript);
+      await ctx.setTranscript(transcript);
       continue;
     }
-    const results = await context.dispatch(calls.map(placement.invocation));
+    const results = await ctx.callTools(calls.map(placement.invocation));
     const byCall = new Map(results.map((result) => [result.call_id, result]));
     transcript.push({
       role: "user",
       content: calls.map(({ call_id }) => toolResult(call_id, byCall.get(call_id))),
     });
-    observed = await observeEvents(context, transcript, observed.through, new Set(results.flatMap(result => result.events.map(event => event.sequence))));
-    await context.setTranscript(transcript);
-    await context.acknowledge(observed.through);
+    observed = await observeEvents(ctx, transcript, observed.through, new Set(results.flatMap(result => result.events.map(event => event.sequence))));
+    await ctx.setTranscript(transcript);
+    await ctx.kv.set("observed", observed.through);
   }
 }
 

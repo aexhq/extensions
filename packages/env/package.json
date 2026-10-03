@@ -1,6 +1,6 @@
 {
   "name": "@aexhq/env",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "An ordinary Brain Tool for scoped Environment control.",
   "license": "MIT",
   "type": "module",
@@ -39,7 +39,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.37.0",
+    "@aexhq/brain": "0.38.0",
     "zod": "4.4.3"
   },
   "brain": {

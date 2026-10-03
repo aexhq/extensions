@@ -4,7 +4,7 @@ A Playwright Environment and five Tools for Brain: `browser_navigate`, `browser_
 
 The operator supplies a launcher for each allowed profile. Every binding receives a dedicated browser instance, context and page. For a local development deployment:
 
-This release uses Brain SDK/runtime 0.37.0. The controller commits successful Tool
+This release uses Brain SDK/runtime 0.38.0. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
