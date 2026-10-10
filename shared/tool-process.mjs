@@ -1,3 +1,4 @@
+import { callExecution } from "@aexhq/brain/runtime";
 import { z } from "zod";
 import { unknown } from "./environment-server.mjs";
 
@@ -18,11 +19,7 @@ export async function toolProcess(op, child, { fetch = globalThis.fetch, signal,
     let answer;
     try {
       if (finished || !grant.methods.includes(frame.method)) throw new Error("execution service is not granted");
-      const response = await fetch(grant.url, { method: "POST", signal,
-        headers: { authorization: `Bearer ${grant.token}`, "content-type": "application/json" },
-        body: JSON.stringify({ method: frame.method, input: frame.input }) });
-      if (!response.ok) throw new Error(`execution service failed: ${response.status}`);
-      answer = { id: frame.id, output: await response.json() };
+      answer = { id: frame.id, output: await callExecution(grant, frame.method, frame.input, { fetch, signal }) };
       if (frame.method === "finish") finished = true;
     } catch (error) { answer = { id: frame.id, error: String(error.message) }; }
     await child.write(JSON.stringify(answer) + "\n");

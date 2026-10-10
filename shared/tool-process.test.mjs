@@ -3,7 +3,7 @@ import test from "node:test";
 import { PassThrough } from "node:stream";
 import { toolProcess } from "./tool-process.mjs";
 
-const operation = { session_id: "session", environment: "workspace", sequence: 3,
+const operation = { session_id: "ses_000000000000000000000001", environment: "workspace", sequence: 3,
   request: { implementation: {}, input: {}, callback: { url: "https://brain.example/call", token: "secret", methods: ["model", "finish"] } } };
 
 test("the child gets invocation services without credentials and concurrent requests keep their identity", async () => {
@@ -38,5 +38,5 @@ test("missing service grants and uncertain completion cannot claim a committed f
   stdout.end('{"type":"service","id":1,"method":"emit","input":{}}\n{"type":"service","id":2,"method":"finish","input":null}\n{"type":"returned"}\n');
   assert.equal((await result).type, "unknown");
   assert.match(writes.find(value => value.id === 1).error, /not granted/u);
-  assert.match(writes.find(value => value.id === 2).error, /lost acknowledgment/u);
+  assert.match(writes.find(value => value.id === 2).error, /outcome is unknown/u);
 });

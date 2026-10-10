@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { BrainError } from "@aexhq/brain";
 import { environmentHandler, serveEnvironment, accepted, finishExecution, result, deadlineTimer } from "./environment-server.mjs";
 import { commands } from "./environment-test-fixture.mjs";
 
@@ -27,7 +28,10 @@ test("Tool execution requires a completion grant before any effects and accepts 
   const execute = commands()("execute", { implementation: {}, input: {} });
   const missing = structuredClone(execute);
   missing.operation.request.callback.methods = [];
-  await assert.rejects(handle(missing), /completion service/u);
+  const receipt = (await handle(missing)).receipt;
+  assert.equal(receipt.type, "failure");
+  assert.equal(receipt.code, "not_granted");
+  assert.match(receipt.message, /completion service/u);
   assert.equal(effects, 0);
   await handle(execute);
   execute.operation.request.deadline_ms = 3_000_000_000;
@@ -47,6 +51,15 @@ test("successful execution finishes with a durable acknowledgement and never ret
     assert.equal(calls, 1);
     assert.equal(receipt.type, expected);
   }
+});
+
+test("provider failure codes remain stable while uncertain callbacks retain their outcome", async () => {
+  const command = commands()("teardown");
+  const failure = environmentHandler(() => { throw new Error("provider stopped"); });
+  assert.deepEqual((await failure(command)).receipt,
+    { type: "failure", code: "environment_failed", message: "provider stopped", retryable: false });
+  const uncertain = environmentHandler(() => { throw new BrainError(0, "ambiguous", "acknowledgement lost", false); });
+  assert.deepEqual((await uncertain(command)).receipt, { type: "unknown", message: "acknowledgement lost" });
 });
 
 test("deadline timers preserve the original long expiry and unlimited work has no timer", t => {

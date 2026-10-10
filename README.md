@@ -56,6 +56,11 @@ Brain accepts Components, runtime/program descriptors and opaque driver implemen
 or install language packages. Each extension publisher owns its build, while the chosen
 Environment owns execution and resource enforcement.
 
+Environment services use Brain's public `@aexhq/brain/runtime` helpers for command validation,
+authenticated HTTP serving and scoped callbacks. Provider code owns resource allocation,
+isolation and cancellation. See [Write an environment](https://aex.dev/brain/docs/guides/write-an-environment)
+for a service using the same adapters; there is no separate extension-owned wire schema.
+
 These tools run in the registering Node process, using its working directory. Bash must be
 installed, and the process must stay connected while tools are needed. For an isolated workspace,
 follow [env-local setup](packages/env-local/README.md), then pass `{ env: workspace }` to each tool.
@@ -124,7 +129,7 @@ to the model. See the loop packages' `placements` and `environmentSelection` opt
 
 Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
 in applications so extension bindings share its TypeScript brands. The current packages use
-Brain SDK 0.38.0. Images and PDFs use HTTPS URLs in user input and Tool results.
+Brain SDK 0.39.0. Images and PDFs use HTTPS URLs in user input and Tool results.
 Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
 media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
 sessions keep their immutable implementations and require a compatibility check before upgrading.

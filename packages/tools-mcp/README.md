@@ -23,9 +23,13 @@ The client SDK owns transport and protocol negotiation. `connectMcp` disables au
 
 The bridge uses a fixed discovered Tool definition on every call, so an SDK cache refresh cannot change the session's schemas or trigger the header-mismatch resend path. Discovery uses the SDK's bounded pagination. Later list changes do not add or replace placed Tools; authorize a new session for changed definitions.
 
+For OAuth transports, bind configured providers and saved credentials to their authorization
+server as described in the [MCP SDK migration guidance](https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-6qxp-vccf-f47h).
+The application owns those credentials; stdio connections do not use this OAuth flow.
+
 ## Results and failures
 
-The bridge uses Brain SDK 0.38.0 and explicitly finishes each invocation after committing its
+The bridge uses Brain SDK 0.39.0 and explicitly finishes each invocation after committing its
 evidence and normalized result. Return alone does not complete a Brain Tool. A missing deadline
 means no invocation timer; keep the application's host connection and MCP client alive until
 completion or cancellation.

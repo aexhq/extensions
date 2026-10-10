@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
-export function commands(session = randomUUID(), environment = "test") {
+export function commands(session = `ses_${randomUUID().replaceAll("-", "")}`, environment = "test") {
   let sequence = 0;
   return (type, fields = {}) => ({ contract: "environment/v1", operation: {
     session_id: session, environment, sequence: ++sequence, request: { type,

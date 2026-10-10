@@ -1,30 +1,11 @@
-import { createServer } from "node:http";
-import { once } from "node:events";
+import { BrainError } from "@aexhq/brain";
+import { environmentProtocol, finishExecution as finish, reportEnvironment as report } from "@aexhq/brain/runtime";
 import { z } from "zod";
+export { serveEnvironment } from "@aexhq/brain/runtime";
 
 export const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u);
-const sequence = z.number().int().positive().safe();
-const serviceCallback = z.strictObject({ url: z.url(), token: z.string().min(1), methods: z.array(z.string()) });
-const callback = serviceCallback.refine(grant => grant.methods.includes("finish"), "Tool completion service must be granted");
-const command = z.strictObject({
-  contract: z.literal("environment/v1"),
-  operation: z.strictObject({ session_id: identifier, environment: identifier, sequence,
-    template: identifier.optional(), configuration: z.unknown().optional(),
-    binding: z.strictObject({ name: identifier, sequence }).optional(),
-    context: serviceCallback.optional(), reporter: serviceCallback.optional(),
-    request: z.discriminatedUnion("type", [
-      z.strictObject({ type: z.literal("setup"), configuration: z.unknown() }),
-      z.strictObject({ type: z.literal("execute"), implementation: z.unknown(), input: z.unknown(),
-        deadline_ms: sequence.optional(), callback }),
-      z.strictObject({ type: z.literal("call"), name: identifier, input: z.unknown() }),
-      z.strictObject({ type: z.literal("cancel"), target_sequence: sequence }),
-      z.strictObject({ type: z.literal("detach") }), z.strictObject({ type: z.literal("teardown") }),
-    ]),
-  }),
-});
-
-export class EnvironmentError extends Error {
-  constructor(code, message) { super(message); this.code = code; }
+export class EnvironmentError extends BrainError {
+  constructor(code, message) { super(400, code, message, false); }
 }
 export const fail = (code, message) => { throw new EnvironmentError(code, message); };
 export const accepted = () => ({ type: "accepted" });
@@ -35,26 +16,9 @@ export const unknown = message => ({ type: "unknown", message: String(message).s
 export const bindingKey = op => `${op.session_id}/${op.environment}${(op.binding?.sequence ?? 1) === 1 ? "" : `/${op.binding.sequence}`}`;
 
 export async function reportEnvironment(reporter, observation, fetch = globalThis.fetch) {
-  if (reporter === undefined) return;
-  const response = await fetch(reporter.url, { method: "POST",
-    headers: { authorization: `Bearer ${reporter.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ type: "result", output: { observation } }) });
-  if (!response.ok) throw new Error(`Environment observation was not acknowledged: ${response.status}`);
-  return sequence.parse((await response.json()).sequence);
+  if (reporter !== undefined) return report(reporter, { type: "result", output: { observation } }, { fetch });
 }
-
-export async function finishExecution(op, receipt, fetch = globalThis.fetch) {
-  if (receipt.type !== "result") return receipt;
-  const grant = op.request.callback;
-  try {
-    const response = await fetch(grant.url, { method: "POST",
-      headers: { authorization: `Bearer ${grant.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ method: "finish", input: { status: "ok", value: receipt.output } }) });
-    if (!response.ok) return unknown(`Tool completion acknowledgement was lost: ${response.status}`);
-    sequence.parse(await response.json());
-    return receipt;
-  } catch (error) { return unknown(`Tool completion acknowledgement was lost: ${error.message}`); }
-}
+export const finishExecution = (operation, receipt, fetch = globalThis.fetch) => finish(operation, receipt, { fetch });
 
 export function deadlineTimer(milliseconds, expire) {
   let timer;
@@ -70,48 +34,14 @@ export function deadlineTimer(milliseconds, expire) {
 }
 
 export function environmentHandler(handle) {
-  return async (raw, context) => {
-    const { operation } = command.parse(raw);
-    let receipt;
-    try { receipt = await handle(operation, context); }
+  return environmentProtocol(async (operation, context) => {
+    if (operation.request.type === "execute" && !operation.request.callback?.methods.includes("finish")) {
+      fail("not_granted", "Tool completion service must be granted");
+    }
+    try { return await handle(operation, context); }
     catch (error) {
-      receipt = failure(error instanceof EnvironmentError ? error.code : "environment_failed", error.message ?? error);
-    }
-    return { contract: "environment/v1", sequence: operation.sequence, receipt };
-  };
-}
-
-export async function serveEnvironment(handle, { token, authenticate, callback, host = "127.0.0.1", port = 0, maxBodyBytes = 16 * 1024 * 1024 } = {}) {
-  if (authenticate === undefined) z.string().min(1).parse(token);
-  z.number().int().positive().safe().parse(maxBodyBytes);
-  const server = createServer(async (request, response) => {
-    const isCallback = request.url === "/v1/callback" && callback !== undefined;
-    let context;
-    if (!isCallback) {
-      try {
-        if (authenticate !== undefined) context = await authenticate(request.headers);
-        else if (request.headers.authorization !== `Bearer ${token}`) throw new Error("denied");
-      } catch { request.resume(); response.writeHead(401).end(); return; }
-    }
-    if (request.method !== "POST" || (!isCallback && request.url !== "/v1/operations")) { request.resume(); response.writeHead(404).end(); return; }
-    try {
-      let bytes = 0;
-      const chunks = [];
-      for await (const chunk of request) {
-        bytes += chunk.length;
-        if (bytes > maxBodyBytes) { response.writeHead(413).end(); return; }
-        chunks.push(chunk);
-      }
-      const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      const body = isCallback ? await callback(request.headers, input) : await handle(input, context);
-      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
-    } catch (error) {
-      response.writeHead(error instanceof EnvironmentError && error.code === "denied" ? 403 : error instanceof SyntaxError || error instanceof z.ZodError ? 400 : 500,
-        { "content-type": "application/json" }).end(JSON.stringify({ error: String(error.message ?? error).slice(0, 4096) }));
+      if (error instanceof BrainError) throw error;
+      fail("environment_failed", error.message ?? error);
     }
   });
-  server.listen(port, host);
-  await once(server, "listening");
-  return { url: `http://${host.includes(":") ? `[${host}]` : host}:${server.address().port}`,
-    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) };
 }

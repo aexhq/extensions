@@ -9,12 +9,12 @@ import { publicAddress, publicJson } from "../src/outbound.mjs";
 
 const lookup = tool({ name: "lookup", description: "Read a record", input: z.object({ id: z.string().default("A") }),
   output: z.object({ status: z.string() }), run: ({ id }, ctx) => {
-    assert.equal(id, "A"); assert.equal(ctx.sessionId, "session"); return { status: "cancelled" };
+    assert.equal(id, "A"); assert.equal(ctx.sessionId, "ses_000000000000000000000001"); return { status: "cancelled" };
   } });
 const definition = inspectTool(lookup()).definition;
-const invocation = { contract: "http-tool/v1", sessionId: "session", environment: "app", sequence: 3,
+const invocation = { contract: "http-tool/v1", sessionId: "ses_000000000000000000000001", environment: "app", sequence: 3,
   tool: definition, input: {}, deadlineAtMs: Date.now() + 60_000 };
-const command = (request, sequence = 3) => ({ contract: "environment/v1", operation: { session_id: "session", environment: "app", sequence, request } });
+const command = (request, sequence = 3) => ({ contract: "environment/v1", operation: { session_id: "ses_000000000000000000000001", environment: "app", sequence, request } });
 const execute = { type: "execute", implementation: { type: "http_tool", definition }, input: {}, deadline_ms: 5000,
   callback: { url: "http://brain/callback", token: "private-callback", methods: ["finish"] } };
 const binding = { url: "https://app.example/tools", token: "private-app", timeoutMs: 1000, tools: [definition] };
