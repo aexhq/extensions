@@ -7,7 +7,7 @@ import { createToolHandler } from "../dist/handler.mjs";
 import { createHttpEnvironment, serveEnvironment } from "../dist/server.mjs";
 
 const env = application({ name: "app", url: "https://bridge.example", endpoint: "https://app.example/tools", credential: "application-secret" });
-const operation = (request, sequence = 3) => ({ contract: "environment/v1", operation: { session_id: "session", environment: "app", sequence, request } });
+const operation = (request, sequence = 3) => ({ contract: "environment/v1", operation: { session_id: "ses_000000000000000000000001", environment: "app", sequence, request } });
 const authorized = request => assert.equal(request.headers.get("authorization"), "Bearer application-secret");
 
 function fixture(factory, { options = {}, afterReply, beforeAck } = {}) {

@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { callExecution } from "@aexhq/brain/runtime";
 import { descriptor, response, completion } from "./protocol.mjs";
 import { publicJson } from "./outbound.mjs";
 import { environmentHandler, bindingKey, accepted, failure, unknown, result, fail, deadlineTimer, finishExecution } from "../../../shared/environment-server.mjs";
@@ -17,10 +18,8 @@ export function createHttpEnvironment({ authorize, request = publicJson, fetch =
     const call = z.strictObject({ method: z.enum(["result", "returned", "finish"]), input: z.json() }).parse(body);
     if (!execution.grant.methods.includes(call.method)) fail("denied", "invocation method is not granted");
     if (call.method === "finish") execution.finishing = true;
-    const reply = await fetch(execution.grant.url, { method: "POST", redirect: "error", signal: execution.controller.signal,
-      headers: { authorization: `Bearer ${execution.grant.token}`, "content-type": "application/json" }, body: JSON.stringify(call) });
-    if (!reply.ok) throw new Error("invocation update was not acknowledged");
-    const sequence = z.number().int().positive().safe().parse(await reply.json());
+    const sequence = z.number().int().positive().safe().parse(await callExecution(
+      execution.grant, call.method, call.input, { fetch, signal: execution.controller.signal }));
     if (call.method === "finish") execution.committed = true;
     return sequence;
   };

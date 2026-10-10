@@ -21,8 +21,8 @@ const profile = { image: "im-fixture", commands: { calculate: ["python", "/tools
   cpu: 1, memoryMiB: 1024, region: "us", maxLifetimeMs: 2000, maxOutputBytes: 128 };
 const command = (session_id, sequence, type, extra = {}) => ({ contract: "environment/v1",
   operation: { session_id, environment: "workspace", sequence, request: { type, ...extra } } });
-const setup = (id = "first", extra = {}) => command(id, 1, "setup", { configuration: { profile: "cpu", lifetimeMs: 2000, ...extra } });
-const execute = (id = "first", sequence = 2, input = {}) => command(id, sequence, "execute", {
+const setup = (id = "ses_000000000000000000000001", extra = {}) => command(id, 1, "setup", { configuration: { profile: "cpu", lifetimeMs: 2000, ...extra } });
+const execute = (id = "ses_000000000000000000000001", sequence = 2, input = {}) => command(id, sequence, "execute", {
   implementation: { type: "modal_command", name: "calculate" }, input, deadline_ms: 1900, callback: completionGrant });
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), "aex-modal-test-"));
@@ -80,7 +80,7 @@ test("lazy allocation, shared binding, durable invocation identity and terminal 
   const f = await fixture(t);
   assert.equal((await f.env.handle(setup())).receipt.type, "accepted");
   assert.equal(f.created.length, 0);
-  const calls = await Promise.all([f.env.handle(execute("first", 2, { value: 2 })), f.env.handle(execute("first", 3, { value: 3 }))]);
+  const calls = await Promise.all([f.env.handle(execute("ses_000000000000000000000001", 2, { value: 2 })), f.env.handle(execute("ses_000000000000000000000001", 3, { value: 3 }))]);
   assert.deepEqual(calls.map(item => item.receipt.output), [{ value: 2 }, { value: 3 }]);
   assert.equal(f.created.length, 1);
   assert.equal(f.created[0].blockNetwork, true);
@@ -91,11 +91,11 @@ test("lazy allocation, shared binding, durable invocation identity and terminal 
   f.env.close(); await f.open();
   assert.equal((await f.env.handle(execute())).receipt.type, "unknown");
   assert.equal(f.executions.length, 2);
-  assert.equal((await f.env.handle(execute("first", 4))).receipt.type, "result");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 4))).receipt.type, "result");
   assert.equal(f.created.length, 1);
-  assert.equal((await f.env.handle(command("first", 5, "detach"))).receipt.type, "accepted");
+  assert.equal((await f.env.handle(command("ses_000000000000000000000001", 5, "detach"))).receipt.type, "accepted");
   assert.equal((await f.resources.get("sb-1").poll()), 137);
-  assert.equal((await f.env.handle(execute("first", 6))).receipt.code, "resource_lost");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 6))).receipt.code, "resource_lost");
   assert.equal(f.reports.at(-1).terminal, true);
   assert.ok(f.reports.at(-1).unitsMs <= 1000);
   const delivered = f.reports.length;
@@ -111,7 +111,7 @@ test("a failed terminal report is retried until acknowledged after restart", asy
   } } });
   await f.env.handle(setup());
   await f.env.handle(execute());
-  assert.equal((await f.env.handle(command("first", 3, "teardown"))).receipt.type, "unknown");
+  assert.equal((await f.env.handle(command("ses_000000000000000000000001", 3, "teardown"))).receipt.type, "unknown");
   assert.equal(await f.resources.get("sb-1").poll(), 137);
   f.env.close(); await f.open();
   assert.ok((await f.env.reconcile()).every(item => !item.error));
@@ -129,12 +129,12 @@ test("turn completion terminates the configured sandbox and never allocates an u
   assert.deepEqual((await f.env.handle(setup())).receipt, registered);
   assert.equal((await f.env.handle(execute())).receipt.type, "result");
   const end = id => command(id, 3, "call", { name: "terminate", input: { sequence: 1 } });
-  assert.deepEqual((await f.env.handle(end("first"))).receipt, { type: "result", output: null });
+  assert.deepEqual((await f.env.handle(end("ses_000000000000000000000001"))).receipt, { type: "result", output: null });
   assert.equal(await f.resources.get("sb-1").poll(), 137);
   assert.equal(f.reports.at(-1).terminal, true);
-  assert.equal((await f.env.handle(execute("first", 4))).receipt.code, "resource_lost");
-  await f.env.handle(setup("unused"));
-  assert.equal((await f.env.handle(end("unused"))).receipt.type, "result");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 4))).receipt.code, "resource_lost");
+  await f.env.handle(setup("ses_000000000000000000000003"));
+  assert.equal((await f.env.handle(end("ses_000000000000000000000003"))).receipt.type, "result");
   assert.equal(f.created.length, 1);
   assert.equal(f.reports.at(-1).unitsMs, 0);
   assert.equal(f.reports.at(-1).terminal, true);
@@ -162,12 +162,12 @@ test("unknown allocation is never recreated after controller restart", async t =
   await f.env.handle(setup());
   assert.equal((await f.env.handle(execute())).receipt.type, "unknown");
   f.env.close(); await f.open();
-  assert.equal((await f.env.handle(execute("first", 3))).receipt.type, "unknown");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 3))).receipt.type, "unknown");
   assert.ok((await f.env.reconcile())[0].error);
-  assert.equal((await f.env.handle(command("first", 4, "teardown"))).receipt.type, "unknown");
+  assert.equal((await f.env.handle(command("ses_000000000000000000000001", 4, "teardown"))).receipt.type, "unknown");
   assert.equal(f.created.length, 1);
   assert.equal(f.reports.some(report => report.terminal), false);
-  await f.env.recover({ sessionId: "first", environment: "workspace", sandboxId: "sb-1" });
+  await f.env.recover({ sessionId: "ses_000000000000000000000001", environment: "workspace", sandboxId: "sb-1" });
   assert.equal(f.reports.at(-1).terminal, true);
 });
 
@@ -179,8 +179,8 @@ test("admission, immutable configuration and command catalog deny widening befor
     return expiresAt ??= Date.now() + 1600;
   } } });
   assert.equal((await f.env.handle(setup())).receipt.type, "failure");
-  assert.equal((await f.env.handle(setup("first", { authorization: "approved" }))).receipt.type, "accepted");
-  assert.equal((await f.env.handle(setup("first", { authorization: "approved", lifetimeMs: 900 }))).receipt.code, "conflict");
+  assert.equal((await f.env.handle(setup("ses_000000000000000000000001", { authorization: "approved" }))).receipt.type, "accepted");
+  assert.equal((await f.env.handle(setup("ses_000000000000000000000001", { authorization: "approved", lifetimeMs: 900 }))).receipt.code, "conflict");
   const arbitrary = execute(); arbitrary.operation.request.implementation.name = "arbitrary";
   assert.equal((await f.env.handle(arbitrary)).receipt.code, "unsupported");
   const callback = execute();
@@ -189,24 +189,24 @@ test("admission, immutable configuration and command catalog deny widening befor
   assert.deepEqual((await f.env.handle(callback)).receipt.output, {});
   assert.equal(f.executions[0].opts.env, undefined);
   assert.deepEqual(f.executions[0].packet, { input: {}, configuration: { callback: "application-scoped", cpu: 999 },
-    invocation: { sessionId: "first", environment: "workspace", sequence: 2 } });
+    invocation: { sessionId: "ses_000000000000000000000001", environment: "workspace", sequence: 2 } });
   assert.equal(f.created[0].cpu, 1);
   active = false;
-  assert.equal((await f.env.handle(execute("first", 3))).receipt.type, "failure");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 3))).receipt.type, "failure");
   assert.equal(f.executions.length, 1);
-  assert.equal((await f.env.handle(command("first", 4, "teardown"))).receipt.type, "accepted");
+  assert.equal((await f.env.handle(command("ses_000000000000000000000001", 4, "teardown"))).receipt.type, "accepted");
   assert.equal(f.reports.at(-1).terminal, true);
 });
 
 test("different bindings allocate different resources and expired bindings never allocate", async t => {
   const f = await fixture(t);
-  await f.env.handle(setup()); await f.env.handle(setup("second"));
-  await f.env.handle(execute()); await f.env.handle(execute("second"));
+  await f.env.handle(setup()); await f.env.handle(setup("ses_000000000000000000000002"));
+  await f.env.handle(execute()); await f.env.handle(execute("ses_000000000000000000000002"));
   assert.equal(f.created.length, 2);
   assert.notEqual(f.created[0].name, f.created[1].name);
-  await f.env.handle(setup("expired", { lifetimeMs: 1 }));
+  await f.env.handle(setup("ses_000000000000000000000004", { lifetimeMs: 1 }));
   await new Promise(resolve => setTimeout(resolve, 5));
-  assert.equal((await f.env.handle(execute("expired"))).receipt.code, "expired");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000004"))).receipt.code, "expired");
   assert.equal(f.created.length, 2);
   assert.equal(f.reports.at(-1).unitsMs, 0);
 });
@@ -214,16 +214,16 @@ test("different bindings allocate different resources and expired bindings never
 test("cancellation waits for resource termination and invalidates the shared binding", async t => {
   const f = await fixture(t, { hang: true });
   await f.env.handle(setup());
-  const pending = f.env.handle(execute("first", 2, { hang: true }));
+  const pending = f.env.handle(execute("ses_000000000000000000000001", 2, { hang: true }));
   while (!f.executions.length) await new Promise(resolve => setImmediate(resolve));
-  assert.equal((await f.env.handle(command("first", 3, "cancel", { target_sequence: 2 }))).receipt.type, "accepted");
+  assert.equal((await f.env.handle(command("ses_000000000000000000000001", 3, "cancel", { target_sequence: 2 }))).receipt.type, "accepted");
   assert.equal((await pending).receipt.code, "cancelled");
-  assert.equal((await f.env.handle(execute("first", 4))).receipt.code, "resource_lost");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 4))).receipt.code, "resource_lost");
 });
 
 test("oversized output terminates compute before returning an output-limit failure", async t => {
   const f = await fixture(t);
   await f.env.handle(setup());
-  assert.equal((await f.env.handle(execute("first", 2, { large: "x".repeat(200) }))).receipt.code, "output_limit");
+  assert.equal((await f.env.handle(execute("ses_000000000000000000000001", 2, { large: "x".repeat(200) }))).receipt.code, "output_limit");
   assert.equal(await f.resources.get("sb-1").poll(), 137);
 });
