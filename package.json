@@ -1,11 +1,11 @@
 {
   "name": "aex-extension",
   "private": true,
-  "description": "Official Agentloop, Tool and Environment extensions built against public Brain contracts",
+  "description": "Official startup harness, Tool and Environment extensions built against public Brain contracts",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.19.0"
   },
   "workspaces": [
     "packages/*"
@@ -14,20 +14,16 @@
     "test:prepare": "node tools/prepare-runtime-tests.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
-    "test:journeys": "node --test --test-concurrency=1 packages/loop-pi/test/journeys.mjs packages/loop-codex/test/journeys.mjs test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
+    "test:journeys": "node --test --test-concurrency=1 test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.39.0",
-    "@babel/core": "8.0.5",
-    "@babel/plugin-transform-unicode-property-regex": "8.0.1",
-    "@bytecodealliance/componentize-js": "0.19.3",
-    "@bytecodealliance/jco": "1.17.9",
+    "@aexhq/brain": "0.40.0",
     "@types/node": "^24.3.0",
     "esbuild": "0.25.9",
     "typescript": "^5.9.2"
   },
   "overrides": {
-    "@bytecodealliance/jco": "1.17.9"
+    "@parcel/watcher": "2.6.0"
   }
 }

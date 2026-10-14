@@ -1,6 +1,6 @@
 # extensions
 
-Official Agentloop, Tool and Environment extensions for Aex. They use only the public
+Official startup harness, Tool and Environment extensions for Aex. They use only the public
 `@aexhq/brain` extension API.
 
 Environment providers are independent of Aex hosting. For example, env-modal accepts the
@@ -10,8 +10,8 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | package | role |
 | --- | --- |
 | [`@aexhq/env`](packages/env/README.md) | Scoped Environment control through an ordinary Tool |
-| `@aexhq/agentloop-pi` | Pi-style agent loop with parallel Tool calls |
-| `@aexhq/agentloop-codex` | Codex-style agent loop with sequential Tool calls |
+| `@aexhq/agentloop-pi` | Upstream Pi startup harness |
+| `@aexhq/agentloop-codex` | Upstream Codex startup harness |
 | [`@aexhq/tool-bash`](packages/tool-bash/README.md) | Run Bash commands |
 | [`@aexhq/tool-edit`](packages/tool-edit/README.md) | Replace one exact text occurrence |
 | [`@aexhq/tool-glob`](packages/tool-glob/README.md) | Find workspace paths by glob pattern |
@@ -26,35 +26,33 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
 
-Pi defaults to Brain with `pi()`; pass `{ env }` to choose another Environment.
-Other Agentloops require explicit placement. Tools default to the registering application;
-pass `{ env }` to place them elsewhere. The loop packages ship precompiled WebAssembly
-runtimes with separate program bundles. Workspace Tools ship browser-safe bindings and native Node executables, and run
-in a prepared Node host, Docker workspace or Modal profile with the package runtime.
-Both official loops support hosted JSON Schema output correction in the same turn, including
-turns started with `session.submit()`. Configure `output: { schema, maxCorrections: 2 }` on the loop;
-correction requests have no tools and only a valid final answer emits `assistant_message`.
-Prompt-based per-send Zod validation and corrective turns are owned by the
-[Aex SDK](https://aex.dev/docs#structured-output).
+The deployment chooses one harness when Brain starts. The Pi and Codex packages export
+Brain's upstream adapters and install their pinned runtimes; they contain no handwritten
+agent loop. OpenCode is available directly through `@aexhq/brain/harness/opencode`.
+See the [Pi startup example](packages/loop-pi/README.md),
+[Codex startup example](packages/loop-codex/README.md), or
+[custom harness guide](https://aex.dev/brain/docs/guides/write-a-loop).
+
+Tools default to the registering application; pass `{ env }` to place them elsewhere.
+Workspace Tools ship browser-safe bindings and native Node executables, and run in a
+prepared Node host, Docker workspace or Modal profile with the package runtime.
+Prompt-based answer validation and corrective turns belong to downstream applications.
 
 Continue the [Brain quickstart](https://aex.dev/brain/docs/quickstart) with its `brain` client
 and `model` configuration. Install the tool packages and add them to the session:
 
 ```ts
-import { pi } from "@aexhq/agentloop-pi";
 import { bash } from "@aexhq/tool-bash";
 import { read } from "@aexhq/tool-read";
 
 const session = await brain.sessions.create({
-  agentloop: pi({ contextWindow: 200_000 }),
   model,
   tools: [read(), bash()],
 });
 ```
 
-Brain accepts Components, runtime/program descriptors and opaque driver implementations; it does not bundle extension source
-or install language packages. Each extension publisher owns its build, while the chosen
-Environment owns execution and resource enforcement.
+Tool publishers own their builds. The chosen Environment loads the implementation and
+enforces its resource grants.
 
 Environment services use Brain's public `@aexhq/brain/runtime` helpers for command validation,
 authenticated HTTP serving and scoped callbacks. Provider code owns resource allocation,
@@ -99,9 +97,11 @@ const tools = [notify()];
 
 ## Brain runtime boundary
 
-These packages consume Brain's public SDK and contracts. Brain is independently usable without
-this repository or Aex. The loops run in fresh Wasm stores, save transcript and kv inline through
-Brain's durable state services, and read interruption/environment Events before asking the model to continue.
+These packages consume Brain SDK 0.40.0 and its public contracts. Brain remains independently
+usable without this repository or Aex. Upstream harnesses own native persistence and compaction;
+Brain owns the journal and commits every mediated model and Tool effect before execution.
+Native state lives beside the journal. Failed or interrupted native activations require a new
+session and are never replayed automatically.
 Brain separates Tool return from completion. Return releases the synchronous caller;
 `ctx.emitResult(value)` can supply observations before or after return, and `ctx.finish(value)`
 commits the final optional result and completion. Both methods accept `{ content: summary }`
@@ -111,39 +111,26 @@ Use `return ctx.finish(value)` for ordinary
 Tools. A Tool that forgets to finish remains open until its original deadline, cancellation or
 Environment loss; without a deadline it can remain open indefinitely.
 
-Results and completion always enter the ordered journal. Pi and Codex choose their model
-messages, save them, then explicitly acknowledge the processed sequence. An event activation
-has no user input. Both loops ask the model to consider new background results and completion;
-an activation containing only already-consumed events is acknowledged without a model call.
-Brain coalesces wakeups for five milliseconds from the first pending event without delaying
-commits. Interrupt cancels unfinished Tools even between turns.
-Environments use automatic lifecycle by default; applications can override it with `environment.lifecycle`.
-Automatic lifecycle runs setup and cleanup without involving the model. Include the ordinary
-`env` Tool separately when the model should inspect or manage authorized Environments.
-Agentloops, Tools and Environment operations share `ctx.environments`; each receives its own
-fixed grants. Long-lived Environment reporters can publish idle observations without retaining
-an execution context. Both loops preserve those observations and their Environment origin. Providers implement
-those operations and enforce their physical resource ceilings. A Tool can be declared in several
-named Environments; the loop either selects a configured placement or presents authorized choices
-to the model. See the loop packages' `placements` and `environmentSelection` options.
+Results and completion enter the ordered journal before the harness receives them.
+Harnesses also consume committed background events. Brain coalesces wakeups for five
+milliseconds without delaying commits. Interrupt cancels unfinished Tools even between turns.
+Environments use automatic lifecycle by default; applications can override it with
+`environment.lifecycle`. Include the ordinary `env` Tool when the model should inspect or
+manage authorized Environments. Tools and harnesses receive their own fixed control grants.
 
-Packages pin their Brain SDK dependency in their manifests. Use the same Brain SDK version
-in applications so extension bindings share its TypeScript brands. The current packages use
-Brain SDK 0.39.0. Images and PDFs use HTTPS URLs in user input and Tool results.
-Configure a publication callback for Browser screenshots and MCP binary media. Pi preserves native
-media during summarization. Deploy the matching Brain runtime, SDK and extensions together; retained
-sessions keep their immutable implementations and require a compatibility check before upgrading.
+The upstream adapters expose a fixed Tool catalogue, with one model-visible name per admitted
+placement. They resolve the current Environment instance on each dispatch. The `env` Tool can
+manage dynamic resources within its grants; upstream adapters do not add new Tool placements
+mid-session. There is no automatic placement fallback.
 
-Loops save state through Brain's public host services; committed mutations survive later failures. Extension
-factories have no `needs`. The chosen Environment prepares ordinary package dependencies before
-imports and execution, and enforces its explicitly configured grants. There is no installer
-inside Brain and no automatic placement fallback. See
-[ADR-046](https://github.com/aexhq/brain/blob/main/references/adrs/2026-09-09-01-minimal-extension-contract.md).
+Packages pin their Brain SDK dependency. Use the same version in applications so extension
+bindings share its TypeScript brands. Pi supports HTTPS image and PDF inputs and Tool results;
+configure a publication callback for Browser screenshots and MCP binary media. The Codex and
+OpenCode adapters currently accept text and require an empty initial transcript.
 
-For dynamic instances, grant the Agentloop `read` access to the template and select
-`environmentSelection: "model"` or an explicit `placements` policy. Both loops refresh
-authorized placements and pin each dispatch to the current Environment reference. Pi dispatches
-parallel batches: put setup or resource changes before dependent calls in separate batches.
+This release requires a new Brain data directory. Old Wasm loops, session-selected executable
+Agentloops and their checkpoints are removed. Deploy the matching Brain runtime, SDK and
+extensions together.
 
 ## Resource lifetimes
 
@@ -159,28 +146,23 @@ the lifetime your application needs:
 
 ## Tests
 
-For quick Pi policy edits, use `npm run test:logic:watch -w packages/loop-pi`; it runs the existing
-logic tests without a Component build. Full tests and compiled journeys still gate release.
-
-Each loop owns its factory/logic tests and `test/journeys.mjs`; shared journey fixtures register
-the same contract scenarios separately for Pi and Codex. Each `packages/tool-*` package owns its
-factory, schemas, runtime and tests; it builds and publishes without depending on another Tool.
-Public-SDK workspace journeys under `test/tools-journeys.mjs` compose all eight packages through
-a local HTTP Environment fixture and verify their results through Brain.
-
 Install Docker, bash and ripgrep, then run `npx playwright install-deps chromium` and
 `npm run test:prepare` to build fixture images and install Chromium. Run `npm test` for
 unit/runtime tests and `npm run package-smoke` for packed consumer composition.
-With the pinned Brain server listening on `127.0.0.1:18092`, token `extension-fixture-token`, and
-model base URL `http://127.0.0.1:18093/v1`, run `npm run test:journeys`. The loop, Environment and MCP packages
-also expose `npm run test:journeys --workspace <package>`. CI starts the pinned Brain image and
-runs every journey. Bash and ripgrep must be installed; their runtime tests fail if unavailable.
-Scripted model responses make these release gates deterministic; they do not measure live model quality.
 
-The new journeys exercise Docker workspace recovery and lost replies, MCP evidence and disconnects,
-and retained browser state with screenshot media through both compiled loops. Runtime tests also
-exercise actual process cancellation and resource loss. No runtime tests are skipped when a
-dependency is unavailable.
+CI runs every Tool, Environment and MCP journey against the pinned Brain image with the
+upstream Pi harness. For local journeys, start Brain on `127.0.0.1:18092` with token
+`extension-fixture-token`, model base URL `http://127.0.0.1:18093/v1`, and:
+
+```json
+{"command":"brain-harness-pi","configuration":{"contextWindow":200000,"maxTokens":8192,"compaction":{"enabled":false}}}
+```
+
+Then run `npm run test:journeys`. The tests exercise real Docker workspace recovery, lost
+replies, MCP errors and cancellation, retained browser state and screenshot media.
+Scripted model responses keep these gates deterministic. Missing runtime dependencies fail
+checks. Brain's own suite tests the complete Pi, Codex and OpenCode adapters, including
+native resume, compaction, cancellation and effect mediation.
 
 ## npm publishing
 

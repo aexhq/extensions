@@ -21,7 +21,7 @@ jobs:
         with:
           repository: aexhq/brain
           path: brain-source
-          ref: c9115c28818cc570685eb98c440e4dbaf792112c
+          ref: 5f077e117d990d661800816ba4db9ec351bc82a8
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
@@ -52,6 +52,7 @@ jobs:
             -e BRAIN_API_TOKEN=extension-fixture-token \
             -e BRAIN_LISTEN=127.0.0.1:18092 \
             -e BRAIN_MODEL_BASE_URL=http://127.0.0.1:18093/v1 \
+            -e 'BRAIN_HARNESS={"command":"brain-harness-pi","configuration":{"contextWindow":200000,"maxTokens":8192,"compaction":{"enabled":false}}}' \
             "ghcr.io/aexhq/brain:sha-$brain_ref"
           trap 'docker rm -f extension-brain >/dev/null' EXIT
           for attempt in $(seq 1 60); do

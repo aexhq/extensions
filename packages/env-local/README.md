@@ -4,7 +4,7 @@ A Docker workspace Environment. Each named session binding owns one volume. Tool
 
 Build a workspace image from the extensions repository:
 
-This release uses Brain SDK/runtime 0.39.0. The controller commits successful Tool
+This release uses Brain SDK/runtime 0.40.0. The controller commits successful Tool
 completion through the invocation's `finish` callback before returning its execution receipt.
 The callback is required before execution; a lost completion acknowledgement remains `unknown`
 and never causes a repeated effect. Results and completion enter the session journal in order.
@@ -80,7 +80,7 @@ docker build --build-arg WORKSPACE_IMAGE=my-workspace -t my-python-workspace \
 
 Configure a profile with that image. Declare a normal Brain Tool with `implementation: { type: "python_project", name: "versions" }` and input `{ version: "1.2.3rc1" }`. It returns `{ normalized: "1.2.3rc1", prerelease: true }`. The image's `/opt/aex/python-projects.json` selects the project directory and module; the session cannot select arbitrary paths or modules. A module reads JSON stdin and writes one JSON value to stdout. Filesystem writes go to `/workspace` within the profile's grants.
 
-Images are the preparation boundary: reuse follows image/installation lifetime and there is no runtime installer or universal `needs` manifest. These images run Tools only; Agentloop descriptors are explicitly unsupported.
+Images are the preparation boundary: reuse follows image/installation lifetime and there is no runtime installer or universal `needs` manifest. These images run Tools; startup harnesses run in the Brain deployment.
 
 ## Verification
 

@@ -36,7 +36,7 @@ try {
   await writeFile(path.join(consumer, "smoke.mjs"), `import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  Brain, brainEnv, environment, inspectAgentloop, inspectTool, hostEnv, tool,
+  Brain, environment, inspectTool, hostEnv, tool,
 } from "@aexhq/brain";
 import { env } from "@aexhq/env";
 import { codex } from "@aexhq/agentloop-codex";
@@ -83,18 +83,14 @@ const resident = tool({
   },
 })({ env: hostEnv({ name: "app" }) });
 assert.equal(inspectTool(resident)?.definition.name, "create_invoice");
-const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 const readSource = inspectTool(read({ env: workspace }));
 assert.equal(readSource.environment, workspace);
-assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: "8.1.8", entry: "./runtime", export: "read", configuration: {} });
-assert.equal(inspectAgentloop(codex({ env: loopRuntime })).environment, loopRuntime);
-assert.equal(inspectAgentloop(pi({ env: loopRuntime })).environment, loopRuntime);
-const runtimes = await Promise.all(["pi", "codex"].map(async name => {
-  const factory = new URL(import.meta.resolve("@aexhq/agentloop-" + name));
-  return readFile(new URL("./runtime.component.wasm", factory));
-}));
-assert.deepEqual(runtimes[0], runtimes[1], "official loops must share one runtime artifact");
+assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: JSON.parse(await readFile(new URL(import.meta.resolve("@aexhq/tool-read/package.json")), "utf8")).version, entry: "./runtime", export: "read", configuration: {} });
+assert.equal(pi().name, "pi");
+assert.equal(codex().name, "codex");
+assert.equal(typeof pi().open, "function");
+assert.equal(typeof codex().open, "function");
 
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
   const toolPackage = new URL(import.meta.resolve("@aexhq/tool-" + name + "/package.json"));
@@ -124,7 +120,7 @@ console.log("packed extension packages compose through the public Brain contract
 `);
   const output = run(process.execPath, ["smoke.mjs"], { cwd: consumer });
   assert.match(output, /public Brain contracts/u);
-  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, brainEnv, environment, hostEnv } from "@aexhq/brain";
+  await writeFile(path.join(consumer, "smoke.ts"), `import { Brain, environment, hostEnv } from "@aexhq/brain";
 import { pi } from "@aexhq/agentloop-pi";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
 import { http, httpTool } from "@aexhq/env-http";
@@ -151,12 +147,11 @@ void local({ name: "local", url: "https://local.example", token: "fixture", prof
 void browserTools({ env: browser({ name: "browser", url: "https://browser.example", token: "fixture", profile: "web" }) });
 void connectMcp;
 const defaultPi = pi();
-const configuredPi = pi({ contextWindow: 64_000 });
 // @ts-expect-error Unknown options remain invalid.
 pi({ invalid: true });
-// @ts-expect-error Environments retain their public type.
+// @ts-expect-error Startup harnesses cannot be placed in an Environment.
 pi({ env: "brain" });
-void [defaultPi, configuredPi];
+void defaultPi;
 declare const client: Parameters<typeof mcpTools>[0]["client"];
 void mcpTools({ client, env: hostEnv({ name: "app" }), names: ["read_report"],
   publishMedia: async ({ bytes, mediaType, index }, { sessionId, sequence, signal }) => {
@@ -165,11 +160,10 @@ void mcpTools({ client, env: hostEnv({ name: "app" }), names: ["read_report"],
   } });
 
 const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
-const loopRuntime = brainEnv({ name: "brain" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
-  agentloop: pi({ env: loopRuntime }),
+  harness: { configuration: { contextWindow: 64_000 } },
   tools: [${toolNames.map(name => `${name}({ env: workspace })`).join(", ")}],
 });
 `);

@@ -12,7 +12,7 @@ import { edit } from "../../tool-edit/dist/index.js";
 import { read } from "../../tool-read/dist/index.js";
 import { write } from "../../tool-write/dist/index.js";
 import { report } from "../../../test/fixtures/package-tool/dist/index.js";
-import { codex } from "../../loop-codex/dist/index.mjs";
+import { eventually } from "../../../shared/environment-test-fixture.mjs";
 import { fixture, calls, answer, collect } from "../../../shared/journey-fixture.mjs";
 
 async function workspace(t, fetch = globalThis.fetch) {
@@ -37,7 +37,7 @@ test("Local Environment: edit and test a real program, then read it in a later t
   const server = await serveEnvironment(runtime.handle, { token: "local-fixture" });
   t.after(server.close);
   const env = local({ name: "workspace", url: server.url, token: "local-fixture", profile: "coding" });
-  const session = await f.session(codex, { tools: [write, read, edit, bash].map(factory => factory({ env })) });
+  const session = await f.session({ tools: [write, read, edit, bash].map(factory => factory({ env })) });
   assert.equal((await session.send("edit and test")).status, "idle");
   assert.equal((await session.send("read it again")).status, "idle");
   const events = await collect(session.events());
@@ -50,10 +50,10 @@ for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP r
     () => calls(["write", { path: "once", content: "committed externally" }]),
     body => {
       assert.match(body.input.findLast(item => item.type === "function_call_output").output, lostCompletion ? /unknown/u : /once/u);
-      if (lostCompletion) assert.match(JSON.stringify(body.input), /environment_unreachable/u);
       return calls(["read", { path: "once", offset: 0, limit: 262144 }]);
     },
     body => { assert.match(body.input.at(-1).output, /committed externally/u); return answer("inspected uncertain write"); },
+    ...(lostCompletion ? [body => { assert.match(JSON.stringify(body.input), /environment_unreachable/u); return answer("environment loss observed"); }] : []),
   ]);
   let completions = 0;
   const runtime = await workspace(t, (url, request) => {
@@ -75,11 +75,13 @@ for (const lostCompletion of [false, true]) test(`Local Environment: lost HTTP r
   await once(server, "listening");
   t.after(() => new Promise(resolve => server.close(resolve)));
   const env = local({ name: "workspace", url: `http://127.0.0.1:${server.address().port}`, token: "fixture", profile: "coding" });
-  const session = await f.session(codex, { tools: [write({ env }), read({ env })] });
+  const session = await f.session({ tools: [write({ env }), read({ env })] });
   await session.send("write once");
+  if (lostCompletion) await eventually(async () => JSON.stringify(await session.transcript()).includes("environment loss observed"));
   assert.equal(writes, 1);
   const events = await collect(session.events());
   assert.equal(events.find(event => event.type === "tool_call_ended").data.outcome.status, lostCompletion ? "unknown" : "ok");
+  if (lostCompletion) assert.ok(events.some(event => event.type === "environment_unreachable"));
 });
 
 test("a third-party package calls the session model through its isolated invocation", { timeout: 60_000 }, async t => {
@@ -94,7 +96,7 @@ test("a third-party package calls the session model through its isolated invocat
   const server = await serveEnvironment(runtime.handle, { token: "fixture" });
   t.after(server.close);
   const env = local({ name: "workspace", url: server.url, token: "fixture", profile: "coding" });
-  const session = await f.session(codex, { tools: [write({ env }), report({ env })] });
+  const session = await f.session({ tools: [write({ env }), report({ env })] });
   await session.send("summarize the document");
   const events = await collect(session.events());
   assert.equal(events.filter(event => event.type === "model_call_started" && event.origin?.kind === "tool").length, 2);

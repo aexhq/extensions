@@ -16,7 +16,6 @@ import { ls } from "../packages/tool-ls/dist/index.js";
 import { read } from "../packages/tool-read/dist/index.js";
 import { todo } from "../packages/tool-todo/dist/index.js";
 import { write } from "../packages/tool-write/dist/index.js";
-import { codex } from "../packages/loop-codex/dist/index.mjs";
 import { answer, calls, collect, fixture } from "../shared/journey-fixture.mjs";
 import { toolProcess } from "../shared/tool-process.mjs";
 
@@ -62,7 +61,7 @@ async function workspace(t) {
 
 test("Tools: create, inspect, edit, search, verify, and track work through the public SDK", { timeout: 30_000 }, async (t) => {
   const f = await fixture(t, [
-    () => calls(
+    ...[
       ["write", { path: "notes/task.txt", content: "colour: blue\n" }],
       ["read", { path: "notes/task.txt", offset: 0, limit: 262144 }],
       ["edit", { path: "notes/task.txt", old_text: "blue", new_text: "cyan" }],
@@ -71,7 +70,7 @@ test("Tools: create, inspect, edit, search, verify, and track work through the p
       ["bash", { command: "cat notes/task.txt" }],
       ["todo", { action: "set", items: [{ text: "change colour", done: true }] }],
       ["todo", { action: "get" }],
-    ),
+    ].map(call => () => calls(call)),
     body => {
       const results = body.input.filter(message => message.type === "function_call_output").map(message => JSON.parse(message.output));
       assert.equal(results.length, 9);
@@ -86,8 +85,9 @@ test("Tools: create, inspect, edit, search, verify, and track work through the p
     },
   ]);
   const w = await workspace(t);
-  const session = await f.session(codex, { tools: w.tools });
+  const session = await f.session({ tools: w.tools });
   await session.send("Change the colour and verify the result");
+  assert.deepEqual((await collect(session.events())).filter(event => event.type === "turn_failed"), []);
   assert.equal(await readFile(join(w.directory, "notes/task.txt"), "utf8"), "colour: cyan\n");
   assert.deepEqual(w.executed, ["write", "read", "edit", "ls", "glob", "grep", "bash", "todo", "todo"]);
   assert.equal((await session.transcript()).messages.at(-1).content[0].text, "changed and verified cyan");
@@ -109,7 +109,7 @@ test("Tools: a missing-file error lets the model choose the next operation", { t
     () => answer("created the missing file"),
   ]);
   const w = await workspace(t);
-  const session = await f.session(codex, { tools: w.tools });
+  const session = await f.session({ tools: w.tools });
   await session.send("Read the file, creating it if needed");
   assert.deepEqual(w.executed, ["read", "write"]);
   assert.equal(await readFile(join(w.directory, "new.txt"), "utf8"), "created by explicit model choice");
@@ -133,7 +133,7 @@ test("Tools: a todo conflict is journaled and lets the model choose to read inst
   await mkdir(join(w.directory, ".aex"));
   await writeFile(join(w.directory, ".aex/todo.json"), JSON.stringify([{ text: "original", done: false }]));
   await writeFile(join(w.directory, ".aex/todo.pending"), "another writer owns this file", { flag: "wx" });
-  const session = await f.session(codex, { tools: w.tools });
+  const session = await f.session({ tools: w.tools });
   await session.send("Update the todo list; inspect its state if the write conflicts");
   assert.deepEqual(w.executed, ["todo", "todo"]);
   const ends = (await collect(session.events())).filter(event => event.type === "tool_call_ended");
