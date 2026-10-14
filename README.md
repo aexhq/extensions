@@ -51,11 +51,13 @@ Continue the [Brain quickstart](https://aex.dev/brain/docs/quickstart) with its 
 and `model` configuration. Install the tool packages and add them to the session:
 
 ```ts
+import { pi } from "@aexhq/agentloop-pi";
 import { bash } from "@aexhq/tool-bash";
 import { read } from "@aexhq/tool-read";
 
 const session = await brain.sessions.create({
   model,
+  agentloop: pi(),
   tools: [read(), bash()],
 });
 ```
