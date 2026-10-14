@@ -1,1 +1,2 @@
-export { piHarness as pi } from "@aexhq/brain/harness/pi";
+/** Select the pi implementation registered by the Brain deployment. */
+export const pi = (configuration = {}) => ({ name: "pi", configuration });

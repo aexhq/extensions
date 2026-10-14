@@ -1,0 +1,54 @@
+{
+  "name": "@aexhq/agentloop-opencode",
+  "version": "1.0.0",
+  "description": "Upstream opencode agentloop extension for Brain",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aexhq/extensions.git",
+    "directory": "packages/loop-opencode"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.mjs"
+    },
+    "./package.json": "./package.json",
+    "./runtime": {
+      "types": "./runtime.d.ts",
+      "import": "./dist/runtime.mjs"
+    }
+  },
+  "files": [
+    "src/index.mjs",
+    "index.d.ts",
+    "runtime.d.ts",
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../tools/build-agentloop.mjs opencode",
+    "test": "npm run build && node --test index.test.mjs && bun test runtime.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@aexhq/brain": "0.41.0",
+    "zod": "4.4.3",
+    "@opencode/sdk": "2.0.28",
+    "@ai-sdk/provider": "3.0.8"
+  },
+  "bin": {
+    "brain-agentloop-opencode": "./bin/brain-agentloop-opencode.mjs"
+  }
+}

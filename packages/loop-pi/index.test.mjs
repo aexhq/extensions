@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { piHarness } from "@aexhq/brain/harness/pi";
 import { pi } from "./src/index.mjs";
-
-test("exports the upstream pi harness without a second loop implementation", () => {
-  assert.equal(pi, piHarness);
-  const harness = pi();
-  assert.equal(harness.name, "pi");
-  assert.equal(typeof harness.open, "function");
+test("client selection serializes without executable code", () => {
+  const options = { contextWindow: 128000 };
+  assert.deepEqual(JSON.parse(JSON.stringify(pi(options))), { name: "pi", configuration: options });
+  assert.deepEqual(pi(), { name: "pi", configuration: {} });
 });

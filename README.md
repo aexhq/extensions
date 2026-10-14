@@ -1,6 +1,6 @@
 # extensions
 
-Official startup harness, Tool and Environment extensions for Aex. They use only the public
+Official Agentloop, Tool and Environment extensions for Aex. They use only the public
 `@aexhq/brain` extension API.
 
 Environment providers are independent of Aex hosting. For example, env-modal accepts the
@@ -10,8 +10,9 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | package | role |
 | --- | --- |
 | [`@aexhq/env`](packages/env/README.md) | Scoped Environment control through an ordinary Tool |
-| `@aexhq/agentloop-pi` | Upstream Pi startup harness |
-| `@aexhq/agentloop-codex` | Upstream Codex startup harness |
+| `@aexhq/agentloop-pi` | Upstream Pi agentloop |
+| `@aexhq/agentloop-codex` | Upstream Codex agentloop |
+| `@aexhq/agentloop-opencode` | Upstream OpenCode agentloop |
 | [`@aexhq/tool-bash`](packages/tool-bash/README.md) | Run Bash commands |
 | [`@aexhq/tool-edit`](packages/tool-edit/README.md) | Replace one exact text occurrence |
 | [`@aexhq/tool-glob`](packages/tool-glob/README.md) | Find workspace paths by glob pattern |
@@ -26,12 +27,20 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | [`@aexhq/tools-mcp`](packages/tools-mcp/README.md) | Selected MCP Tools in the application's host Environment |
 | [`@aexhq/env-browser`](packages/env-browser/README.md) | Playwright Environment and five browser Tools, including screenshot media |
 
-The deployment chooses one harness when Brain starts. The Pi and Codex packages export
-Brain's upstream adapters and install their pinned runtimes; they contain no handwritten
-agent loop. OpenCode is available directly through `@aexhq/brain/harness/opencode`.
-See the [Pi startup example](packages/loop-pi/README.md),
-[Codex startup example](packages/loop-codex/README.md), or
-[custom harness guide](https://aex.dev/brain/docs/guides/write-a-loop).
+Brain consumes installed agentloop executables through its public protocol. This repository
+owns the Pi, Codex and OpenCode adapters, pinned upstream runtimes and their tests.
+Operators register implementations at startup; sessions select an installed name and settings:
+
+```ts
+import { pi } from "@aexhq/agentloop-pi";
+const session = await brain.sessions.create({ model, tools, agentloop: pi({ contextWindow: 64_000 }) });
+```
+
+`pi()` returns selection data. It does not load Pi in the client. See the
+[Pi](packages/loop-pi/README.md), [Codex](packages/loop-codex/README.md), and
+[OpenCode](packages/loop-opencode/README.md) startup examples. The composed image
+`ghcr.io/aexhq/brain-agentloops:latest` includes all three and pins its Brain base image.
+Use an immutable digest from the release's `agentloops-image.json` for deployments.
 
 Tools default to the registering application; pass `{ env }` to place them elsewhere.
 Workspace Tools ship browser-safe bindings and native Node executables, and run in a
@@ -97,7 +106,7 @@ const tools = [notify()];
 
 ## Brain runtime boundary
 
-These packages consume Brain SDK 0.40.0 and its public contracts. Brain remains independently
+These packages consume Brain SDK 0.41.0 and its public contracts. Brain remains independently
 usable without this repository or Aex. Upstream harnesses own native persistence and compaction;
 Brain owns the journal and commits every mediated model and Tool effect before execution.
 Native state lives beside the journal. Failed or interrupted native activations require a new
@@ -150,19 +159,24 @@ Install Docker, bash and ripgrep, then run `npx playwright install-deps chromium
 `npm run test:prepare` to build fixture images and install Chromium. Run `npm test` for
 unit/runtime tests and `npm run package-smoke` for packed consumer composition.
 
-CI runs every Tool, Environment and MCP journey against the pinned Brain image with the
-upstream Pi harness. For local journeys, start Brain on `127.0.0.1:18092` with token
-`extension-fixture-token`, model base URL `http://127.0.0.1:18093/v1`, and:
+CI runs every Tool, Environment and MCP journey against the pinned Brain image with
+installed extensions. A mixed-runtime test runs 36 sessions across Pi, Codex and OpenCode
+concurrently. For local journeys, start Brain on `127.0.0.1:18092` with token
+`extension-fixture-token`, model base URL `http://127.0.0.1:18093/v1`, and `BRAIN_AGENTLOOPS`:
 
 ```json
-{"command":"brain-harness-pi","configuration":{"contextWindow":200000,"maxTokens":8192,"compaction":{"enabled":false}}}
+{
+  "pi": {"command":"brain-agentloop-pi","workers":2,"configuration":{"contextWindow":200000,"maxTokens":8192,"compaction":{"enabled":false}}},
+  "codex": {"command":"brain-agentloop-codex"},
+  "opencode": {"command":"brain-agentloop-opencode"}
+}
 ```
 
 Then run `npm run test:journeys`. The tests exercise real Docker workspace recovery, lost
 replies, MCP errors and cancellation, retained browser state and screenshot media.
 Scripted model responses keep these gates deterministic. Missing runtime dependencies fail
-checks. Brain's own suite tests the complete Pi, Codex and OpenCode adapters, including
-native resume, compaction, cancellation and effect mediation.
+checks. Adapter tests cover native resume, compaction, cancellation and effect mediation.
+Brain's own suite tests the neutral protocol, worker pools and journal barriers.
 
 ## npm publishing
 
@@ -174,5 +188,10 @@ bypass-2FA access tokens do not authorize `npm trust` operations. See the
 [authentication requirements](https://docs.npmjs.com/cli/v11/commands/npm-trust/#prerequisites).
 
 The [publish workflow](.github/workflows/npm-publish.yml) requires an immutable release tag,
-successful source CI and the real Modal integration check before staging exact package
-archives under `next`. Promotion reuses those archives without rebuilding them.
+successful source CI, the real Modal integration check and a successful immutable image
+build before staging exact package archives under `next`. Supply that image run's ID when
+staging. Promotion reuses those archives and the scanned multi-architecture image without
+rebuilding them, then publishes their manifests together in the GitHub release.
+
+For the first image publication, set `brain-agentloops` to Public in GitHub package
+settings. The image workflow verifies anonymous pulls before it can become a release.

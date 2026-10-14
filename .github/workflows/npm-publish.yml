@@ -13,6 +13,11 @@ on:
         description: Exact 40-character extensions commit selected by the workflow ref
         type: string
         required: true
+      image_run_id:
+        description: Successful immutable image build for this commit (bootstrap or stage)
+        type: string
+        required: false
+        default: ''
       stage_run_id:
         description: Successful stage or bootstrap run containing the immutable archives (hold or promote)
         type: string
@@ -46,6 +51,7 @@ jobs:
           SELECTED_COMMIT: ${{ github.sha }}
           SELECTED_REF: ${{ github.ref }}
           STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+          IMAGE_RUN_ID: ${{ inputs.image_run_id }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -67,6 +73,12 @@ jobs:
             [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
           else
             test -z "$STAGE_RUN_ID"
+            [[ "$IMAGE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+            image_run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$IMAGE_RUN_ID")
+            test "$(jq -r .head_sha <<<"$image_run")" = "$EXPECTED_COMMIT"
+            test "$(jq -r .conclusion <<<"$image_run")" = success
+            test "$(jq -r .path <<<"$image_run")" = .github/workflows/image.yml
+
             gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$EXPECTED_COMMIT&event=push" --jq '.workflow_runs | any(.status == "completed" and .conclusion == "success")' | grep -x true
             gh api "repos/$GITHUB_REPOSITORY/actions/workflows/modal-integration.yml/runs?head_sha=$EXPECTED_COMMIT&event=workflow_dispatch" --jq '.workflow_runs | any(.status == "completed" and .conclusion == "success")' | grep -x true
           fi
@@ -89,6 +101,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
       - run: npm ci
       - name: Install Tool test dependencies
         run: |
@@ -116,6 +131,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
       - run: npm ci
       - run: npm run build
       - run: npm run package-smoke
@@ -127,6 +145,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read
     outputs:
       versions: ${{ steps.pack.outputs.versions }}
     steps:
@@ -140,8 +159,17 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm install --global npm@11.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
       - run: npm ci
       - run: npm run build
+      - uses: actions/download-artifact@v7
+        with:
+          name: agentloops-image-${{ github.sha }}
+          path: ${{ runner.temp }}/agentloops-image
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.image_run_id }}
       - name: Pack the exact release archives
         id: pack
         shell: bash
@@ -149,6 +177,9 @@ jobs:
           set -euo pipefail
           release_dir="$RUNNER_TEMP/extensions-npm-release"
           node tools/npm-release.mjs pack "$release_dir"
+          image_manifest="$RUNNER_TEMP/agentloops-image/agentloops-image.json"
+          test "$(jq -er .source_sha "$image_manifest")" = "$GITHUB_SHA"
+          cp "$image_manifest" "$release_dir/agentloops-image.json"
           versions=$(node tools/npm-release.mjs versions "$release_dir/manifest.json")
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
           node tools/npm-release.mjs markdown "$release_dir/manifest.json" >> "$GITHUB_STEP_SUMMARY"
@@ -163,7 +194,7 @@ jobs:
     if: inputs.operation == 'stage'
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: npm-production
     permissions:
       contents: read
@@ -193,7 +224,7 @@ jobs:
     if: inputs.operation == 'bootstrap'
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: npm-production
     permissions:
       contents: read
@@ -283,3 +314,91 @@ jobs:
           EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: node "$RUNNER_TEMP/extensions-npm-release/publish.mjs" promote
+
+  promote-image:
+    if: inputs.operation == 'promote'
+    needs: [validate, promote]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: extensions-npm-release-${{ needs.validate.outputs.release_sha }}
+          path: ${{ runner.temp }}/extensions-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.stage_run_id }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the tested manifest
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/extensions-release/agentloops-image.json"
+          test "$(jq -er .source_sha "$manifest")" = "$EXPECTED_COMMIT"
+          image=$(jq -er .image "$manifest")
+          digest=$(jq -er .manifest_digest "$manifest")
+          docker buildx imagetools inspect "$image@$digest" >/dev/null
+          docker buildx imagetools create -t "$image:latest" "$image@$digest"
+          promoted=$(docker buildx imagetools inspect "$image:latest" --format '{{json .Manifest}}' | jq -er .digest)
+          test "$promoted" = "$digest"
+          echo "Promoted the tested image to \`$image:latest\` at \`$image@$digest\`." >> "$GITHUB_STEP_SUMMARY"
+
+  publish-release:
+    if: inputs.operation == 'promote'
+    needs: [validate, promote, promote-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: extensions-npm-release-${{ needs.validate.outputs.release_sha }}
+          path: ${{ runner.temp }}/extensions-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.stage_run_id }}
+      - name: Publish the tested extension and image mapping
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.validate.outputs.release_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/extensions-release"
+          tag="release/sha-$EXPECTED_COMMIT"
+          test "$(jq -er .source "$release_dir/manifest.json")" = "$EXPECTED_COMMIT"
+          test "$(jq -er .source_sha "$release_dir/agentloops-image.json")" = "$EXPECTED_COMMIT"
+          versions=$(jq -r '[.packages[] | "\(.name)@\(.version)"] | join(", ")' "$release_dir/manifest.json")
+          image=$(jq -r '"\(.image)@\(.manifest_digest)"' "$release_dir/agentloops-image.json")
+          printf 'Packages: `%s`\n\nImage: `%s`\n\nThe attached manifests identify the exact packages and image tested together.\n' \
+            "$versions" "$image" > "$RUNNER_TEMP/release-notes.md"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "Agentloop extensions $versions" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          mkdir "$RUNNER_TEMP/existing-release-assets"
+          for filename in manifest.json agentloops-image.json; do
+            if grep -Fxq "$filename" <<<"$assets"; then
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$filename" \
+                --dir "$RUNNER_TEMP/existing-release-assets"
+              cmp "$release_dir/$filename" "$RUNNER_TEMP/existing-release-assets/$filename"
+            else
+              gh release upload "$tag" "$release_dir/$filename" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          if [[ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" == true ]]; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

@@ -55,9 +55,9 @@ export async function fixture(t, script, { timeoutMs = 30_000 } = {}) {
   const brain = new Brain({ baseUrl: process.env.BRAIN_BASE_URL ?? "http://127.0.0.1:18092", token: "extension-fixture-token", timeoutMs });
   return {
     brain, requests,
-    async session({ harness = {}, ...options } = {}) {
+    async session({ agentloop = { name: "pi" }, ...options } = {}) {
       const session = await brain.sessions.create({
-        harness,
+        agentloop,
         model: { provider: "vercel-ai-gateway", name: "test/extension", apiKey: "test" },
         ...options,
       });

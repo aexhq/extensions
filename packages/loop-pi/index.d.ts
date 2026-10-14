@@ -1,4 +1,3 @@
-import type { AgentHarness } from "@aexhq/brain/harness";
-
-/** Provide this implementation when starting Brain. */
-export declare function pi(): AgentHarness;
+import type { AgentloopSelection } from "@aexhq/brain";
+export interface PiOptions { contextWindow?: number; maxTokens?: number; compaction?: { enabled?: boolean; reserveTokens?: number; keepRecentTokens?: number }; }
+export declare function pi(configuration?: PiOptions): AgentloopSelection;

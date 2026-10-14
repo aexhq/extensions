@@ -1,35 +1,33 @@
 # @aexhq/agentloop-pi
 
-Run the upstream Pi agent through Brain's model adapter and authorized Tools.
-The upstream agent owns its conversation loop, compaction and native session state.
-This package exports Brain's Pi harness and installs its pinned upstream runtime.
+Run upstream pi sessions through Brain's journaled model and Tool services.
+The extension owns the adapter, native session integration and upstream dependencies.
 
-Install `@aexhq/brain@0.40.0` and `@aexhq/agentloop-pi@10.0.0` in the server deployment.
-Create `harness.mjs`:
-
-```js
-import { serveHarness } from "@aexhq/brain/harness";
-import { pi } from "@aexhq/agentloop-pi";
-
-await serveHarness(pi());
-```
-
-Start Brain with that implementation:
+Install `@aexhq/agentloop-pi@11.0.0`. Register the installed executable when starting Brain:
 
 ```sh
-brain --harness '{"command":"node","args":["/absolute/path/harness.mjs"]}'
+export BRAIN_AGENTLOOPS='{"pi":{"command":"brain-agentloop-pi"}}'
+brain
 ```
 
-Clients create sessions with `model`, `tools` and optional `harness.configuration`.
-The deployment selects one harness before readiness; session callers cannot choose executable code.
-Configuration is documented in Brain's [harness reference](https://aex.dev/brain/docs/reference/agentloop-contract).
-Models without context metadata need explicit token limits in harness configuration.
+Select it for a conversation:
 
-Version 10 replaces the previous handwritten Wasm loop. Start with a new Brain data directory;
-old loop placement, output correction, dynamic tool catalogues and checkpoints are unsupported.
-Pi supports URL media and initial transcripts.
-Interrupted native activations are not replayed: create a new session after an interrupted or failed run.
-Model and Tool effects remain journaled by Brain before the adapter receives their results.
+```ts
+import { pi } from "@aexhq/agentloop-pi";
+const session = await brain.sessions.create({
+  model, tools, agentloop: pi({ contextWindow: 128000 }),
+});
+```
 
-The complete upstream adapter tests live in [Brain](https://github.com/aexhq/brain/tree/main/packages/brain-sdk/test).
-This package adds no loop policy or compaction implementation.
+The helper returns a serializable name and configuration; it does not run agent code.
+Use a plain selection with a different registered name when the deployment uses aliases.
+Session settings override deployment defaults. Only supported behavior options are accepted;
+executables, worker counts and concurrency limits are configured at startup.
+
+`/runtime` exports the implementation for custom process composition with
+`serveHarness` from `@aexhq/brain/harness`. The package's tests exercise the actual
+upstream runtime, including compaction, continuation, cancellation and journal failures.
+See [Brain's harness reference](https://aex.dev/brain/docs/reference/agentloop-contract).
+
+Version 11.0.0 requires Brain 0.41.0. Use a new Brain data directory for this prelaunch
+contract change. Interrupted native activations are not replayed.

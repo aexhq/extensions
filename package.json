@@ -1,7 +1,7 @@
 {
   "name": "aex-extension",
   "private": true,
-  "description": "Official startup harness, Tool and Environment extensions built against public Brain contracts",
+  "description": "Official Agentloop, Tool and Environment extensions built against public Brain contracts",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -13,17 +13,18 @@
   "scripts": {
     "test:prepare": "node tools/prepare-runtime-tests.mjs",
     "build": "npm run build --workspaces --if-present",
-    "test": "npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
-    "test:journeys": "node --test --test-concurrency=1 test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
+    "test": "tsc -p tsconfig.agentloops.json && npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
+    "test:journeys": "node --test --test-concurrency=1 test/agentloop-journeys.mjs test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {
-    "@aexhq/brain": "0.40.0",
+    "@aexhq/brain": "0.41.0",
     "@types/node": "^24.3.0",
     "esbuild": "0.25.9",
     "typescript": "^5.9.2"
   },
   "overrides": {
-    "@parcel/watcher": "2.6.0"
+    "@parcel/watcher": "2.6.0",
+    "@modelcontextprotocol/client": "2.3.1"
   }
 }
