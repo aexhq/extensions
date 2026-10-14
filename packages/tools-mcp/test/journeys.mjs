@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { hostEnv } from "@aexhq/brain";
 import { mcpTools } from "../dist/index.mjs";
-import { pi } from "../../loop-pi/dist/index.mjs";
 import { fixture, calls, answer, collect } from "../../../shared/journey-fixture.mjs";
 import { mcpFixture } from "./fixture.mjs";
 import { eventually } from "../../../shared/environment-test-fixture.mjs";
@@ -21,7 +20,7 @@ test("MCP bridge: structured success, full error evidence and image output throu
   ]);
   const mcp = await mcpFixture(t);
   const tools = await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), publishMedia: async () => "https://example.com/mcp.png", names: ["lookup", "failure", "protocol_failure", "image"] });
-  const session = await f.session(pi, { tools });
+  const session = await f.session({ tools });
   await session.send("look up and inspect evidence");
   const events = await collect(session.events());
   const raw = events.find(event => event.type === "mcp_result" && event.data.tool === "failure");
@@ -29,10 +28,12 @@ test("MCP bridge: structured success, full error evidence and image output throu
   assert.equal(raw.origin.kind, "tool");
   const results = (await session.transcript()).messages.flatMap(message => message.content).filter(block => block.type === "tool_result");
   assert.equal(results[1].is_error, true);
-  assert.equal(results[1].content.code, "mcp_tool_error");
-  assert.deepEqual(results[1].content.details, raw.data.result);
+  assert.match(results[1].content, /mcp_tool_error/u);
+  assert.match(results[1].content, /permission_denied/u);
+  const failures = events.filter(event => event.type === "tool_call_ended" && event.data.outcome.status === "error");
+  assert.deepEqual(failures[0].data.outcome.error.details, raw.data.result);
   assert.equal(results[2].is_error, true);
-  assert.deepEqual(results[2].content.details, { code: -32001, data: { resource: "fixture" } });
+  assert.deepEqual(failures[1].data.outcome.error.details, { code: -32001, data: { resource: "fixture" } });
   assert.equal(events.filter(event => event.type === "tool_call_started").length, 4);
   assert.equal((await mcp.records()).filter(record => record.type === "call").length, 4);
 });
@@ -43,21 +44,21 @@ test("MCP bridge: transport loss returns unknown without marking the host unreac
     body => { assert.match(body.input.at(-1).output, /outcome unknown/u); return answer("external result needs inspection"); },
   ]);
   const mcp = await mcpFixture(t);
-  const session = await f.session(pi, { tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["disconnect"] }) });
+  const session = await f.session({ tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["disconnect"] }) });
   await session.send("make one call");
   const events = await collect(session.events());
   assert.equal(events.find(event => event.type === "mcp_failure").data.outcome, "unknown");
   assert.equal((await mcp.records()).filter(record => record.type === "mutation").length, 1);
   const block = (await session.transcript()).messages.flatMap(message => message.content).find(block => block.type === "tool_result");
   assert.equal(block.is_error, true);
-  assert.equal(block.content.code, "unknown");
+  assert.match(block.content, /unknown/u);
   assert.equal(events.some(event => event.type === "environment_unreachable"), false);
 });
 
 test("MCP bridge: Brain cancellation reaches a real server without replay", { timeout: 45_000 }, async t => {
   const f = await fixture(t, [() => calls(["wait", {}])]);
   const mcp = await mcpFixture(t);
-  const session = await f.session(pi, { tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["wait"] }) });
+  const session = await f.session({ tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: ["wait"] }) });
   const running = session.send("wait for cancellation").catch(() => {});
   await eventually(async () => (await mcp.records()).some(record => record.type === "call"));
   await session.interrupt();
@@ -70,19 +71,20 @@ test("MCP bridge: Brain cancellation reaches a real server without replay", { ti
   assert.equal(outcome.status, "cancelled");
 });
 
-test("MCP bridge: original JSON Schemas validate through Brain before any remote effects", { timeout: 60_000 }, async t => {
+test("MCP bridge: original JSON Schemas reject invalid inputs before remote effects", { timeout: 60_000 }, async t => {
   const steps = [];
   for (const schema of schemaFixtures) {
     steps.push(() => calls([schema.name, schema.invalid[0]]));
-    steps.push(body => { assert.match(body.input.at(-1).output, /invalid_input/u); return calls([schema.name, schema.valid[0]]); });
+    steps.push(body => { assert.match(body.input.at(-1).output, /invalid_input|Validation failed/u); return calls([schema.name, schema.valid[0]]); });
   }
   steps.push(() => answer("schemas validated"));
   const f = await fixture(t, steps);
   const mcp = await mcpFixture(t);
-  const session = await f.session(pi, { tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: schemaFixtures.map(schema => schema.name) }) });
+  const session = await f.session({ tools: await mcpTools({ client: mcp.client, env: hostEnv({ name: "app" }), names: schemaFixtures.map(schema => schema.name) }) });
   await session.send("validate the selected schemas");
   const remoteCalls = (await mcp.records()).filter(record => record.type === "call");
-  assert.deepEqual(remoteCalls.map(record => record.input), schemaFixtures.map(schema => schema.valid[0]));
+  assert.deepEqual(remoteCalls.map(record => record.input), schemaFixtures.map(schema => schema.valid[0]), JSON.stringify(f.requests.map(request => request.input.at(-1))));
   const events = await collect(session.events());
-  assert.equal(events.filter(event => event.type === "tool_call_ended" && event.data.outcome.error?.code === "invalid_input").length, schemaFixtures.length);
+  assert.equal(events.filter(event => event.type === "tool_call_ended" && event.data.outcome.status === "ok").length, schemaFixtures.length);
+  assert.equal(f.requests.length, schemaFixtures.length * 2 + 1);
 });

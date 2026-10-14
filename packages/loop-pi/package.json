@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/agentloop-pi",
-  "version": "9.0.1",
-  "description": "Pi-style parallel-Tool Brain extension",
+  "version": "10.0.0",
+  "description": "Upstream Pi startup harness for Brain",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -11,7 +11,7 @@
   "type": "module",
   "sideEffects": false,
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.19.0"
   },
   "publishConfig": {
     "access": "public",
@@ -21,28 +21,21 @@
   "exports": {
     ".": {
       "types": "./index.d.ts",
-      "import": "./dist/index.mjs"
+      "import": "./src/index.mjs"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
-    "src",
+    "src/index.mjs",
     "index.d.ts",
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../tools/build-agentloop.mjs src/component.mjs src/index.mjs dist",
-    "test": "npm run build && node --test *.test.mjs",
-    "test:logic": "node --test loop.test.mjs state.test.mjs",
-    "test:logic:watch": "node --test --watch loop.test.mjs state.test.mjs",
-    "test:journeys": "node --test test/journeys.mjs",
-    "prepack": "npm run build"
+    "test": "node --test index.test.mjs"
   },
   "dependencies": {
-    "@aexhq/brain": "0.39.0",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "zod": "4.4.3"
+    "@aexhq/brain": "0.40.0",
+    "@earendil-works/pi-coding-agent": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0"
   }
 }

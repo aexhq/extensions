@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { Brain, brainEnv } from "@aexhq/brain";
+import { Brain } from "@aexhq/brain";
 
 export const collect = async (events) => Array.fromAsync(events);
 export const answer = (text, extra = {}) => ({ text, ...extra });
-export const calls = (...values) => ({ output: values.map(([name, input], index) => ({
-  type: "function_call", call_id: `call-${index}`, name, arguments: JSON.stringify(input),
+let nextCall = 0;
+export const calls = (...values) => ({ output: values.map(([name, input]) => ({
+  type: "function_call", call_id: `call-${++nextCall}`, name, arguments: JSON.stringify(input),
 })) });
 
 export async function fixture(t, script, { timeoutMs = 30_000 } = {}) {
@@ -54,9 +55,9 @@ export async function fixture(t, script, { timeoutMs = 30_000 } = {}) {
   const brain = new Brain({ baseUrl: process.env.BRAIN_BASE_URL ?? "http://127.0.0.1:18092", token: "extension-fixture-token", timeoutMs });
   return {
     brain, requests,
-    async session(loop, { configuration = {}, ...options } = {}) {
+    async session({ harness = {}, ...options } = {}) {
       const session = await brain.sessions.create({
-        agentloop: loop({ env: brainEnv({ name: "brain" }), compaction: false, ...configuration }),
+        harness,
         model: { provider: "vercel-ai-gateway", name: "test/extension", apiKey: "test" },
         ...options,
       });

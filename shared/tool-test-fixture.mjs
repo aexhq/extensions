@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +20,7 @@ export function toolTests(name, factory, runtime, invalidInput) {
     assert.equal(source.definition.name, name);
     assert.equal(source.environment, env);
     assert.equal("needs" in source, false);
-    assert.deepEqual(source.implementation, { type: "node_package", package: `@aexhq/tool-${name}`, version: "8.1.8", entry: "./runtime", export: name, configuration: {} });
+    assert.deepEqual(source.implementation, { type: "node_package", package: `@aexhq/tool-${name}`, version: JSON.parse(readFileSync(new URL(`../packages/tool-${name}/package.json`, import.meta.url), "utf8")).version, entry: "./runtime", export: name, configuration: {} });
     assert.throws(() => factory({ env, typo: true }), /does not accept options/u);
   });
 
