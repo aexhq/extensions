@@ -32,7 +32,18 @@ test("env with upstream Pi: manual setup, dynamic resources, fixed catalogue and
       assert.equal(body.tools.filter(tool => tool.name === "browser_inspect").length, 1);
       return answer("environment ready");
     },
-    body => { assert.match(JSON.stringify(body.input), /environment_observation.*browser disconnected/iu); return answer("browser loss observed"); },
+    body => {
+      const input = JSON.stringify(body.input.at(-1));
+      assert.match(input, /environment_observation/u);
+      assert.match(input, /Browser page main close/u);
+      return answer("page loss observed");
+    },
+    body => {
+      const input = JSON.stringify(body.input.at(-1));
+      assert.match(input, /environment_observation/u);
+      assert.match(input, /browser disconnected/u);
+      return answer("browser loss observed");
+    },
   ], { timeoutMs: 60_000 });
   const b = await browserFixture(t);
   const server = await serveEnvironment(b.env.handle, { token: "browser-fixture" });
@@ -49,6 +60,8 @@ test("env with upstream Pi: manual setup, dynamic resources, fixed catalogue and
   assert.deepEqual(events.filter(event => event.type === "turn_failed"), []);
   assert.equal((await session.environments.list()).find(view => view.reference.name === "second").state, "deleted");
   assert.ok(events.some(event => event.type === "tool_call_started" && event.data.tool === "env"));
+  await b.launched[0].contexts()[0].pages()[0].close();
+  await eventually(async () => JSON.stringify(await session.transcript()).includes("page loss observed"));
   await b.launched[0].close();
   await eventually(async () => JSON.stringify(await session.transcript()).includes("browser loss observed"));
 });
