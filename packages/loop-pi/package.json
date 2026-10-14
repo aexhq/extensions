@@ -1,7 +1,7 @@
 {
   "name": "@aexhq/agentloop-pi",
-  "version": "10.0.0",
-  "description": "Upstream Pi startup harness for Brain",
+  "version": "11.0.0",
+  "description": "Upstream pi agentloop extension for Brain",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,19 +23,32 @@
       "types": "./index.d.ts",
       "import": "./src/index.mjs"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./runtime": {
+      "types": "./runtime.d.ts",
+      "import": "./dist/runtime.mjs"
+    }
   },
   "files": [
     "src/index.mjs",
     "index.d.ts",
+    "runtime.d.ts",
+    "dist",
+    "bin",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test index.test.mjs"
+    "build": "node ../../tools/build-agentloop.mjs pi",
+    "test": "npm run build && node --test index.test.mjs && node --test runtime.test.mjs",
+    "prepack": "npm run build"
   },
   "dependencies": {
-    "@aexhq/brain": "0.40.0",
-    "@earendil-works/pi-coding-agent": "1.2.0",
-    "@earendil-works/pi-ai": "1.2.0"
+    "@aexhq/brain": "0.41.0",
+    "zod": "4.4.3",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.2.0"
+  },
+  "bin": {
+    "brain-agentloop-pi": "./bin/brain-agentloop-pi.mjs"
   }
 }

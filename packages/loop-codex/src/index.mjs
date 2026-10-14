@@ -1,1 +1,2 @@
-export { codexHarness as codex } from "@aexhq/brain/harness/codex";
+/** Select the codex implementation registered by the Brain deployment. */
+export const codex = (configuration = {}) => ({ name: "codex", configuration });

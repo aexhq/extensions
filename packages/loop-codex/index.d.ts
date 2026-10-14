@@ -1,4 +1,3 @@
-import type { AgentHarness } from "@aexhq/brain/harness";
-
-/** Provide this implementation when starting Brain. */
-export declare function codex(): AgentHarness;
+import type { AgentloopSelection } from "@aexhq/brain";
+export interface CodexOptions { contextWindow?: number; compactAtTokens?: number; }
+export declare function codex(configuration?: CodexOptions): AgentloopSelection;

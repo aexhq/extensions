@@ -29,7 +29,7 @@ The application owns those credentials; stdio connections do not use this OAuth 
 
 ## Results and failures
 
-The bridge uses Brain SDK 0.40.0 and explicitly finishes each invocation after committing its
+The bridge uses Brain SDK 0.41.0 and explicitly finishes each invocation after committing its
 evidence and normalized result. Return alone does not complete a Brain Tool. A missing deadline
 means no invocation timer; keep the application's host connection and MCP client alive until
 completion or cancellation.

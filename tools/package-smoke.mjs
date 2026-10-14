@@ -41,6 +41,7 @@ import {
 import { env } from "@aexhq/env";
 import { codex } from "@aexhq/agentloop-codex";
 import { pi } from "@aexhq/agentloop-pi";
+import { opencode } from "@aexhq/agentloop-opencode";
 ${toolNames.map(name => `import { ${name} } from "@aexhq/tool-${name}";`).join("\n")}
 import { http, httpTool } from "@aexhq/env-http";
 import { createToolHandler } from "@aexhq/env-http/handler";
@@ -89,8 +90,9 @@ assert.equal(readSource.environment, workspace);
 assert.deepEqual(readSource.implementation, { type: "node_package", package: "@aexhq/tool-read", version: JSON.parse(await readFile(new URL(import.meta.resolve("@aexhq/tool-read/package.json")), "utf8")).version, entry: "./runtime", export: "read", configuration: {} });
 assert.equal(pi().name, "pi");
 assert.equal(codex().name, "codex");
-assert.equal(typeof pi().open, "function");
-assert.equal(typeof codex().open, "function");
+assert.deepEqual(opencode({ maxTokens: 1024 }), { name: "opencode", configuration: { maxTokens: 1024 } });
+assert.deepEqual(pi({ contextWindow: 64000 }), { name: "pi", configuration: { contextWindow: 64000 } });
+assert.deepEqual(codex(), { name: "codex", configuration: {} });
 
 for (const [name, factory] of Object.entries({ ${toolNames.join(", ")} })) {
   const toolPackage = new URL(import.meta.resolve("@aexhq/tool-" + name + "/package.json"));
@@ -163,7 +165,7 @@ const brain = new Brain({ baseUrl: "http://127.0.0.1:8080" });
 const workspace = environment({ url: () => "https://environment.example" })({ name: "workspace" });
 void brain.sessions.create({
   model: { provider: "vercel-ai-gateway", name: "openai/gpt-5-mini", apiKey: "test-key" },
-  harness: { configuration: { contextWindow: 64_000 } },
+  agentloop: pi({ contextWindow: 64_000 }),
   tools: [${toolNames.map(name => `${name}({ env: workspace })`).join(", ")}],
 });
 `);
