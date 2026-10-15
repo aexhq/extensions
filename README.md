@@ -1,7 +1,7 @@
 # extensions
 
 Official Agentloop, Tool and Environment extensions for Aex. They use only the public
-`@aexhq/brain` extension API.
+`@aexhq/brain` extension API and language-neutral Brain protocols.
 
 Environment providers are independent of Aex hosting. For example, env-modal accepts the
 application's own Modal client and API credentials; Aex's managed keys, admission and billing
@@ -13,6 +13,7 @@ are optional composition outside the extension. See the [standalone Modal exampl
 | `@aexhq/agentloop-pi` | Upstream Pi agentloop |
 | `@aexhq/agentloop-codex` | Upstream Codex agentloop |
 | `@aexhq/agentloop-opencode` | Upstream OpenCode agentloop |
+| [`@aexhq/agentloop-portable`](packages/loop-portable/README.md) | Checkpointed Session API v2 loop; unreleased source |
 | [`@aexhq/tool-bash`](packages/tool-bash/README.md) | Run Bash commands |
 | [`@aexhq/tool-edit`](packages/tool-edit/README.md) | Replace one exact text occurrence |
 | [`@aexhq/tool-glob`](packages/tool-glob/README.md) | Find workspace paths by glob pattern |
@@ -179,6 +180,13 @@ replies, MCP errors and cancellation, retained browser state and screenshot medi
 Scripted model responses keep these gates deterministic. Missing runtime dependencies fail
 checks. Adapter tests cover native resume, compaction, cancellation and effect mediation.
 Brain's own suite tests the neutral protocol, worker pools and journal barriers.
+
+For the Session API v2 source package, `npm run test:portable` requires
+`BRAIN_TEST_V2_BINARY` and `BRAIN_V2_PACKAGE_ARCHIVE` from the same admitted Brain
+source. It packs the portable extension, installs both archives in a clean
+consumer, checks TypeScript imports, and runs a real service through approval,
+restart, artifact download and parallel delegation. Its model endpoint is a
+deterministic HTTP fixture, not live-provider or registry-publication evidence.
 
 ## npm publishing
 

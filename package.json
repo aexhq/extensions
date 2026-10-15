@@ -15,6 +15,7 @@
     "build": "npm run build --workspaces --if-present",
     "test": "tsc -p tsconfig.agentloops.json && npm test --workspaces --if-present && node --test shared/*.test.mjs tools/npm-release.test.mjs tools/verify-dependencies.test.mjs",
     "test:journeys": "node --test --test-concurrency=1 test/agentloop-journeys.mjs test/tools-journeys.mjs packages/env-local/test/journeys.mjs packages/tools-mcp/test/journeys.mjs packages/env-browser/test/journeys.mjs test/env-journeys.mjs",
+    "test:portable": "node --test test/portable-service.test.mjs",
     "package-smoke": "node tools/package-smoke.mjs"
   },
   "devDependencies": {

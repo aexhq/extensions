@@ -1,0 +1,15 @@
+{
+  "name": "@aexhq/agentloop-portable",
+  "version": "1.0.0",
+  "description": "Portable, checkpointed decision loop for Brain Session API v2",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "files": ["src", "bin", "README.md"],
+  "types": "./src/index.d.ts",
+  "exports": { ".": { "types": "./src/index.d.ts", "import": "./src/index.mjs" } },
+  "bin": { "brain-agentloop-portable": "./bin/brain-agentloop-portable.mjs" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "publishConfig": { "access": "public", "tag": "next", "provenance": true },
+  "repository": { "type": "git", "url": "git+https://github.com/aexhq/extensions.git", "directory": "packages/loop-portable" }
+}
